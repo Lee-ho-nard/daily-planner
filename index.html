@@ -6,39 +6,60 @@
 <title>Daily Planner</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: "Space Grotesk", system-ui, sans-serif; background: #f4f5f7; color: #1a1d26; padding: 1.5rem 1rem; }
   .container { max-width: 480px; margin: 0 auto; }
 
-  .date-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; }
+  .date-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
   .date-nav button { background: white; border: 1px solid #ddd; border-radius: 8px; width: 36px; height: 36px; font-size: 1rem; cursor: pointer; }
   .date-display { text-align: center; }
   .date-display .weekday { font-weight: 600; font-size: 1.1rem; }
   .date-display .fulldate { font-size: 0.8rem; color: #777; }
 
+  .progress-wrap { margin-bottom: 1.25rem; }
+  .progress-text { font-size: 0.8rem; color: #555; margin-bottom: 0.35rem; display: flex; justify-content: space-between; }
+  .progress-bar-track { background: #e2e4e8; border-radius: 999px; height: 6px; overflow: hidden; }
+  .progress-bar-fill { background: #2F5233; height: 100%; border-radius: 999px; transition: width 0.4s ease; }
+
   .category-tabs { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; flex-wrap: wrap; align-items: center; }
-  .cat-pill { background: white; border: 1px solid #ddd; border-radius: 999px; padding: 0.4rem 0.9rem; font-size: 0.85rem; cursor: pointer; }
-  .cat-pill.active { background: #2F5233; color: white; border-color: #2F5233; }
+  .cat-pill { border: 1px solid transparent; border-radius: 999px; padding: 0.4rem 0.9rem; font-size: 0.85rem; cursor: pointer; background: white; color: #333; transition: background 0.15s, color 0.15s; }
   .cat-add { width: 32px; height: 32px; border-radius: 50%; background: white; border: 1px solid #ddd; font-size: 1.1rem; cursor: pointer; }
 
   #taskList { list-style: none; margin-bottom: 5rem; }
-  .task-item { background: white; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.75rem; cursor: pointer; }
+  .task-item {
+    background: white; border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 0.5rem;
+    display: flex; align-items: center; gap: 0.75rem; cursor: grab; border-left: 4px solid #ccc;
+    transition: opacity 0.4s ease, background 0.15s;
+  }
+  .task-item:hover { background: #fafbfa; }
+  .task-item.sortable-ghost { opacity: 0.3; }
+  .task-item.completing { opacity: 0.5; }
   .task-item.done .task-name { text-decoration: line-through; opacity: 0.5; }
-  .task-name { flex: 1; }
-  .task-meta { font-size: 0.75rem; color: #777; white-space: nowrap; }
-  .task-category { font-size: 0.7rem; background: rgba(47,82,51,0.1); color: #2F5233; padding: 0.15rem 0.5rem; border-radius: 999px; }
-  .delete-btn { background: none; border: none; color: #999; cursor: pointer; font-size: 1rem; }
-  .empty-msg { text-align: center; color: #999; padding: 2rem 0; font-size: 0.9rem; }
+  .task-name { flex: 1; font-size: 0.98rem; }
+  .task-meta { font-size: 0.75rem; color: #777; white-space: nowrap; display: flex; align-items: center; gap: 0.25rem; }
+  .task-category { font-size: 0.68rem; padding: 0.15rem 0.5rem; border-radius: 999px; color: white; }
+  .delete-btn { background: none; border: none; color: #bbb; cursor: pointer; font-size: 1rem; }
+  .delete-btn:hover { color: #d9534f; }
 
-  .fab { position: fixed; bottom: 1.5rem; right: 1.5rem; width: 56px; height: 56px; border-radius: 50%; background: #2F5233; color: white; font-size: 1.75rem; border: none; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+  .checkbox { width: 20px; height: 20px; border-radius: 6px; border: 2px solid #ccc; cursor: pointer; flex-shrink: 0; position: relative; transition: background 0.2s, border-color 0.2s; }
+  .checkbox.checked { background: #2F5233; border-color: #2F5233; }
+  .checkbox.checked::after { content: "✓"; color: white; font-size: 0.8rem; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 
-  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); align-items: center; justify-content: center; padding: 1rem; }
+  .empty-msg { text-align: center; color: #999; padding: 2.5rem 1rem; font-size: 0.9rem; line-height: 1.5; }
+  .empty-msg .big { font-size: 1.05rem; color: #333; margin-bottom: 0.25rem; }
+
+  .fab { position: fixed; bottom: 1.5rem; right: 1.5rem; width: 56px; height: 56px; border-radius: 50%; background: #2F5233; color: white; font-size: 1.75rem; border: none; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); transition: transform 0.15s; }
+  .fab:hover { transform: scale(1.05); }
+
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); align-items: center; justify-content: center; padding: 1rem; z-index: 10; }
   .modal-overlay.open { display: flex; }
   .modal { background: white; border-radius: 12px; padding: 1.5rem; width: 100%; max-width: 360px; max-height: 90vh; overflow-y: auto; }
   .modal h3 { margin-bottom: 1rem; }
   .modal label { display: block; font-size: 0.8rem; color: #555; margin: 0.75rem 0 0.25rem; }
-  .modal input, .modal select { width: 100%; padding: 0.5rem; border-radius: 6px; border: 1px solid #ddd; font-size: 0.9rem; font-family: inherit; }
+  .modal input, .modal select { width: 100%; padding: 0.55rem; border-radius: 6px; border: 1px solid #ddd; font-size: 0.9rem; font-family: inherit; transition: border-color 0.15s, box-shadow 0.15s; }
+  .modal input:focus, .modal select:focus { outline: none; border-color: #2F5233; box-shadow: 0 0 0 3px rgba(47,82,51,0.12); }
   .modal-row { display: flex; gap: 0.5rem; }
   .modal-row > div { flex: 1; }
   .modal-actions { display: flex; gap: 0.5rem; margin-top: 1.25rem; }
@@ -46,6 +67,10 @@
   .btn-cancel { background: #eee; }
   .btn-save { background: #2F5233; color: white; }
   .btn-delete-modal { background: #d9534f; color: white; }
+
+  .color-swatches { display: flex; gap: 0.5rem; margin-top: 0.4rem; flex-wrap: wrap; }
+  .swatch { width: 28px; height: 28px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
+  .swatch.selected { border-color: #1a1d26; }
 </style>
 </head>
 <body>
@@ -57,6 +82,14 @@
       <div class="fulldate" id="fulldate"></div>
     </div>
     <button id="nextDay">→</button>
+  </div>
+
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-text">
+      <span id="progressCount"></span>
+      <span id="progressMsg"></span>
+    </div>
+    <div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill"></div></div>
   </div>
 
   <div class="category-tabs" id="categoryTabs"></div>
@@ -72,8 +105,7 @@
     <label>Task name</label>
     <input type="text" id="modalName" placeholder="e.g. Read 30 pages">
     <label>Category</label>
-    <input type="text" id="modalCategory" list="categoryList" placeholder="e.g. Work">
-    <datalist id="categoryList"></datalist>
+    <select id="modalCategory"></select>
     <div class="modal-row">
       <div>
         <label>Time (optional)</label>
@@ -96,20 +128,45 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="catModalOverlay">
+  <div class="modal">
+    <h3>New Category</h3>
+    <label>Name</label>
+    <input type="text" id="catName" placeholder="e.g. Work">
+    <label>Color</label>
+    <div class="color-swatches" id="colorSwatches"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="catCancel">Cancel</button>
+      <button class="btn-save" id="catSave">Save</button>
+    </div>
+  </div>
+</div>
+
 <script>
   let tasks = JSON.parse(localStorage.getItem("tasks")) || [];
   let categories = JSON.parse(localStorage.getItem("categories")) || [];
+
+  // --- Migration fix: discard any old-format (plain string) categories ---
+  categories = categories.filter(c => c && typeof c === "object" && c.name && c.color);
+  localStorage.setItem("categories", JSON.stringify(categories));
+
   let currentDate = new Date();
   let activeCategory = "All";
   let editingTaskId = null;
+  let selectedColor = null;
+  let sortableInstance = null;
+
+  const PALETTE = ["#2F5233", "#B5533C", "#3C6E9C", "#8A5FBF", "#C7862B", "#4A9B8E", "#B0468C", "#5C6370"];
 
   function toDateStr(d) { return d.toISOString().split("T")[0]; }
-
   function save() {
     localStorage.setItem("tasks", JSON.stringify(tasks));
     localStorage.setItem("categories", JSON.stringify(categories));
   }
-
+  function categoryColor(name) {
+    const cat = categories.find(c => c.name === name);
+    return cat ? cat.color : "#999";
+  }
   function formatDuration(mins) {
     const m = parseInt(mins);
     if (!m) return "";
@@ -124,61 +181,103 @@
     document.getElementById("fulldate").textContent = currentDate.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
   }
 
+  function renderProgress(dayTasks) {
+    const total = dayTasks.length;
+    const done = dayTasks.filter(t => t.done).length;
+    const wrap = document.getElementById("progressWrap");
+
+    if (total === 0) { wrap.style.display = "none"; return; }
+    wrap.style.display = "block";
+
+    const pct = Math.round((done / total) * 100);
+    document.getElementById("progressCount").textContent = `${done} / ${total} tasks completed`;
+    document.getElementById("progressFill").style.width = pct + "%";
+
+    let msg = "";
+    if (done === 0) msg = "";
+    else if (done === total) msg = "Everything completed 🎉";
+    else if (total - done === 1) msg = "Only 1 task left 💪";
+    else if (pct >= 50) msg = "Over halfway there";
+    else msg = "";
+    document.getElementById("progressMsg").textContent = msg;
+  }
+
   function renderCategoryTabs() {
     const wrap = document.getElementById("categoryTabs");
     wrap.innerHTML = "";
 
     const allPill = document.createElement("button");
-    allPill.className = "cat-pill" + (activeCategory === "All" ? " active" : "");
+    allPill.className = "cat-pill";
+    allPill.style.background = activeCategory === "All" ? "#2F5233" : "white";
+    allPill.style.color = activeCategory === "All" ? "white" : "#333";
     allPill.textContent = "All";
     allPill.addEventListener("click", () => { activeCategory = "All"; renderAll(); });
     wrap.appendChild(allPill);
 
     categories.forEach(cat => {
       const pill = document.createElement("button");
-      pill.className = "cat-pill" + (activeCategory === cat ? " active" : "");
-      pill.textContent = cat;
-      pill.addEventListener("click", () => { activeCategory = cat; renderAll(); });
+      const isActive = activeCategory === cat.name;
+      pill.className = "cat-pill";
+      pill.style.background = isActive ? cat.color : "white";
+      pill.style.color = isActive ? "white" : "#333";
+      pill.textContent = cat.name;
+      pill.addEventListener("click", () => { activeCategory = cat.name; renderAll(); });
       wrap.appendChild(pill);
     });
 
     const addBtn = document.createElement("button");
     addBtn.className = "cat-add";
     addBtn.textContent = "+";
-    addBtn.addEventListener("click", () => {
-      const name = prompt("New category name:");
-      if (name && !categories.includes(name)) {
-        categories.push(name);
-        save();
-        renderCategoryTabs();
-      }
-    });
+    addBtn.addEventListener("click", openCategoryModal);
     wrap.appendChild(addBtn);
 
-    const dl = document.getElementById("categoryList");
-    dl.innerHTML = "";
-    categories.forEach(cat => {
+    const sel = document.getElementById("modalCategory");
+    sel.innerHTML = "";
+    if (categories.length === 0) {
       const opt = document.createElement("option");
-      opt.value = cat;
-      dl.appendChild(opt);
+      opt.textContent = "Add a category first";
+      opt.disabled = true;
+      sel.appendChild(opt);
+    } else {
+      categories.forEach(cat => {
+        const opt = document.createElement("option");
+        opt.value = cat.name;
+        opt.textContent = cat.name;
+        sel.appendChild(opt);
+      });
+    }
+  }
+
+  function getDayTasks() {
+    const dateStr = toDateStr(currentDate);
+    let dayTasks = tasks.filter(t => t.date === dateStr);
+    if (activeCategory !== "All") dayTasks = dayTasks.filter(t => t.category === activeCategory);
+    // incomplete first (by manual order), completed after (by manual order)
+    dayTasks.sort((a, b) => {
+      if (a.done !== b.done) return a.done ? 1 : -1;
+      return (a.order ?? 0) - (b.order ?? 0);
     });
+    return dayTasks;
   }
 
   function renderTasks() {
     const listEl = document.getElementById("taskList");
     listEl.innerHTML = "";
-    const dateStr = toDateStr(currentDate);
+    const dayTasks = getDayTasks();
 
-    let dayTasks = tasks.filter(t => t.date === dateStr);
-    if (activeCategory !== "All") {
-      dayTasks = dayTasks.filter(t => t.category === activeCategory);
-    }
-    dayTasks.sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99"));
+    renderProgress(dayTasks);
 
     if (dayTasks.length === 0) {
       const msg = document.createElement("div");
       msg.className = "empty-msg";
-      msg.textContent = "No tasks for this day.";
+      msg.innerHTML = `<div class="big">No tasks for this day.</div>`;
+      listEl.appendChild(msg);
+      return;
+    }
+    if (dayTasks.every(t => t.done)) {
+      const msg = document.createElement("div");
+      msg.className = "empty-msg";
+      msg.innerHTML = `<div class="big">🎉 Everything is done for today.</div>Go enjoy your day. (100% complete)`;
       listEl.appendChild(msg);
       return;
     }
@@ -186,15 +285,19 @@
     dayTasks.forEach(task => {
       const li = document.createElement("li");
       li.className = "task-item" + (task.done ? " done" : "");
+      li.style.borderLeftColor = categoryColor(task.category);
+      li.dataset.taskId = task.id;
 
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.checked = task.done;
-      checkbox.addEventListener("click", (e) => e.stopPropagation());
-      checkbox.addEventListener("change", () => {
-        task.done = checkbox.checked;
+      const checkbox = document.createElement("div");
+      checkbox.className = "checkbox" + (task.done ? " checked" : "");
+      checkbox.addEventListener("click", (e) => {
+        e.stopPropagation();
+        task.done = !task.done;
+        li.classList.add("completing");
+        checkbox.classList.toggle("checked", task.done);
+        li.classList.toggle("done", task.done);
         save();
-        renderTasks();
+        setTimeout(() => renderTasks(), 450);
       });
 
       const name = document.createElement("span");
@@ -204,10 +307,12 @@
       const meta = document.createElement("span");
       meta.className = "task-meta";
       const durText = formatDuration(task.duration);
-      meta.textContent = [task.time, durText].filter(Boolean).join(" · ");
+      const durIcon = durText ? "🕐 " + durText : "";
+      meta.textContent = [task.time, durIcon].filter(Boolean).join(" · ");
 
       const cat = document.createElement("span");
       cat.className = "task-category";
+      cat.style.background = categoryColor(task.category);
       cat.textContent = task.category;
 
       const del = document.createElement("button");
@@ -220,7 +325,10 @@
         renderTasks();
       });
 
-      li.addEventListener("click", () => openEditModal(task.id));
+      li.addEventListener("click", (e) => {
+        if (e.target === checkbox || e.target === del) return;
+        openEditModal(task.id);
+      });
 
       li.appendChild(checkbox);
       li.appendChild(name);
@@ -228,6 +336,21 @@
       li.appendChild(cat);
       li.appendChild(del);
       listEl.appendChild(li);
+    });
+
+    // --- SortableJS handles the actual drag feel: real element follows cursor, live reordering ---
+    if (sortableInstance) sortableInstance.destroy();
+    sortableInstance = new Sortable(listEl, {
+      animation: 150,
+      ghostClass: "sortable-ghost",
+      onEnd: () => {
+        const newOrderIds = [...listEl.children].map(li => li.dataset.taskId).filter(Boolean);
+        newOrderIds.forEach((id, index) => {
+          const t = tasks.find(t => t.id === id);
+          if (t) t.order = index;
+        });
+        save();
+      }
     });
   }
 
@@ -237,28 +360,23 @@
     renderTasks();
   }
 
-  document.getElementById("prevDay").addEventListener("click", () => {
-    currentDate.setDate(currentDate.getDate() - 1);
-    renderAll();
-  });
-  document.getElementById("nextDay").addEventListener("click", () => {
-    currentDate.setDate(currentDate.getDate() + 1);
-    renderAll();
-  });
+  document.getElementById("prevDay").addEventListener("click", () => { currentDate.setDate(currentDate.getDate() - 1); renderAll(); });
+  document.getElementById("nextDay").addEventListener("click", () => { currentDate.setDate(currentDate.getDate() + 1); renderAll(); });
 
   const overlay = document.getElementById("modalOverlay");
   const deleteRow = document.getElementById("deleteRow");
 
   function openAddModal() {
+    if (categories.length === 0) { alert("Add a category first using the + next to the category tabs."); return; }
     editingTaskId = null;
     document.getElementById("modalTitle").textContent = "Add Task";
     document.getElementById("modalName").value = "";
-    document.getElementById("modalCategory").value = "";
     document.getElementById("modalTime").value = "";
     document.getElementById("modalDuration").value = "";
     document.getElementById("modalDate").value = toDateStr(currentDate);
     deleteRow.style.display = "none";
     overlay.classList.add("open");
+    setTimeout(() => document.getElementById("modalName").focus(), 50);
   }
 
   function openEditModal(taskId) {
@@ -273,6 +391,7 @@
     document.getElementById("modalDate").value = task.date;
     deleteRow.style.display = "flex";
     overlay.classList.add("open");
+    setTimeout(() => document.getElementById("modalName").focus(), 50);
   }
 
   document.getElementById("openAdd").addEventListener("click", openAddModal);
@@ -285,27 +404,67 @@
     renderAll();
   });
 
-  document.getElementById("saveAdd").addEventListener("click", () => {
+  function submitTaskForm() {
     const name = document.getElementById("modalName").value.trim();
-    const category = document.getElementById("modalCategory").value.trim() || "General";
+    const category = document.getElementById("modalCategory").value;
     const time = document.getElementById("modalTime").value;
     const duration = document.getElementById("modalDuration").value;
     const date = document.getElementById("modalDate").value || toDateStr(currentDate);
-
-    if (!name) return;
+    if (!name || !category) return;
 
     if (editingTaskId) {
       const task = tasks.find(t => t.id === editingTaskId);
       task.name = name; task.category = category; task.time = time; task.duration = duration; task.date = date;
     } else {
-      tasks.push({ id: Date.now().toString(), name, category, time, duration, date, done: false });
+      const dateTasks = tasks.filter(t => t.date === date);
+      const maxOrder = dateTasks.length ? Math.max(...dateTasks.map(t => t.order ?? 0)) : -1;
+      tasks.push({ id: Date.now().toString(), name, category, time, duration, date, done: false, order: maxOrder + 1 });
     }
-
-    if (!categories.includes(category)) categories.push(category);
-
     save();
     overlay.classList.remove("open");
     renderAll();
+  }
+
+  document.getElementById("saveAdd").addEventListener("click", submitTaskForm);
+
+  overlay.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitTaskForm();
+    if (e.key === "Escape") overlay.classList.remove("open");
+  });
+
+  const catOverlay = document.getElementById("catModalOverlay");
+
+  function openCategoryModal() {
+    document.getElementById("catName").value = "";
+    selectedColor = PALETTE[0];
+    const swatchWrap = document.getElementById("colorSwatches");
+    swatchWrap.innerHTML = "";
+    PALETTE.forEach(color => {
+      const sw = document.createElement("div");
+      sw.className = "swatch" + (color === selectedColor ? " selected" : "");
+      sw.style.background = color;
+      sw.addEventListener("click", () => {
+        selectedColor = color;
+        document.querySelectorAll(".swatch").forEach(s => s.classList.remove("selected"));
+        sw.classList.add("selected");
+      });
+      swatchWrap.appendChild(sw);
+    });
+    catOverlay.classList.add("open");
+    setTimeout(() => document.getElementById("catName").focus(), 50);
+  }
+
+  document.getElementById("catCancel").addEventListener("click", () => catOverlay.classList.remove("open"));
+  document.getElementById("catSave").addEventListener("click", () => {
+    const name = document.getElementById("catName").value.trim();
+    if (!name || categories.some(c => c.name === name)) { catOverlay.classList.remove("open"); return; }
+    categories.push({ name, color: selectedColor });
+    save();
+    catOverlay.classList.remove("open");
+    renderCategoryTabs();
+  });
+  catOverlay.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") catOverlay.classList.remove("open");
   });
 
   renderAll();
