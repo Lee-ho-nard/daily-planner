@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daily Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Space Grotesk", system-ui, sans-serif; background: #f4f5f7; color: #1a1d26; padding: 1.5rem 1rem; }
+  .container { max-width: 480px; margin: 0 auto; }
+
+  .date-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; }
+  .date-nav button { background: white; border: 1px solid #ddd; border-radius: 8px; width: 36px; height: 36px; font-size: 1rem; cursor: pointer; }
+  .date-display { text-align: center; }
+  .date-display .weekday { font-weight: 600; font-size: 1.1rem; }
+  .date-display .fulldate { font-size: 0.8rem; color: #777; }
+
+  .category-tabs { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; flex-wrap: wrap; align-items: center; }
+  .cat-pill { background: white; border: 1px solid #ddd; border-radius: 999px; padding: 0.4rem 0.9rem; font-size: 0.85rem; cursor: pointer; }
+  .cat-pill.active { background: #2F5233; color: white; border-color: #2F5233; }
+  .cat-add { width: 32px; height: 32px; border-radius: 50%; background: white; border: 1px solid #ddd; font-size: 1.1rem; cursor: pointer; }
+
+  #taskList { list-style: none; margin-bottom: 5rem; }
+  .task-item { background: white; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.75rem; cursor: pointer; }
+  .task-item.done .task-name { text-decoration: line-through; opacity: 0.5; }
+  .task-name { flex: 1; }
+  .task-meta { font-size: 0.75rem; color: #777; white-space: nowrap; }
+  .task-category { font-size: 0.7rem; background: rgba(47,82,51,0.1); color: #2F5233; padding: 0.15rem 0.5rem; border-radius: 999px; }
+  .delete-btn { background: none; border: none; color: #999; cursor: pointer; font-size: 1rem; }
+  .empty-msg { text-align: center; color: #999; padding: 2rem 0; font-size: 0.9rem; }
+
+  .fab { position: fixed; bottom: 1.5rem; right: 1.5rem; width: 56px; height: 56px; border-radius: 50%; background: #2F5233; color: white; font-size: 1.75rem; border: none; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); align-items: center; justify-content: center; padding: 1rem; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: white; border-radius: 12px; padding: 1.5rem; width: 100%; max-width: 360px; max-height: 90vh; overflow-y: auto; }
+  .modal h3 { margin-bottom: 1rem; }
+  .modal label { display: block; font-size: 0.8rem; color: #555; margin: 0.75rem 0 0.25rem; }
+  .modal input, .modal select { width: 100%; padding: 0.5rem; border-radius: 6px; border: 1px solid #ddd; font-size: 0.9rem; font-family: inherit; }
+  .modal-row { display: flex; gap: 0.5rem; }
+  .modal-row > div { flex: 1; }
+  .modal-actions { display: flex; gap: 0.5rem; margin-top: 1.25rem; }
+  .modal-actions button { flex: 1; padding: 0.6rem; border-radius: 8px; border: none; cursor: pointer; font-size: 0.9rem; font-family: inherit; }
+  .btn-cancel { background: #eee; }
+  .btn-save { background: #2F5233; color: white; }
+  .btn-delete-modal { background: #d9534f; color: white; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="date-nav">
+    <button id="prevDay">←</button>
+    <div class="date-display">
+      <div class="weekday" id="weekday"></div>
+      <div class="fulldate" id="fulldate"></div>
+    </div>
+    <button id="nextDay">→</button>
+  </div>
+
+  <div class="category-tabs" id="categoryTabs"></div>
+
+  <ul id="taskList"></ul>
+</div>
+
+<button class="fab" id="openAdd">+</button>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h3 id="modalTitle">Add Task</h3>
+    <label>Task name</label>
+    <input type="text" id="modalName" placeholder="e.g. Read 30 pages">
+    <label>Category</label>
+    <input type="text" id="modalCategory" list="categoryList" placeholder="e.g. Work">
+    <datalist id="categoryList"></datalist>
+    <div class="modal-row">
+      <div>
+        <label>Time (optional)</label>
+        <input type="time" id="modalTime">
+      </div>
+      <div>
+        <label>Duration, minutes (optional)</label>
+        <input type="number" id="modalDuration" placeholder="e.g. 120" min="0" step="5">
+      </div>
+    </div>
+    <label>Date</label>
+    <input type="date" id="modalDate">
+    <div class="modal-actions">
+      <button class="btn-cancel" id="cancelAdd">Cancel</button>
+      <button class="btn-save" id="saveAdd">Save</button>
+    </div>
+    <div class="modal-actions" id="deleteRow" style="display:none; margin-top: 0.5rem;">
+      <button class="btn-delete-modal" id="deleteFromModal">Delete Task</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let tasks = JSON.parse(localStorage.getItem("tasks")) || [];
+  let categories = JSON.parse(localStorage.getItem("categories")) || [];
+  let currentDate = new Date();
+  let activeCategory = "All";
+  let editingTaskId = null;
+
+  function toDateStr(d) { return d.toISOString().split("T")[0]; }
+
+  function save() {
+    localStorage.setItem("tasks", JSON.stringify(tasks));
+    localStorage.setItem("categories", JSON.stringify(categories));
+  }
+
+  function formatDuration(mins) {
+    const m = parseInt(mins);
+    if (!m) return "";
+    if (m < 60) return m + "m";
+    const h = Math.floor(m / 60);
+    const rem = m % 60;
+    return rem ? h + "h " + rem + "m" : h + "h";
+  }
+
+  function renderDate() {
+    document.getElementById("weekday").textContent = currentDate.toLocaleDateString(undefined, { weekday: "long" });
+    document.getElementById("fulldate").textContent = currentDate.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
+  }
+
+  function renderCategoryTabs() {
+    const wrap = document.getElementById("categoryTabs");
+    wrap.innerHTML = "";
+
+    const allPill = document.createElement("button");
+    allPill.className = "cat-pill" + (activeCategory === "All" ? " active" : "");
+    allPill.textContent = "All";
+    allPill.addEventListener("click", () => { activeCategory = "All"; renderAll(); });
+    wrap.appendChild(allPill);
+
+    categories.forEach(cat => {
+      const pill = document.createElement("button");
+      pill.className = "cat-pill" + (activeCategory === cat ? " active" : "");
+      pill.textContent = cat;
+      pill.addEventListener("click", () => { activeCategory = cat; renderAll(); });
+      wrap.appendChild(pill);
+    });
+
+    const addBtn = document.createElement("button");
+    addBtn.className = "cat-add";
+    addBtn.textContent = "+";
+    addBtn.addEventListener("click", () => {
+      const name = prompt("New category name:");
+      if (name && !categories.includes(name)) {
+        categories.push(name);
+        save();
+        renderCategoryTabs();
+      }
+    });
+    wrap.appendChild(addBtn);
+
+    const dl = document.getElementById("categoryList");
+    dl.innerHTML = "";
+    categories.forEach(cat => {
+      const opt = document.createElement("option");
+      opt.value = cat;
+      dl.appendChild(opt);
+    });
+  }
+
+  function renderTasks() {
+    const listEl = document.getElementById("taskList");
+    listEl.innerHTML = "";
+    const dateStr = toDateStr(currentDate);
+
+    let dayTasks = tasks.filter(t => t.date === dateStr);
+    if (activeCategory !== "All") {
+      dayTasks = dayTasks.filter(t => t.category === activeCategory);
+    }
+    dayTasks.sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99"));
+
+    if (dayTasks.length === 0) {
+      const msg = document.createElement("div");
+      msg.className = "empty-msg";
+      msg.textContent = "No tasks for this day.";
+      listEl.appendChild(msg);
+      return;
+    }
+
+    dayTasks.forEach(task => {
+      const li = document.createElement("li");
+      li.className = "task-item" + (task.done ? " done" : "");
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = task.done;
+      checkbox.addEventListener("click", (e) => e.stopPropagation());
+      checkbox.addEventListener("change", () => {
+        task.done = checkbox.checked;
+        save();
+        renderTasks();
+      });
+
+      const name = document.createElement("span");
+      name.className = "task-name";
+      name.textContent = task.name;
+
+      const meta = document.createElement("span");
+      meta.className = "task-meta";
+      const durText = formatDuration(task.duration);
+      meta.textContent = [task.time, durText].filter(Boolean).join(" · ");
+
+      const cat = document.createElement("span");
+      cat.className = "task-category";
+      cat.textContent = task.category;
+
+      const del = document.createElement("button");
+      del.className = "delete-btn";
+      del.textContent = "✕";
+      del.addEventListener("click", (e) => {
+        e.stopPropagation();
+        tasks = tasks.filter(t => t.id !== task.id);
+        save();
+        renderTasks();
+      });
+
+      li.addEventListener("click", () => openEditModal(task.id));
+
+      li.appendChild(checkbox);
+      li.appendChild(name);
+      if (meta.textContent) li.appendChild(meta);
+      li.appendChild(cat);
+      li.appendChild(del);
+      listEl.appendChild(li);
+    });
+  }
+
+  function renderAll() {
+    renderDate();
+    renderCategoryTabs();
+    renderTasks();
+  }
+
+  document.getElementById("prevDay").addEventListener("click", () => {
+    currentDate.setDate(currentDate.getDate() - 1);
+    renderAll();
+  });
+  document.getElementById("nextDay").addEventListener("click", () => {
+    currentDate.setDate(currentDate.getDate() + 1);
+    renderAll();
+  });
+
+  const overlay = document.getElementById("modalOverlay");
+  const deleteRow = document.getElementById("deleteRow");
+
+  function openAddModal() {
+    editingTaskId = null;
+    document.getElementById("modalTitle").textContent = "Add Task";
+    document.getElementById("modalName").value = "";
+    document.getElementById("modalCategory").value = "";
+    document.getElementById("modalTime").value = "";
+    document.getElementById("modalDuration").value = "";
+    document.getElementById("modalDate").value = toDateStr(currentDate);
+    deleteRow.style.display = "none";
+    overlay.classList.add("open");
+  }
+
+  function openEditModal(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    editingTaskId = taskId;
+    document.getElementById("modalTitle").textContent = "Edit Task";
+    document.getElementById("modalName").value = task.name;
+    document.getElementById("modalCategory").value = task.category;
+    document.getElementById("modalTime").value = task.time || "";
+    document.getElementById("modalDuration").value = task.duration || "";
+    document.getElementById("modalDate").value = task.date;
+    deleteRow.style.display = "flex";
+    overlay.classList.add("open");
+  }
+
+  document.getElementById("openAdd").addEventListener("click", openAddModal);
+  document.getElementById("cancelAdd").addEventListener("click", () => overlay.classList.remove("open"));
+
+  document.getElementById("deleteFromModal").addEventListener("click", () => {
+    tasks = tasks.filter(t => t.id !== editingTaskId);
+    save();
+    overlay.classList.remove("open");
+    renderAll();
+  });
+
+  document.getElementById("saveAdd").addEventListener("click", () => {
+    const name = document.getElementById("modalName").value.trim();
+    const category = document.getElementById("modalCategory").value.trim() || "General";
+    const time = document.getElementById("modalTime").value;
+    const duration = document.getElementById("modalDuration").value;
+    const date = document.getElementById("modalDate").value || toDateStr(currentDate);
+
+    if (!name) return;
+
+    if (editingTaskId) {
+      const task = tasks.find(t => t.id === editingTaskId);
+      task.name = name; task.category = category; task.time = time; task.duration = duration; task.date = date;
+    } else {
+      tasks.push({ id: Date.now().toString(), name, category, time, duration, date, done: false });
+    }
+
+    if (!categories.includes(category)) categories.push(category);
+
+    save();
+    overlay.classList.remove("open");
+    renderAll();
+  });
+
+  renderAll();
+</script>
+</body>
+</html>
