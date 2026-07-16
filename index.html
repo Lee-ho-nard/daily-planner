@@ -146,6 +146,22 @@
     </div>
   </div>
 </div>
+<div class="modal-overlay" id="editCatModalOverlay">
+  <div class="modal">
+    <h3>Edit Category</h3>
+    <label>Name</label>
+    <input type="text" id="editCatName">
+    <label>Color</label>
+    <div class="color-swatches" id="editColorSwatches"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="editCatCancel">Cancel</button>
+      <button class="btn-save" id="editCatSave">Save</button>
+    </div>
+    <div class="modal-actions" style="margin-top:0.5rem;">
+      <button class="btn-delete-modal" id="editCatDelete">Delete Category</button>
+    </div>
+  </div>
+</div>
 
 <script>
   let tasks = JSON.parse(localStorage.getItem("tasks")) || [];
@@ -160,7 +176,7 @@
   let selectedColor = null;
   let sortableInstance = null;
 
-  const PALETTE = ["#2F5233", "#B5533C", "#3C6E9C", "#8A5FBF", "#C7862B", "#4A9B8E", "#B0468C", "#5C6370"];
+  const PALETTE = ["#B8D8BA", "#F4C7A8", "#A8C8E8", "#D4B8E8", "#F4D48A", "#9EDAD1", "#F0B8D4", "#C5C9D4"];
 
   function toDateStr(d) { return d.toISOString().split("T")[0]; }
   function save() {
@@ -213,14 +229,21 @@
     allPill.addEventListener("click", () => { activeCategory = "All"; renderAll(); });
     wrap.appendChild(allPill);
 
+    const dateStr = toDateStr(currentDate);
+
     categories.forEach(cat => {
       const pill = document.createElement("button");
       const isActive = activeCategory === cat.name;
+      const count = tasks.filter(t => t.date === dateStr && t.category === cat.name).length;
       pill.className = "cat-pill";
       pill.style.background = isActive ? cat.color : "white";
-      pill.style.color = isActive ? "white" : "#333";
-      pill.textContent = cat.name;
+      pill.style.color = isActive ? "#1a1d26" : "#333";
+      pill.textContent = count > 0 ? `${cat.name} (${count})` : cat.name;
       pill.addEventListener("click", () => { activeCategory = cat.name; renderAll(); });
+      pill.addEventListener("dblclick", (e) => {
+        e.stopPropagation();
+        openEditCategoryModal(cat.name);
+      });
       wrap.appendChild(pill);
     });
 
@@ -557,6 +580,64 @@
   deleteRow.style.display = "none";
   overlay.classList.add("open");
 }
+// --- Category edit/delete ---
+let editingCategoryName = null;
+let editingCategoryColor = null;
+const editCatOverlay = document.getElementById("editCatModalOverlay");
+
+function openEditCategoryModal(catName) {
+  const cat = categories.find(c => c.name === catName);
+  if (!cat) return;
+  editingCategoryName = cat.name;
+  editingCategoryColor = cat.color;
+
+  document.getElementById("editCatName").value = cat.name;
+  const swatchWrap = document.getElementById("editColorSwatches");
+  swatchWrap.innerHTML = "";
+  PALETTE.forEach(color => {
+    const sw = document.createElement("div");
+    sw.className = "swatch" + (color === editingCategoryColor ? " selected" : "");
+    sw.style.background = color;
+    sw.addEventListener("click", () => {
+      editingCategoryColor = color;
+      swatchWrap.querySelectorAll(".swatch").forEach(s => s.classList.remove("selected"));
+      sw.classList.add("selected");
+    });
+    swatchWrap.appendChild(sw);
+  });
+
+  editCatOverlay.classList.add("open");
+}
+
+document.getElementById("editCatCancel").addEventListener("click", () => editCatOverlay.classList.remove("open"));
+
+document.getElementById("editCatSave").addEventListener("click", () => {
+  const newName = document.getElementById("editCatName").value.trim();
+  if (!newName) return;
+
+  const cat = categories.find(c => c.name === editingCategoryName);
+  const oldName = cat.name;
+  cat.name = newName;
+  cat.color = editingCategoryColor;
+
+  tasks.forEach(t => { if (t.category === oldName) t.category = newName; });
+  if (activeCategory === oldName) activeCategory = newName;
+
+  save();
+  editCatOverlay.classList.remove("open");
+  renderAll();
+});
+
+document.getElementById("editCatDelete").addEventListener("click", () => {
+  if (!confirm(`Delete "${editingCategoryName}"? Tasks in this category will keep the category name but it won't be selectable anymore.`)) return;
+
+  categories = categories.filter(c => c.name !== editingCategoryName);
+  if (activeCategory === editingCategoryName) activeCategory = "All";
+
+  save();
+  editCatOverlay.classList.remove("open");
+  renderAll();
+});
 renderAll();
 </script>
 </body>
