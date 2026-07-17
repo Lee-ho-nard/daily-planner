@@ -240,9 +240,34 @@
     <div class="weekday-picker" id="goalWeekdayPicker"></div>
     <label>Time (optional)</label>
     <input type="time" id="goalTime">
+
+    <label>What will you check off each day?</label>
+    <input type="text" id="goalCheckoff" placeholder="e.g. Watch one episode">
+
+    <label>Why does this goal matter to you?</label>
+    <input type="text" id="goalWhy" placeholder="Be specific">
+
+    <label>How do you plan on achieving it?</label>
+    <input type="text" id="goalPlan" placeholder="Be specific">
+
     <div class="modal-actions">
       <button class="btn-cancel" id="goalCancel">Cancel</button>
       <button class="btn-save" id="goalSave">Save</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="goalViewModalOverlay">
+  <div class="modal">
+    <h3 id="goalViewName"></h3>
+    <p style="font-size:0.85rem; color:#555; margin-top:0.5rem;" id="goalViewCheckoff"></p>
+    <p style="font-size:0.85rem; color:#777; margin-top:0.75rem;"><strong>Why:</strong> <span id="goalViewWhy"></span></p>
+    <p style="font-size:0.85rem; color:#777; margin-top:0.5rem;"><strong>Plan:</strong> <span id="goalViewPlan"></span></p>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="goalViewClose">Close</button>
+      <button class="btn-save" id="goalViewEdit">Edit</button>
+    </div>
+    <div class="modal-actions" style="margin-top:0.5rem;">
+      <button class="btn-delete-modal" id="goalViewDelete">Delete Goal</button>
     </div>
   </div>
 </div>
@@ -385,8 +410,18 @@
       const pctEl = document.createElement("div");
       pctEl.className = "goal-pct";
       pctEl.textContent = pct + "%";
+
+      const menuBtn = document.createElement("button");
+      menuBtn.textContent = "⋮";
+      menuBtn.style.cssText = "background:none;border:none;font-size:1.1rem;cursor:pointer;color:#999;padding:0 0.3rem;";
+      menuBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openGoalViewModal(goal.id);
+      });
+
       top.appendChild(name);
       top.appendChild(pctEl);
+      top.appendChild(menuBtn);
 
       const sub = document.createElement("div");
       sub.className = "goal-sub";
@@ -545,7 +580,7 @@
 
       const name = document.createElement("span");
       name.className = "task-name";
-      name.textContent = task.name;
+      name.textContent = task.checkoffLabel || task.name;
 
       const meta = document.createElement("span");
       meta.className = "task-meta";
@@ -972,6 +1007,7 @@
 
  // --- Dedicated Add Goal flow ---
  let goalSelectedWeekdays = [];
+  let editingGoalId = null;
   const goalOverlay = document.getElementById("goalModalOverlay");
   const goalWeekdayPicker = document.getElementById("goalWeekdayPicker");
 
@@ -1035,11 +1071,24 @@
       ? { type: "daily" }
       : { type: "weekly", days: [...goalSelectedWeekdays].sort(), interval: 1 };
 
-    tasks.push({
-      id: Date.now().toString(), name, category, time, duration: "",
-      date: startDate, endDate, done: false, order: 0,
-      recurrence, completedDates: [], isGoal: true
-    });
+      const checkoffLabel = document.getElementById("goalCheckoff").value.trim() || name;
+    const why = document.getElementById("goalWhy").value.trim();
+    const plan = document.getElementById("goalPlan").value.trim();
+
+    if (editingGoalId) {
+      const g = tasks.find(t => t.id === editingGoalId);
+      g.name = name; g.category = category; g.time = time;
+      g.checkoffLabel = checkoffLabel; g.why = why; g.plan = plan;
+      g.date = startDate; g.endDate = endDate; g.recurrence = recurrence;
+      editingGoalId = null;
+    } else {
+      tasks.push({
+        id: Date.now().toString(), name, category, time, duration: "",
+        date: startDate, endDate, done: false, order: 0,
+        recurrence, completedDates: [], isGoal: true,
+        checkoffLabel, why, plan
+      });
+    }
 
     save();
     goalOverlay.classList.remove("open");
@@ -1050,6 +1099,59 @@
     if (e.key === "Enter") document.getElementById("goalSave").click();
     if (e.key === "Escape") goalOverlay.classList.remove("open");
   });
+  const goalViewOverlay = document.getElementById("goalViewModalOverlay");
+
+function openGoalViewModal(goalId) {
+  const g = tasks.find(t => t.id === goalId);
+  if (!g) return;
+  document.getElementById("goalViewName").textContent = g.name;
+  document.getElementById("goalViewCheckoff").textContent = "Daily check-off: " + (g.checkoffLabel || g.name);
+  document.getElementById("goalViewWhy").textContent = g.why || "—";
+  document.getElementById("goalViewPlan").textContent = g.plan || "—";
+  editingGoalId = goalId;
+  goalViewOverlay.classList.add("open");
+}
+
+document.getElementById("goalViewClose").addEventListener("click", () => {
+  goalViewOverlay.classList.remove("open");
+});
+
+document.getElementById("goalViewDelete").addEventListener("click", () => {
+  if (!confirm("Delete this goal entirely?")) return;
+  tasks = tasks.filter(t => t.id !== editingGoalId);
+  save();
+  goalViewOverlay.classList.remove("open");
+  renderGoals();
+});
+
+document.getElementById("goalViewEdit").addEventListener("click", () => {
+  const g = tasks.find(t => t.id === editingGoalId);
+  goalViewOverlay.classList.remove("open");
+
+  document.getElementById("goalName").value = g.name;
+  document.getElementById("goalStartDate").value = g.date;
+  const length = Math.round((new Date(g.endDate) - new Date(g.date)) / 86400000) + 1;
+  document.getElementById("goalLength").value = length;
+  document.getElementById("goalTime").value = g.time || "";
+  document.getElementById("goalCheckoff").value = g.checkoffLabel || "";
+  document.getElementById("goalWhy").value = g.why || "";
+  document.getElementById("goalPlan").value = g.plan || "";
+
+  goalSelectedWeekdays = g.recurrence.type === "daily" ? [0,1,2,3,4,5,6] : [...g.recurrence.days];
+  buildGoalWeekdayPicker();
+
+  const sel = document.getElementById("goalCategory");
+  sel.innerHTML = "";
+  categories.forEach(cat => {
+    const opt = document.createElement("option");
+    opt.value = cat.name;
+    opt.textContent = cat.name;
+    sel.appendChild(opt);
+  });
+  sel.value = g.category;
+
+  goalOverlay.classList.add("open");
+});
  renderAll();
 </script>
 </body>
