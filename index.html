@@ -12,6 +12,10 @@
   body { font-family: "Space Grotesk", system-ui, sans-serif; background: #f4f5f7; color: #1a1d26; padding: 1.5rem 1rem; }
   .container { max-width: 480px; margin: 0 auto; }
 
+  .view-tabs { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; background: #e9ebee; padding: 0.3rem; border-radius: 10px; }
+  .view-tab { flex: 1; text-align: center; padding: 0.5rem; border-radius: 7px; border: none; background: transparent; cursor: pointer; font-family: inherit; font-size: 0.9rem; color: #555; }
+  .view-tab.active { background: white; color: #1a1d26; font-weight: 500; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
   .date-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
   .date-nav button { background: white; border: 1px solid #ddd; border-radius: 8px; width: 36px; height: 36px; font-size: 1rem; cursor: pointer; }
   .date-display { text-align: center; }
@@ -24,10 +28,10 @@
   .progress-bar-fill { background: #2F5233; height: 100%; border-radius: 999px; transition: width 0.4s ease; }
 
   .category-tabs { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; flex-wrap: wrap; align-items: center; }
-  .cat-pill { border: 1px solid transparent; border-radius: 999px; padding: 0.4rem 0.9rem; font-size: 0.85rem; cursor: pointer; background: white; color: #333; transition: background 0.15s, color 0.15s; }
+  .cat-pill { position: relative; border: 1px solid transparent; border-radius: 999px; padding: 0.4rem 0.9rem; font-size: 0.85rem; cursor: pointer; background: white; color: #333; transition: background 0.15s, color 0.15s; }
   .cat-add { width: 32px; height: 32px; border-radius: 50%; background: white; border: 1px solid #ddd; font-size: 1.1rem; cursor: pointer; }
 
-  #taskList { list-style: none; margin-bottom: 5rem; }
+  #taskList, #goalsList { list-style: none; margin-bottom: 5rem; }
   .task-item {
     background: white; border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 0.5rem;
     display: flex; align-items: center; gap: 0.75rem; cursor: grab; border-left: 4px solid #ccc;
@@ -39,7 +43,7 @@
   .task-item.done .task-name { text-decoration: line-through; opacity: 0.5; }
   .task-name { flex: 1; font-size: 0.98rem; }
   .task-meta { font-size: 0.75rem; color: #777; white-space: nowrap; display: flex; align-items: center; gap: 0.25rem; }
-  .task-category { font-size: 0.68rem; padding: 0.15rem 0.5rem; border-radius: 999px; color: white; }
+  .task-category { font-size: 0.68rem; padding: 0.15rem 0.5rem; border-radius: 999px; color: #1a1d26; }
   .delete-btn { background: none; border: none; color: #bbb; cursor: pointer; font-size: 1rem; }
   .delete-btn:hover { color: #d9534f; }
 
@@ -75,34 +79,70 @@
   .color-swatches { display: flex; gap: 0.5rem; margin-top: 0.4rem; flex-wrap: wrap; }
   .swatch { width: 28px; height: 28px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
   .swatch.selected { border-color: #1a1d26; }
+
+  .weekday-picker { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
+  .weekday-btn { width: 34px; height: 34px; border-radius: 50%; border: 1px solid #ddd; background: white; font-size: 0.75rem; cursor: pointer; }
+  .weekday-btn.selected { background: #2F5233; color: white; border-color: #2F5233; }
+  .repeat-extra { display: none; }
+  .repeat-extra.show { display: block; }
+
+  .goal-checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem; }
+  .goal-checkbox-row input { width: auto; }
+  .goal-checkbox-row label { margin: 0; font-size: 0.85rem; color: #333; }
+
+  .goal-card { background: white; border-radius: 10px; padding: 1rem; margin-bottom: 0.75rem; border-left: 4px solid #ccc; }
+  .goal-card-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.25rem; }
+  .goal-name { font-weight: 600; font-size: 1rem; }
+  .goal-pct { font-size: 0.85rem; color: #555; }
+  .goal-sub { font-size: 0.75rem; color: #999; margin-bottom: 0.6rem; }
+  .goal-dots { display: flex; gap: 4px; flex-wrap: wrap; }
+  .goal-dot { width: 16px; height: 16px; border-radius: 4px; background: #eee; border: 1px solid #ddd; }
+  .goal-dot.done { border: none; }
+  .goal-dot.future { opacity: 0.4; border-style: dashed; }
 </style>
 </head>
 <body>
 <div class="container">
-  <div class="date-nav">
-    <button id="prevDay">←</button>
-    <div class="date-display">
-      <div class="weekday" id="weekday"></div>
-      <div class="fulldate" id="fulldate"></div>
-    </div>
-    <button id="nextDay">→</button>
+
+  <div class="view-tabs">
+    <button class="view-tab active" id="tabPlanner">Planner</button>
+    <button class="view-tab" id="tabGoals">Goals</button>
   </div>
 
-  <div class="progress-wrap" id="progressWrap">
-    <div class="progress-text">
-      <span id="progressCount"></span>
-      <span id="progressMsg"></span>
+  <div id="plannerView">
+    <div class="date-nav">
+      <button id="prevDay">←</button>
+      <div class="date-display">
+        <div class="weekday" id="weekday"></div>
+        <div class="fulldate" id="fulldate"></div>
+      </div>
+      <button id="nextDay">→</button>
     </div>
-    <div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill"></div></div>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-text">
+        <span id="progressCount"></span>
+        <span id="progressMsg"></span>
+      </div>
+      <div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill"></div></div>
+    </div>
+
+    <div class="category-tabs" id="categoryTabs"></div>
+
+    <ul id="taskList"></ul>
   </div>
 
-  <div class="category-tabs" id="categoryTabs"></div>
+  <div id="goalsView" style="display:none;">
+    <ul id="goalsList"></ul>
+  </div>
 
-  <ul id="taskList"></ul>
+
 </div>
 
 <button class="fab" id="openAdd">+</button>
+<button class="fab" id="openAddGoal" style="display:none;">+</button>
 <button class="mic-fab" id="micBtn">🎤</button>
+<button class="mic-fab" id="todayBtn" style="right: 9.5rem;">•</button>
 
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
@@ -123,6 +163,28 @@
     </div>
     <label>Date</label>
     <input type="date" id="modalDate">
+
+    <label>Repeat</label>
+    <select id="modalRepeat">
+      <option value="none">Does not repeat</option>
+      <option value="daily">Every day</option>
+      <option value="weekly">Weekly, on selected days</option>
+    </select>
+
+    <div class="repeat-extra" id="repeatExtra">
+      <label>On these days</label>
+      <div class="weekday-picker" id="weekdayPicker"></div>
+      <label>Every how many weeks</label>
+      <input type="number" id="modalInterval" min="1" value="1">
+      <label>End date (optional)</label>
+      <input type="date" id="modalEndDate">
+
+      <div class="goal-checkbox-row">
+        <input type="checkbox" id="modalIsGoal">
+        <label for="modalIsGoal">Track as a goal</label>
+      </div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn-cancel" id="cancelAdd">Cancel</button>
       <button class="btn-save" id="saveAdd">Save</button>
@@ -146,6 +208,7 @@
     </div>
   </div>
 </div>
+
 <div class="modal-overlay" id="editCatModalOverlay">
   <div class="modal">
     <h3>Edit Category</h3>
@@ -162,11 +225,31 @@
     </div>
   </div>
 </div>
+<div class="modal-overlay" id="goalModalOverlay">
+  <div class="modal">
+    <h3>Add Goal</h3>
+    <label>Goal name</label>
+    <input type="text" id="goalName" placeholder="e.g. Play Fortnite">
+    <label>Category</label>
+    <select id="goalCategory"></select>
+    <label>Start date</label>
+    <input type="date" id="goalStartDate">
+    <label>Goal length, in days</label>
+    <input type="number" id="goalLength" min="1" placeholder="e.g. 14">
+    <label>Which days does this task appear on</label>
+    <div class="weekday-picker" id="goalWeekdayPicker"></div>
+    <label>Time (optional)</label>
+    <input type="time" id="goalTime">
+    <div class="modal-actions">
+      <button class="btn-cancel" id="goalCancel">Cancel</button>
+      <button class="btn-save" id="goalSave">Save</button>
+    </div>
+  </div>
+</div>
 
 <script>
   let tasks = JSON.parse(localStorage.getItem("tasks")) || [];
   let categories = JSON.parse(localStorage.getItem("categories")) || [];
-
   categories = categories.filter(c => c && typeof c === "object" && c.name && c.color);
   localStorage.setItem("categories", JSON.stringify(categories));
 
@@ -175,17 +258,25 @@
   let editingTaskId = null;
   let selectedColor = null;
   let sortableInstance = null;
+  let selectedWeekdays = [];
+  let currentView = "planner";
 
   const PALETTE = ["#B8D8BA", "#F4C7A8", "#A8C8E8", "#D4B8E8", "#F4D48A", "#9EDAD1", "#F0B8D4", "#C5C9D4"];
+  const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
 
-  function toDateStr(d) { return d.toISOString().split("T")[0]; }
+  function toDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
   function save() {
     localStorage.setItem("tasks", JSON.stringify(tasks));
     localStorage.setItem("categories", JSON.stringify(categories));
   }
   function categoryColor(name) {
     const cat = categories.find(c => c.name === name);
-    return cat ? cat.color : "#999";
+    return cat ? cat.color : "#ddd";
   }
   function formatDuration(mins) {
     const m = parseInt(mins);
@@ -196,24 +287,162 @@
     return rem ? h + "h " + rem + "m" : h + "h";
   }
 
+  function occursOn(t, dateObj) {
+    const dateStr = toDateStr(dateObj);
+    if (!t.recurrence || t.recurrence.type === "none") {
+      return t.date === dateStr;
+    }
+    if (dateStr < t.date) return false;
+    if (t.endDate && dateStr > t.endDate) return false;
+    if (t.recurrence.type === "daily") return true;
+    if (t.recurrence.type === "weekly") {
+      const dayIndex = dateObj.getDay();
+      if (!t.recurrence.days.includes(dayIndex)) return false;
+      const startDate = new Date(t.date + "T00:00:00");
+      const msPerDay = 86400000;
+      const daysDiff = Math.floor((dateObj - startDate) / msPerDay);
+      const weeksDiff = Math.floor(daysDiff / 7);
+      const interval = t.recurrence.interval || 1;
+      return weeksDiff % interval === 0;
+    }
+    return false;
+  }
+
+  function getTasksForDate(dateObj, categoryFilter) {
+    const dateStr = toDateStr(dateObj);
+    let list = tasks.filter(t => occursOn(t, dateObj));
+    if (categoryFilter && categoryFilter !== "All") {
+      list = list.filter(t => t.category === categoryFilter);
+    }
+    return list.map(t => {
+      const isRecurring = t.recurrence && t.recurrence.type !== "none";
+      const done = isRecurring ? (t.completedDates || []).includes(dateStr) : t.done;
+      return { ...t, occurrenceDate: dateStr, occurrenceDone: done, isRecurring };
+    }).sort((a, b) => {
+      if (a.occurrenceDone !== b.occurrenceDone) return a.occurrenceDone ? 1 : -1;
+      return (a.order ?? 0) - (b.order ?? 0);
+    });
+  }
+
+  // --- View switching ---
+  document.getElementById("tabPlanner").addEventListener("click", () => {
+    currentView = "planner";
+    document.getElementById("tabPlanner").classList.add("active");
+    document.getElementById("tabGoals").classList.remove("active");
+    document.getElementById("plannerView").style.display = "block";
+    document.getElementById("goalsView").style.display = "none";
+    document.getElementById("openAdd").style.display = "block";
+    document.getElementById("openAddGoal").style.display = "none";
+  });
+  document.getElementById("tabGoals").addEventListener("click", () => {
+    currentView = "goals";
+    document.getElementById("tabGoals").classList.add("active");
+    document.getElementById("tabPlanner").classList.remove("active");
+    document.getElementById("plannerView").style.display = "none";
+    document.getElementById("goalsView").style.display = "block";
+    document.getElementById("openAdd").style.display = "none";
+    document.getElementById("openAddGoal").style.display = "block";
+    renderGoals();
+  });
+
+  // --- Goals ---
+  function renderGoals() {
+    const listEl = document.getElementById("goalsList");
+    listEl.innerHTML = "";
+    const goalTasks = tasks.filter(t => t.isGoal);
+
+    if (goalTasks.length === 0) {
+      const msg = document.createElement("div");
+      msg.className = "empty-msg";
+      msg.innerHTML = `<div class="big">No goals yet.</div>Tap + to create one.`;
+      listEl.appendChild(msg);
+      return;
+    }
+
+    const today = toDateStr(new Date());
+
+    goalTasks.forEach(goal => {
+      const startDate = new Date(goal.date + "T00:00:00");
+      const endDate = new Date((goal.endDate || goal.date) + "T00:00:00");
+
+      let scheduledDays = [];
+      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+        if (occursOn(goal, d)) scheduledDays.push(toDateStr(d));
+      }
+
+      const doneCount = scheduledDays.filter(ds => (goal.completedDates || []).includes(ds)).length;
+      const pct = scheduledDays.length ? Math.round((doneCount / scheduledDays.length) * 100) : 0;
+
+      const card = document.createElement("li");
+      card.className = "goal-card";
+      card.style.borderLeftColor = categoryColor(goal.category);
+
+      const top = document.createElement("div");
+      top.className = "goal-card-top";
+      const name = document.createElement("div");
+      name.className = "goal-name";
+      name.textContent = goal.name;
+      const pctEl = document.createElement("div");
+      pctEl.className = "goal-pct";
+      pctEl.textContent = pct + "%";
+      top.appendChild(name);
+      top.appendChild(pctEl);
+
+      const sub = document.createElement("div");
+      sub.className = "goal-sub";
+      sub.textContent = `${goal.category} · ${doneCount} / ${scheduledDays.length} days`;
+
+      const dots = document.createElement("div");
+      dots.className = "goal-dots";
+      scheduledDays.forEach(ds => {
+        const dot = document.createElement("div");
+        const isDone = (goal.completedDates || []).includes(ds);
+        const isFuture = ds > today;
+        dot.className = "goal-dot" + (isDone ? " done" : "") + (isFuture && !isDone ? " future" : "");
+        if (isDone) dot.style.background = categoryColor(goal.category);
+        dot.title = ds;
+        dots.appendChild(dot);
+      });
+
+      card.appendChild(top);
+      card.appendChild(sub);
+      card.appendChild(dots);
+      listEl.appendChild(card);
+    });
+  }
+
+   
+
   function renderDate() {
-    document.getElementById("weekday").textContent = currentDate.toLocaleDateString(undefined, { weekday: "long" });
+    const today = new Date(); today.setHours(0,0,0,0);
+    const check = new Date(currentDate); check.setHours(0,0,0,0);
+    const diffDays = Math.round((check - today) / 86400000);
+
+    let prefix = "";
+    if (diffDays === 0) prefix = "Today, ";
+    else if (diffDays === 1) prefix = "Tomorrow, ";
+    else if (diffDays === -1) prefix = "Yesterday, ";
+
+    document.getElementById("weekday").textContent = prefix + currentDate.toLocaleDateString(undefined, { weekday: "long" });
     document.getElementById("fulldate").textContent = currentDate.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
   }
 
   function renderProgress(dayTasks) {
     const total = dayTasks.length;
-    const done = dayTasks.filter(t => t.done).length;
+    const done = dayTasks.filter(t => t.occurrenceDone).length;
     const wrap = document.getElementById("progressWrap");
     if (total === 0) { wrap.style.display = "none"; return; }
     wrap.style.display = "block";
     const pct = Math.round((done / total) * 100);
     document.getElementById("progressCount").textContent = `${done} / ${total} tasks completed`;
     document.getElementById("progressFill").style.width = pct + "%";
+    const remaining = total - done;
     let msg = "";
-    if (done === total) msg = "Everything completed 🎉";
-    else if (total - done === 1) msg = "Only 1 task left 💪";
-    else if (pct >= 50) msg = "Over halfway there";
+    if (remaining === 0) msg = "Everything completed 🎉";
+    else if (remaining === 1) msg = "Only 1 task left 💪";
+    else if (pct >= 75) msg = `Almost there — ${remaining} to go`;
+    else if (pct >= 50) msg = `Over halfway — ${remaining} to go`;
+    else if (done > 0) msg = `${remaining} more to go`;
     document.getElementById("progressMsg").textContent = msg;
   }
 
@@ -221,20 +450,19 @@
     const wrap = document.getElementById("categoryTabs");
     wrap.innerHTML = "";
 
+    const allCount = getTasksForDate(currentDate, "All").length;
     const allPill = document.createElement("button");
     allPill.className = "cat-pill";
     allPill.style.background = activeCategory === "All" ? "#2F5233" : "white";
     allPill.style.color = activeCategory === "All" ? "white" : "#333";
-    allPill.textContent = "All";
+    allPill.textContent = allCount > 0 ? `All (${allCount})` : "All";
     allPill.addEventListener("click", () => { activeCategory = "All"; renderAll(); });
     wrap.appendChild(allPill);
 
-    const dateStr = toDateStr(currentDate);
-
     categories.forEach(cat => {
+      const count = getTasksForDate(currentDate, cat.name).length;
       const pill = document.createElement("button");
       const isActive = activeCategory === cat.name;
-      const count = tasks.filter(t => t.date === dateStr && t.category === cat.name).length;
       pill.className = "cat-pill";
       pill.style.background = isActive ? cat.color : "white";
       pill.style.color = isActive ? "#1a1d26" : "#333";
@@ -270,21 +498,10 @@
     }
   }
 
-  function getDayTasks() {
-    const dateStr = toDateStr(currentDate);
-    let dayTasks = tasks.filter(t => t.date === dateStr);
-    if (activeCategory !== "All") dayTasks = dayTasks.filter(t => t.category === activeCategory);
-    dayTasks.sort((a, b) => {
-      if (a.done !== b.done) return a.done ? 1 : -1;
-      return (a.order ?? 0) - (b.order ?? 0);
-    });
-    return dayTasks;
-  }
-
   function renderTasks() {
     const listEl = document.getElementById("taskList");
     listEl.innerHTML = "";
-    const dayTasks = getDayTasks();
+    const dayTasks = getTasksForDate(currentDate, activeCategory);
     renderProgress(dayTasks);
 
     if (dayTasks.length === 0) {
@@ -294,7 +511,7 @@
       listEl.appendChild(msg);
       return;
     }
-    if (dayTasks.every(t => t.done)) {
+    if (dayTasks.every(t => t.occurrenceDone)) {
       const msg = document.createElement("div");
       msg.className = "empty-msg";
       msg.innerHTML = `<div class="big">🎉 Everything is done for today.</div>Go enjoy your day.`;
@@ -304,18 +521,24 @@
 
     dayTasks.forEach(task => {
       const li = document.createElement("li");
-      li.className = "task-item" + (task.done ? " done" : "");
+      li.className = "task-item" + (task.occurrenceDone ? " done" : "");
       li.style.borderLeftColor = categoryColor(task.category);
       li.dataset.taskId = task.id;
 
       const checkbox = document.createElement("div");
-      checkbox.className = "checkbox" + (task.done ? " checked" : "");
+      checkbox.className = "checkbox" + (task.occurrenceDone ? " checked" : "");
       checkbox.addEventListener("click", (e) => {
         e.stopPropagation();
-        task.done = !task.done;
+        const realTask = tasks.find(t => t.id === task.id);
+        if (task.isRecurring) {
+          realTask.completedDates = realTask.completedDates || [];
+          const idx = realTask.completedDates.indexOf(task.occurrenceDate);
+          if (idx === -1) realTask.completedDates.push(task.occurrenceDate);
+          else realTask.completedDates.splice(idx, 1);
+        } else {
+          realTask.done = !realTask.done;
+        }
         li.classList.add("completing");
-        checkbox.classList.toggle("checked", task.done);
-        li.classList.toggle("done", task.done);
         save();
         setTimeout(() => renderTasks(), 450);
       });
@@ -328,7 +551,9 @@
       meta.className = "task-meta";
       const durText = formatDuration(task.duration);
       const durIcon = durText ? "🕐 " + durText : "";
-      meta.textContent = [task.time, durIcon].filter(Boolean).join(" · ");
+      const repeatIcon = task.isRecurring ? "🔁" : "";
+      const goalIcon = task.isGoal ? "🎯" : "";
+      meta.innerHTML = [task.time, durIcon, repeatIcon, goalIcon].filter(Boolean).join(" · ");
 
       const cat = document.createElement("span");
       cat.className = "task-category";
@@ -340,6 +565,8 @@
       del.textContent = "✕";
       del.addEventListener("click", (e) => {
         e.stopPropagation();
+        const label = task.isRecurring ? "Delete this whole repeating task series?" : "Delete this task?";
+        if (!confirm(label)) return;
         tasks = tasks.filter(t => t.id !== task.id);
         save();
         renderTasks();
@@ -381,9 +608,38 @@
 
   document.getElementById("prevDay").addEventListener("click", () => { currentDate.setDate(currentDate.getDate() - 1); renderAll(); });
   document.getElementById("nextDay").addEventListener("click", () => { currentDate.setDate(currentDate.getDate() + 1); renderAll(); });
+  function goToToday() { currentDate = new Date(); renderAll(); }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key.toLowerCase() === "t" && !overlay.classList.contains("open") && !goalOverlay.classList.contains("open")) {
+      goToToday();
+    }
+  });
 
   const overlay = document.getElementById("modalOverlay");
   const deleteRow = document.getElementById("deleteRow");
+  const repeatSelect = document.getElementById("modalRepeat");
+  const repeatExtra = document.getElementById("repeatExtra");
+  const weekdayPicker = document.getElementById("weekdayPicker");
+
+  function buildWeekdayPicker() {
+    weekdayPicker.innerHTML = "";
+    WEEKDAY_LABELS.forEach((label, i) => {
+      const btn = document.createElement("div");
+      btn.className = "weekday-btn" + (selectedWeekdays.includes(i) ? " selected" : "");
+      btn.textContent = label;
+      btn.addEventListener("click", () => {
+        const idx = selectedWeekdays.indexOf(i);
+        if (idx === -1) selectedWeekdays.push(i); else selectedWeekdays.splice(idx, 1);
+        buildWeekdayPicker();
+      });
+      weekdayPicker.appendChild(btn);
+    });
+  }
+
+  repeatSelect.addEventListener("change", () => {
+    repeatExtra.classList.toggle("show", repeatSelect.value !== "none");
+  });
 
   function openAddModal() {
     if (categories.length === 0) { alert("Add a category first using the + next to the category tabs."); return; }
@@ -393,6 +649,16 @@
     document.getElementById("modalTime").value = "";
     document.getElementById("modalDuration").value = "";
     document.getElementById("modalDate").value = toDateStr(currentDate);
+    document.getElementById("modalEndDate").value = "";
+    document.getElementById("modalInterval").value = 1;
+    if (activeCategory !== "All") {
+      document.getElementById("modalCategory").value = activeCategory;
+    }
+    document.getElementById("modalIsGoal").checked = false;
+    repeatSelect.value = "none";
+    repeatExtra.classList.remove("show");
+    selectedWeekdays = [currentDate.getDay()];
+    buildWeekdayPicker();
     deleteRow.style.display = "none";
     overlay.classList.add("open");
     setTimeout(() => document.getElementById("modalName").focus(), 50);
@@ -408,6 +674,26 @@
     document.getElementById("modalTime").value = task.time || "";
     document.getElementById("modalDuration").value = task.duration || "";
     document.getElementById("modalDate").value = task.date;
+    document.getElementById("modalEndDate").value = task.endDate || "";
+    document.getElementById("modalIsGoal").checked = !!task.isGoal;
+
+    const rec = task.recurrence;
+    if (rec && rec.type === "daily") {
+      repeatSelect.value = "daily";
+      repeatExtra.classList.add("show");
+      selectedWeekdays = [];
+    } else if (rec && rec.type === "weekly") {
+      repeatSelect.value = "weekly";
+      repeatExtra.classList.add("show");
+      selectedWeekdays = [...rec.days];
+      document.getElementById("modalInterval").value = rec.interval || 1;
+    } else {
+      repeatSelect.value = "none";
+      repeatExtra.classList.remove("show");
+      selectedWeekdays = [];
+    }
+    buildWeekdayPicker();
+
     deleteRow.style.display = "flex";
     overlay.classList.add("open");
     setTimeout(() => document.getElementById("modalName").focus(), 50);
@@ -429,15 +715,31 @@
     const time = document.getElementById("modalTime").value;
     const duration = document.getElementById("modalDuration").value;
     const date = document.getElementById("modalDate").value || toDateStr(currentDate);
+    const endDate = document.getElementById("modalEndDate").value;
+    const repeatType = repeatSelect.value;
+    const isGoal = repeatType !== "none" && document.getElementById("modalIsGoal").checked;
+
     if (!name || !category) return;
+
+    let recurrence = { type: "none" };
+    if (repeatType === "daily") {
+      recurrence = { type: "daily" };
+    } else if (repeatType === "weekly") {
+      recurrence = { type: "weekly", days: [...selectedWeekdays].sort(), interval: parseInt(document.getElementById("modalInterval").value) || 1 };
+    }
 
     if (editingTaskId) {
       const task = tasks.find(t => t.id === editingTaskId);
-      task.name = name; task.category = category; task.time = time; task.duration = duration; task.date = date;
+      task.name = name; task.category = category; task.time = time; task.duration = duration;
+      task.date = date; task.endDate = endDate; task.recurrence = recurrence; task.isGoal = isGoal;
+      if (!task.completedDates) task.completedDates = [];
     } else {
       const dateTasks = tasks.filter(t => t.date === date);
       const maxOrder = dateTasks.length ? Math.max(...dateTasks.map(t => t.order ?? 0)) : -1;
-      tasks.push({ id: Date.now().toString(), name, category, time, duration, date, done: false, order: maxOrder + 1 });
+      tasks.push({
+        id: Date.now().toString(), name, category, time, duration, date, endDate,
+        done: false, order: maxOrder + 1, recurrence, completedDates: [], isGoal
+      });
     }
     save();
     overlay.classList.remove("open");
@@ -463,7 +765,7 @@
       sw.style.background = color;
       sw.addEventListener("click", () => {
         selectedColor = color;
-        document.querySelectorAll(".swatch").forEach(s => s.classList.remove("selected"));
+        swatchWrap.querySelectorAll(".swatch").forEach(s => s.classList.remove("selected"));
         sw.classList.add("selected");
       });
       swatchWrap.appendChild(sw);
@@ -473,6 +775,7 @@
   }
 
   document.getElementById("catCancel").addEventListener("click", () => catOverlay.classList.remove("open"));
+  document.getElementById("todayBtn").addEventListener("click", goToToday);
   document.getElementById("catSave").addEventListener("click", () => {
     const name = document.getElementById("catName").value.trim();
     if (!name || categories.some(c => c.name === name)) { catOverlay.classList.remove("open"); return; }
@@ -485,7 +788,57 @@
     if (e.key === "Escape") catOverlay.classList.remove("open");
   });
 
-  // --- Voice Quick Add ---
+  let editingCategoryName = null;
+  let editingCategoryColor = null;
+  const editCatOverlay = document.getElementById("editCatModalOverlay");
+
+  function openEditCategoryModal(catName) {
+    const cat = categories.find(c => c.name === catName);
+    if (!cat) return;
+    editingCategoryName = cat.name;
+    editingCategoryColor = cat.color;
+    document.getElementById("editCatName").value = cat.name;
+    const swatchWrap = document.getElementById("editColorSwatches");
+    swatchWrap.innerHTML = "";
+    PALETTE.forEach(color => {
+      const sw = document.createElement("div");
+      sw.className = "swatch" + (color === editingCategoryColor ? " selected" : "");
+      sw.style.background = color;
+      sw.addEventListener("click", () => {
+        editingCategoryColor = color;
+        swatchWrap.querySelectorAll(".swatch").forEach(s => s.classList.remove("selected"));
+        sw.classList.add("selected");
+      });
+      swatchWrap.appendChild(sw);
+    });
+    editCatOverlay.classList.add("open");
+  }
+
+  document.getElementById("editCatCancel").addEventListener("click", () => editCatOverlay.classList.remove("open"));
+
+  document.getElementById("editCatSave").addEventListener("click", () => {
+    const newName = document.getElementById("editCatName").value.trim();
+    if (!newName) return;
+    const cat = categories.find(c => c.name === editingCategoryName);
+    const oldName = cat.name;
+    cat.name = newName;
+    cat.color = editingCategoryColor;
+    tasks.forEach(t => { if (t.category === oldName) t.category = newName; });
+    if (activeCategory === oldName) activeCategory = newName;
+    save();
+    editCatOverlay.classList.remove("open");
+    renderAll();
+  });
+
+  document.getElementById("editCatDelete").addEventListener("click", () => {
+    if (!confirm(`Delete "${editingCategoryName}"? Tasks in this category will keep the category name but it won't be selectable anymore.`)) return;
+    categories = categories.filter(c => c.name !== editingCategoryName);
+    if (activeCategory === editingCategoryName) activeCategory = "All";
+    save();
+    editCatOverlay.classList.remove("open");
+    renderAll();
+  });
+
   const micBtn = document.getElementById("micBtn");
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -510,135 +863,194 @@
   }
 
   function parseAndFillModal(text) {
-  let working = " " + text.toLowerCase() + " ";
-  let parsedDate = toDateStr(currentDate);
-  let parsedTime = "";
-  let parsedCategory = "";
-  let parsedDuration = "";
+    let working = " " + text.toLowerCase() + " ";
+    let parsedDate = toDateStr(currentDate);
+    let parsedTime = "";
+    let parsedCategory = "";
+    let parsedDuration = "";
 
-  if (working.includes("tomorrow")) {
-    const d = new Date(currentDate); d.setDate(d.getDate() + 1);
-    parsedDate = toDateStr(d);
-    working = working.replace("tomorrow", " ");
-  } else if (working.includes("today")) {
-    working = working.replace("today", " ");
-  } else {
-    const inXDays = working.match(/in (\d+) days?/);
-    if (inXDays) {
-      const d = new Date(currentDate); d.setDate(d.getDate() + parseInt(inXDays[1]));
+    if (working.includes("tomorrow")) {
+      const d = new Date(currentDate); d.setDate(d.getDate() + 1);
       parsedDate = toDateStr(d);
-      working = working.replace(inXDays[0], " ");
-    }
-  }
-
-  const timeMatch = working.match(/(\d{1,2}):(\d{2})|(\d{1,2})\s?(am|pm)/);
-  if (timeMatch) {
-    if (timeMatch[1]) {
-      parsedTime = timeMatch[1].padStart(2, "0") + ":" + timeMatch[2];
+      working = working.replace("tomorrow", " ");
+    } else if (working.includes("today")) {
+      working = working.replace("today", " ");
     } else {
-      let h = parseInt(timeMatch[3]);
-      if (timeMatch[4] === "pm" && h !== 12) h += 12;
-      if (timeMatch[4] === "am" && h === 12) h = 0;
-      parsedTime = String(h).padStart(2, "0") + ":00";
+      const inXDays = working.match(/in (\d+) days?/);
+      if (inXDays) {
+        const d = new Date(currentDate); d.setDate(d.getDate() + parseInt(inXDays[1]));
+        parsedDate = toDateStr(d);
+        working = working.replace(inXDays[0], " ");
+      }
     }
-    working = working.replace(timeMatch[0], " ");
+
+    const timeMatch = working.match(/(\d{1,2}):(\d{2})|(\d{1,2})\s?(am|pm)/);
+    if (timeMatch) {
+      if (timeMatch[1]) {
+        parsedTime = timeMatch[1].padStart(2, "0") + ":" + timeMatch[2];
+      } else {
+        let h = parseInt(timeMatch[3]);
+        if (timeMatch[4] === "pm" && h !== 12) h += 12;
+        if (timeMatch[4] === "am" && h === 12) h = 0;
+        parsedTime = String(h).padStart(2, "0") + ":00";
+      }
+      working = working.replace(timeMatch[0], " ");
+    }
+
+    const durMatch = working.match(/(\d+(\.\d+)?)\s?(hours?|hrs?|minutes?|mins?)/);
+    if (durMatch) {
+      const num = parseFloat(durMatch[1]);
+      const unit = durMatch[3];
+      parsedDuration = unit.startsWith("h") ? Math.round(num * 60) : Math.round(num);
+      working = working.replace(durMatch[0], " ");
+    }
+
+    const WEEKDAY_NAMES = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
+    let parsedRepeatType = "none";
+    let parsedWeekdays = [];
+    let parsedInterval = 1;
+
+    if (/every day|daily/.test(working)) {
+      parsedRepeatType = "daily";
+      working = working.replace(/every day|daily/, " ");
+    } else if (working.includes("every")) {
+      const intervalMatch = working.match(/every\s+(\d+)\s+weeks?/);
+      if (intervalMatch) {
+        parsedInterval = parseInt(intervalMatch[1]);
+        working = working.replace(intervalMatch[0], " every ");
+      }
+      Object.keys(WEEKDAY_NAMES).forEach(dayName => {
+        if (working.includes(dayName)) {
+          parsedWeekdays.push(WEEKDAY_NAMES[dayName]);
+          working = working.replace(new RegExp(dayName, "g"), " ");
+        }
+      });
+      if (parsedWeekdays.length > 0) {
+        parsedRepeatType = "weekly";
+        working = working.replace(/\bevery\b/g, " ");
+      }
+    }
+
+    const catMatch = working.match(/categor(y|ie)\s+(\w+)/);
+    if (catMatch) {
+      const spoken = catMatch[2];
+      const found = categories.find(c => c.name.toLowerCase() === spoken);
+      if (found) parsedCategory = found.name;
+      working = working.replace(catMatch[0], " ");
+    }
+
+    const taskName = working
+      .replace(/,/g, " ")
+      .replace(/\./g, " ")
+      .replace(/\bduration\b/gi, " ")
+      .replace(/\bam\b|\bpm\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    editingTaskId = null;
+    document.getElementById("modalTitle").textContent = "Add Task (from voice)";
+    document.getElementById("modalName").value = taskName.charAt(0).toUpperCase() + taskName.slice(1);
+    document.getElementById("modalTime").value = parsedTime;
+    document.getElementById("modalDate").value = parsedDate;
+    document.getElementById("modalDuration").value = parsedDuration;
+    document.getElementById("modalEndDate").value = "";
+    document.getElementById("modalIsGoal").checked = false;
+    repeatSelect.value = parsedRepeatType;
+    if (parsedRepeatType !== "none") {
+      repeatExtra.classList.add("show");
+      selectedWeekdays = parsedWeekdays;
+      document.getElementById("modalInterval").value = parsedInterval;
+    } else {
+      repeatExtra.classList.remove("show");
+      selectedWeekdays = [];
+    }
+    buildWeekdayPicker();
+    if (parsedCategory) document.getElementById("modalCategory").value = parsedCategory;
+    deleteRow.style.display = "none";
+    overlay.classList.add("open");
   }
 
-  // --- duration (e.g. "30 minutes", "20 min", "1 hour", "1.5 hours") ---
-  const durMatch = working.match(/(\d+(\.\d+)?)\s?(hours?|hrs?|minutes?|mins?)/);
-  if (durMatch) {
-    const num = parseFloat(durMatch[1]);
-    const unit = durMatch[3];
-    parsedDuration = unit.startsWith("h") ? Math.round(num * 60) : Math.round(num);
-    working = working.replace(durMatch[0], " ");
-  }
+ // --- Dedicated Add Goal flow ---
+ let goalSelectedWeekdays = [];
+  const goalOverlay = document.getElementById("goalModalOverlay");
+  const goalWeekdayPicker = document.getElementById("goalWeekdayPicker");
 
-  // --- category: only trust an EXPLICIT "category ___" phrase, not a bare name match ---
-  const catMatch = working.match(/categor(y|ie)\s+(\w+)/);
-  if (catMatch) {
-    const spoken = catMatch[2];
-    const found = categories.find(c => c.name.toLowerCase() === spoken);
-    if (found) parsedCategory = found.name;
-    working = working.replace(catMatch[0], " ");
-  }
-
-     const taskName = working
-    .replace(/,/g, " ")
-    .replace(/\./g, " ")
-    .replace(/\bduration\b/gi, " ")
-    .replace(/\bam\b|\bpm\b/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  editingTaskId = null;
-  document.getElementById("modalTitle").textContent = "Add Task (from voice)";
-  document.getElementById("modalName").value = taskName.charAt(0).toUpperCase() + taskName.slice(1);
-  document.getElementById("modalTime").value = parsedTime;
-  document.getElementById("modalDate").value = parsedDate;
-  document.getElementById("modalDuration").value = parsedDuration;
-  if (parsedCategory) document.getElementById("modalCategory").value = parsedCategory;
-  deleteRow.style.display = "none";
-  overlay.classList.add("open");
-}
-// --- Category edit/delete ---
-let editingCategoryName = null;
-let editingCategoryColor = null;
-const editCatOverlay = document.getElementById("editCatModalOverlay");
-
-function openEditCategoryModal(catName) {
-  const cat = categories.find(c => c.name === catName);
-  if (!cat) return;
-  editingCategoryName = cat.name;
-  editingCategoryColor = cat.color;
-
-  document.getElementById("editCatName").value = cat.name;
-  const swatchWrap = document.getElementById("editColorSwatches");
-  swatchWrap.innerHTML = "";
-  PALETTE.forEach(color => {
-    const sw = document.createElement("div");
-    sw.className = "swatch" + (color === editingCategoryColor ? " selected" : "");
-    sw.style.background = color;
-    sw.addEventListener("click", () => {
-      editingCategoryColor = color;
-      swatchWrap.querySelectorAll(".swatch").forEach(s => s.classList.remove("selected"));
-      sw.classList.add("selected");
+  function buildGoalWeekdayPicker() {
+    goalWeekdayPicker.innerHTML = "";
+    WEEKDAY_LABELS.forEach((label, i) => {
+      const btn = document.createElement("div");
+      btn.className = "weekday-btn" + (goalSelectedWeekdays.includes(i) ? " selected" : "");
+      btn.textContent = label;
+      btn.addEventListener("click", () => {
+        const idx = goalSelectedWeekdays.indexOf(i);
+        if (idx === -1) goalSelectedWeekdays.push(i); else goalSelectedWeekdays.splice(idx, 1);
+        buildGoalWeekdayPicker();
+      });
+      goalWeekdayPicker.appendChild(btn);
     });
-    swatchWrap.appendChild(sw);
+  }
+
+  document.getElementById("openAddGoal").addEventListener("click", () => {
+    if (categories.length === 0) { alert("Add a category first from the Planner tab."); return; }
+
+    document.getElementById("goalName").value = "";
+    document.getElementById("goalStartDate").value = toDateStr(new Date());
+    document.getElementById("goalLength").value = "";
+    document.getElementById("goalTime").value = "";
+    goalSelectedWeekdays = [0,1,2,3,4,5,6];
+    buildGoalWeekdayPicker();
+
+    const sel = document.getElementById("goalCategory");
+    sel.innerHTML = "";
+    categories.forEach(cat => {
+      const opt = document.createElement("option");
+      opt.value = cat.name;
+      opt.textContent = cat.name;
+      sel.appendChild(opt);
+    });
+
+    goalOverlay.classList.add("open");
+    setTimeout(() => document.getElementById("goalName").focus(), 50);
   });
 
-  editCatOverlay.classList.add("open");
-}
+  document.getElementById("goalCancel").addEventListener("click", () => goalOverlay.classList.remove("open"));
 
-document.getElementById("editCatCancel").addEventListener("click", () => editCatOverlay.classList.remove("open"));
+  document.getElementById("goalSave").addEventListener("click", () => {
+    const name = document.getElementById("goalName").value.trim();
+    const category = document.getElementById("goalCategory").value;
+    const startDate = document.getElementById("goalStartDate").value;
+    const length = parseInt(document.getElementById("goalLength").value);
+    const time = document.getElementById("goalTime").value;
 
-document.getElementById("editCatSave").addEventListener("click", () => {
-  const newName = document.getElementById("editCatName").value.trim();
-  if (!newName) return;
+    if (!name || !category || !startDate || !length || goalSelectedWeekdays.length === 0) {
+      alert("Please fill in the goal name, length, and at least one day of the week.");
+      return;
+    }
 
-  const cat = categories.find(c => c.name === editingCategoryName);
-  const oldName = cat.name;
-  cat.name = newName;
-  cat.color = editingCategoryColor;
+    const endD = new Date(startDate + "T00:00:00");
+    endD.setDate(endD.getDate() + length - 1);
+    const endDate = toDateStr(endD);
 
-  tasks.forEach(t => { if (t.category === oldName) t.category = newName; });
-  if (activeCategory === oldName) activeCategory = newName;
+    const recurrence = goalSelectedWeekdays.length === 7
+      ? { type: "daily" }
+      : { type: "weekly", days: [...goalSelectedWeekdays].sort(), interval: 1 };
 
-  save();
-  editCatOverlay.classList.remove("open");
-  renderAll();
-});
+    tasks.push({
+      id: Date.now().toString(), name, category, time, duration: "",
+      date: startDate, endDate, done: false, order: 0,
+      recurrence, completedDates: [], isGoal: true
+    });
 
-document.getElementById("editCatDelete").addEventListener("click", () => {
-  if (!confirm(`Delete "${editingCategoryName}"? Tasks in this category will keep the category name but it won't be selectable anymore.`)) return;
+    save();
+    goalOverlay.classList.remove("open");
+    renderGoals();
+  });
 
-  categories = categories.filter(c => c.name !== editingCategoryName);
-  if (activeCategory === editingCategoryName) activeCategory = "All";
-
-  save();
-  editCatOverlay.classList.remove("open");
-  renderAll();
-});
-renderAll();
+  goalOverlay.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") document.getElementById("goalSave").click();
+    if (e.key === "Escape") goalOverlay.classList.remove("open");
+  });
+ renderAll();
 </script>
 </body>
 </html>
