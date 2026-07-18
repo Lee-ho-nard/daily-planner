@@ -9,7 +9,7 @@
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: "Space Grotesk", system-ui, sans-serif; background: #f4f5f7; color: #1a1d26; padding: 1.5rem 1rem; }
+  body { font-family: "Space Grotesk", system-ui, sans-serif; background: #f4f5f7; color: #1a1d26; padding: 1.5rem 1rem; transition: background 0.5s ease, color 0.5s ease; }
   .container { max-width: 480px; margin: 0 auto; }
 
   .view-tabs { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; background: #e9ebee; padding: 0.3rem; border-radius: 10px; }
@@ -99,6 +99,67 @@
   .goal-dot { width: 16px; height: 16px; border-radius: 4px; background: #eee; border: 1px solid #ddd; }
   .goal-dot.done { border: none; }
   .goal-dot.future { opacity: 0.4; border-style: dashed; }
+  .ring-section { display:flex; align-items:center; gap:1.5rem; background:white; border-radius:10px; padding:1.25rem; margin-bottom:1.25rem; }
+  .ring-legend { flex:1; font-size:0.8rem; }
+  .ring-legend-row { display:flex; align-items:center; gap:0.4rem; margin-bottom:0.4rem; }
+  .ring-legend-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  .range-tabs { display:flex; gap:0.5rem; margin-bottom:1rem; }
+  .range-tab { flex:1; padding:0.4rem; border-radius:8px; border:1px solid #ddd; background:white; cursor:pointer; font-family:inherit; font-size:0.85rem; }
+  .range-tab.active { background:#2F5233; color:white; border-color:#2F5233; }
+  .bar-chart { display:flex; align-items:flex-end; gap:4px; height:140px; background:white; border-radius:10px; padding:1rem; margin-bottom:0.75rem; }
+  .bar-col { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; }
+  .bar-fill { width:100%; background:#2F5233; border-radius:4px 4px 0 0; min-height:2px; }
+  .bar-label { font-size:0.6rem; color:#999; margin-top:0.3rem; }
+  .best-worst { display:flex; gap:0.75rem; font-size:0.8rem; color:#555; }
+  .best-worst .box { flex:1; background:white; border-radius:8px; padding:0.75rem; text-align:center; }
+  body.deep-work-mode {
+    background: #071320;
+    color: #A7B4C7;
+  }
+  body.deep-work-mode .view-tabs { background: #101D2E; }
+  body.deep-work-mode .view-tab { color: #A7B4C7; }
+  body.deep-work-mode .view-tab.active { background: #101D2E; color: white; box-shadow: none; border: 1px solid #4D8DFF; }
+
+  #focusView { display: none; }
+  .focus-title { font-size: 1.6rem; font-weight: 600; letter-spacing: 0.02em; margin: 0.5rem 0 0.25rem; color: white; }
+  .focus-subtitle { color: #A7B4C7; margin-bottom: 1.75rem; font-size: 0.9rem; }
+
+  .focus-session-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 1.75rem; }
+  .focus-session { background: #101D2E; border: 1px solid transparent; border-radius: 12px; padding: 1rem; cursor: pointer; color: white; text-align: left; font-family: inherit; transition: border-color 0.15s, transform 0.15s; }
+  .focus-session:hover { transform: translateY(-1px); }
+  .focus-session.selected { border-color: #4D8DFF; }
+  .session-name { font-size: 0.95rem; font-weight: 500; margin-bottom: 0.3rem; }
+  .session-time { color: #A7B4C7; font-size: 0.8rem; }
+
+  .focus-heading { font-size: 0.95rem; font-weight: 500; margin-bottom: 0.75rem; color: white; }
+  .focus-top3 { background: #101D2E; border-radius: 12px; padding: 1.1rem; margin-bottom: 1.5rem; }
+  .focus-empty { color: #6b7789; font-size: 0.9rem; }
+  .focus-task-row { padding: 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 0.9rem; color: #dfe4ea; }
+  .focus-task-row:last-child { border-bottom: none; }
+
+  .start-focus-btn { width: 100%; padding: 0.9rem; border: none; border-radius: 10px; font-size: 0.95rem; font-weight: 500; cursor: pointer; background: #4D8DFF; color: white; font-family: inherit; transition: opacity 0.15s; }
+  .start-focus-btn:hover { opacity: 0.9; }
+  .custom-minutes-row { margin-bottom: 1.5rem; }
+  .custom-minutes-row label { display: block; font-size: 0.8rem; color: #A7B4C7; margin-bottom: 0.3rem; }
+  .custom-minutes-row input { width: 100%; padding: 0.5rem; border-radius: 8px; border: 1px solid #223349; background: #101D2E; color: white; font-family: inherit; }
+
+  #focusTimerScreen { display: none; text-align: center; padding-top: 2rem; }
+  body.timer-active .view-tabs { opacity: 0; pointer-events: none; transition: opacity 0.5s ease; }
+  .view-tabs { transition: opacity 0.5s ease; }
+  .timer-ring-wrap { position: relative; display: inline-block; margin-bottom: 1.5rem; }
+  .timer-time { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 3.4rem; font-weight: 600; color: white; letter-spacing: -0.02em; }
+  .timer-label { color: #A7B4C7; font-size: 0.9rem; margin-bottom: 1rem; }
+  .timer-icon-controls { position: fixed; top: 1.5rem; right: 1.5rem; display: flex; gap: 0.75rem; }
+  .timer-icon-btn { width: 38px; height: 38px; border-radius: 50%; border: 1px solid #223349; background: #101D2E; color: #A7B4C7; font-family: inherit; cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center; line-height: 1; padding: 0; }
+  #pauseResumeBtn { font-size: 0.85rem; }
+  #pauseResumeBtn.play-icon { padding-left: 3px; }
+  .timer-icon-btn:hover { color: white; border-color: #4D8DFF; }
+
+.start-focus-btn:hover{
+
+transform:scale(1.02);
+
+}
 </style>
 </head>
 <body>
@@ -107,6 +168,8 @@
   <div class="view-tabs">
     <button class="view-tab active" id="tabPlanner">Planner</button>
     <button class="view-tab" id="tabGoals">Goals</button>
+    <button class="view-tab" id="tabAnalysis">Analysis</button>
+    <button class="view-tab" id="tabFocus">Deep Work</button>
   </div>
 
   <div id="plannerView">
@@ -136,6 +199,55 @@
     <ul id="goalsList"></ul>
   </div>
 
+  <div id="analysisView" style="display:none;">
+    <div class="ring-section">
+      <svg id="ringChart" viewBox="0 0 200 200" width="180" height="180"></svg>
+      <div class="ring-legend" id="ringLegend"></div>
+    </div>
+
+    <div class="range-tabs">
+      <button class="range-tab active" data-range="week">Week</button>
+      <button class="range-tab" data-range="month">Month</button>
+      <button class="range-tab" data-range="year">Year</button>
+    </div>
+
+    <div id="barChart" class="bar-chart"></div>
+    <div id="bestWorst" class="best-worst"></div>
+  </div>
+  <div id="focusView">
+    <div id="focusSetup">
+      <div class="focus-title">Deep Work</div>
+      <div class="focus-subtitle">One task. No distractions.</div>
+
+      <div class="focus-session-grid" id="focusSessionGrid"></div>
+
+      <div class="custom-minutes-row" id="customMinutesRow" style="display:none;">
+        <label>Custom minutes</label>
+        <input type="number" id="customMinutesInput" min="1" placeholder="e.g. 40">
+      </div>
+
+      <div class="focus-top3">
+        <div class="focus-heading">Today's Top 3</div>
+        <div id="focusTopTasks"></div>
+      </div>
+
+      <button id="startFocusBtn" class="start-focus-btn">Start Session</button>
+    </div>
+
+    <div id="focusTimerScreen">
+      <div class="timer-icon-controls">
+        <button id="pauseResumeBtn" class="timer-icon-btn" title="Pause">⏸</button>
+        <button id="stopSessionBtn" class="timer-icon-btn" title="End session">✕</button>
+      </div>
+      <div class="timer-ring-wrap">
+        <svg id="timerRing" viewBox="0 0 200 200" width="240" height="240"></svg>
+        <div class="timer-time" id="timerTime">25:00</div>
+      </div>
+      <div class="timer-label" id="timerLabel"></div>
+    </div>
+  </div>
+
+</div>
 
 </div>
 
@@ -350,25 +462,35 @@
   }
 
   // --- View switching ---
-  document.getElementById("tabPlanner").addEventListener("click", () => {
-    currentView = "planner";
-    document.getElementById("tabPlanner").classList.add("active");
-    document.getElementById("tabGoals").classList.remove("active");
-    document.getElementById("plannerView").style.display = "block";
-    document.getElementById("goalsView").style.display = "none";
-    document.getElementById("openAdd").style.display = "block";
-    document.getElementById("openAddGoal").style.display = "none";
-  });
-  document.getElementById("tabGoals").addEventListener("click", () => {
-    currentView = "goals";
-    document.getElementById("tabGoals").classList.add("active");
-    document.getElementById("tabPlanner").classList.remove("active");
-    document.getElementById("plannerView").style.display = "none";
-    document.getElementById("goalsView").style.display = "block";
-    document.getElementById("openAdd").style.display = "none";
-    document.getElementById("openAddGoal").style.display = "block";
-    renderGoals();
-  });
+  function switchView(view) {
+    currentView = view;
+
+    document.getElementById("tabPlanner").classList.toggle("active", view === "planner");
+    document.getElementById("tabGoals").classList.toggle("active", view === "goals");
+    document.getElementById("tabAnalysis").classList.toggle("active", view === "analysis");
+    document.getElementById("tabFocus").classList.toggle("active", view === "focus");
+
+    document.getElementById("plannerView").style.display = view === "planner" ? "block" : "none";
+    document.getElementById("goalsView").style.display = view === "goals" ? "block" : "none";
+    document.getElementById("analysisView").style.display = view === "analysis" ? "block" : "none";
+    document.getElementById("focusView").style.display = view === "focus" ? "block" : "none";
+
+    document.getElementById("openAdd").style.display = view === "planner" ? "block" : "none";
+    document.getElementById("openAddGoal").style.display = view === "goals" ? "block" : "none";
+    document.getElementById("micBtn").style.display = view === "planner" ? "block" : "none";
+    document.getElementById("todayBtn").style.display = view === "planner" ? "block" : "none";
+
+    document.body.classList.toggle("deep-work-mode", view === "focus");
+
+    if (view === "goals") renderGoals();
+    if (view === "analysis") renderAnalysis();
+    if (view === "focus") renderFocus();
+  }
+
+  document.getElementById("tabPlanner").addEventListener("click", () => switchView("planner"));
+  document.getElementById("tabGoals").addEventListener("click", () => switchView("goals"));
+  document.getElementById("tabAnalysis").addEventListener("click", () => switchView("analysis"));
+  document.getElementById("tabFocus").addEventListener("click", () => switchView("focus"));
 
   // --- Goals ---
   function renderGoals() {
@@ -1152,7 +1274,296 @@ document.getElementById("goalViewEdit").addEventListener("click", () => {
 
   goalOverlay.classList.add("open");
 });
- renderAll();
+let currentRange = "week";
+
+  function renderAnalysis() {
+    renderRingChart();
+    renderBarChart(currentRange);
+  }
+
+  function renderRingChart() {
+    const today = new Date();
+    const todayTasks = getTasksForDate(today, "All");
+    const total = todayTasks.length;
+    const done = todayTasks.filter(t => t.occurrenceDone).length;
+    const pct = total ? Math.round((done / total) * 100) : 0;
+
+    const byCat = {};
+    todayTasks.forEach(t => {
+      if (!byCat[t.category]) byCat[t.category] = { done: 0, total: 0 };
+      byCat[t.category].total++;
+      if (t.occurrenceDone) byCat[t.category].done++;
+    });
+
+    const svg = document.getElementById("ringChart");
+    svg.innerHTML = "";
+    const cx = 100, cy = 100, r = 80;
+    const circumference = 2 * Math.PI * r;
+    const ns = "http://www.w3.org/2000/svg";
+
+    const bg = document.createElementNS(ns, "circle");
+    bg.setAttribute("cx", cx); bg.setAttribute("cy", cy); bg.setAttribute("r", r);
+    bg.setAttribute("fill", "none"); bg.setAttribute("stroke", "#eee"); bg.setAttribute("stroke-width", "20");
+    svg.appendChild(bg);
+
+    let cumulative = 0;
+    Object.keys(byCat).forEach(catName => {
+      const info = byCat[catName];
+      const segPct = total ? (info.done / total) * 100 : 0;
+      if (segPct <= 0) return;
+      const segLen = (segPct / 100) * circumference;
+      const circle = document.createElementNS(ns, "circle");
+      circle.setAttribute("cx", cx); circle.setAttribute("cy", cy); circle.setAttribute("r", r);
+      circle.setAttribute("fill", "none");
+      circle.setAttribute("stroke", categoryColor(catName));
+      circle.setAttribute("stroke-width", "20");
+      circle.setAttribute("stroke-dasharray", `${segLen} ${circumference - segLen}`);
+      circle.setAttribute("stroke-dashoffset", -((cumulative / 100) * circumference));
+      circle.setAttribute("transform", `rotate(-90 ${cx} ${cy})`);
+      svg.appendChild(circle);
+      cumulative += segPct;
+    });
+
+    const text1 = document.createElementNS(ns, "text");
+    text1.setAttribute("x", cx); text1.setAttribute("y", cy - 6); text1.setAttribute("text-anchor", "middle");
+    text1.setAttribute("font-size", "13"); text1.setAttribute("fill", "#777");
+    text1.textContent = "Locked in";
+    svg.appendChild(text1);
+
+    const text2 = document.createElementNS(ns, "text");
+    text2.setAttribute("x", cx); text2.setAttribute("y", cy + 22); text2.setAttribute("text-anchor", "middle");
+    text2.setAttribute("font-size", "28"); text2.setAttribute("font-weight", "600"); text2.setAttribute("fill", "#1a1d26");
+    text2.textContent = pct + "%";
+    svg.appendChild(text2);
+
+    const legend = document.getElementById("ringLegend");
+    legend.innerHTML = "";
+    if (Object.keys(byCat).length === 0) {
+      legend.innerHTML = "<div style='color:#999'>No tasks scheduled today.</div>";
+    }
+    Object.keys(byCat).forEach(catName => {
+      const info = byCat[catName];
+      const row = document.createElement("div");
+      row.className = "ring-legend-row";
+      const dot = document.createElement("div");
+      dot.className = "ring-legend-dot";
+      dot.style.background = categoryColor(catName);
+      const label = document.createElement("span");
+      label.textContent = `${catName}: ${info.done} / ${info.total} tasks completed`;
+      row.appendChild(dot);
+      row.appendChild(label);
+      legend.appendChild(row);
+    });
+  }
+
+  function dayPct(d) {
+    const dayTasks = getTasksForDate(d, "All");
+    if (dayTasks.length === 0) return null;
+    const done = dayTasks.filter(t => t.occurrenceDone).length;
+    return Math.round((done / dayTasks.length) * 100);
+  }
+
+  function renderBarChart(range) {
+    const container = document.getElementById("barChart");
+    container.innerHTML = "";
+    let dataPoints = [];
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+
+    if (range === "week") {
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(today); d.setDate(d.getDate() - i);
+        dataPoints.push({ label: d.toLocaleDateString(undefined, { weekday: "short" }), pct: dayPct(d) });
+      }
+    } else if (range === "month") {
+      const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+      for (let i = 1; i <= daysInMonth; i++) {
+        const d = new Date(today.getFullYear(), today.getMonth(), i);
+        if (d > today) { dataPoints.push({ label: i.toString(), pct: null }); continue; }
+        dataPoints.push({ label: i.toString(), pct: dayPct(d) });
+      }
+    } else if (range === "year") {
+      for (let m = 0; m < 12; m++) {
+        const monthDate = new Date(today.getFullYear(), m, 1);
+        const daysInMonth = new Date(today.getFullYear(), m + 1, 0).getDate();
+        let sum = 0, count = 0;
+        for (let day = 1; day <= daysInMonth; day++) {
+          const d = new Date(today.getFullYear(), m, day);
+          if (d > today) continue;
+          const p = dayPct(d);
+          if (p !== null) { sum += p; count++; }
+        }
+        dataPoints.push({ label: monthDate.toLocaleDateString(undefined, { month: "short" }), pct: count ? Math.round(sum / count) : null });
+      }
+    }
+
+    dataPoints.forEach(dp => {
+      const col = document.createElement("div");
+      col.className = "bar-col";
+      const fill = document.createElement("div");
+      fill.className = "bar-fill";
+      fill.style.height = (dp.pct ?? 0) + "%";
+      if (dp.pct === null) fill.style.background = "#eee";
+      const label = document.createElement("div");
+      label.className = "bar-label";
+      label.textContent = dp.label;
+      col.appendChild(fill);
+      col.appendChild(label);
+      container.appendChild(col);
+    });
+
+    const valid = dataPoints.filter(dp => dp.pct !== null);
+    const bestWorstEl = document.getElementById("bestWorst");
+    bestWorstEl.innerHTML = "";
+     if (valid.length > 0) {
+      const best = valid.reduce((a, b) => b.pct > a.pct ? b : a);
+      const worst = valid.reduce((a, b) => b.pct < a.pct ? b : a);
+      bestWorstEl.innerHTML = `<div class="box">🔥 Best: ${best.label} (${best.pct}%)</div><div class="box">📉 Toughest: ${worst.label} (${worst.pct}%)</div>`;
+    }
+  }
+
+  document.querySelectorAll(".range-tab").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".range-tab").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      currentRange = btn.dataset.range;
+      renderBarChart(currentRange);
+    });
+  });
+  const SESSIONS = [
+    { name: "⚡ Sprint", time: "25 / 5", work: 25 },
+    { name: "🔥 Flow", time: "50 / 10", work: 50 },
+    { name: "🧠 Ultra", time: "90 / 20", work: 90 },
+    { name: "⚙ Custom", time: "Choose", work: null }
+  ];
+  let selectedSession = 0;
+
+  function renderFocus() {
+    document.getElementById("focusSetup").style.display = "block";
+    document.getElementById("focusTimerScreen").style.display = "none";
+
+    const grid = document.getElementById("focusSessionGrid");
+    grid.innerHTML = "";
+    SESSIONS.forEach((s, i) => {
+      const card = document.createElement("button");
+      card.className = "focus-session" + (i === selectedSession ? " selected" : "");
+      card.innerHTML = `<div class="session-name">${s.name}</div><div class="session-time">${s.time}</div>`;
+      card.addEventListener("click", () => { selectedSession = i; renderFocus(); });
+      grid.appendChild(card);
+    });
+
+    document.getElementById("customMinutesRow").style.display = selectedSession === 3 ? "block" : "none";
+
+    const container = document.getElementById("focusTopTasks");
+    container.innerHTML = "";
+    const todayTasks = getTasksForDate(new Date(), "All").filter(t => !t.occurrenceDone).slice(0, 3);
+
+    if (todayTasks.length === 0) {
+      container.innerHTML = '<div class="focus-empty">Everything is done today 🎉</div>';
+      return;
+    }
+    todayTasks.forEach(task => {
+      const row = document.createElement("div");
+      row.className = "focus-task-row";
+      row.textContent = task.checkoffLabel || task.name;
+      container.appendChild(row);
+    });
+  }
+  let timerInterval = null;
+  let remainingSeconds = 0;
+  let totalSeconds = 0;
+  let timerRunning = false;
+
+  function formatTime(sec) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+  }
+
+  function drawTimerRing(pctRemaining) {
+    const svg = document.getElementById("timerRing");
+    svg.innerHTML = "";
+    const ns = "http://www.w3.org/2000/svg";
+    const cx = 100, cy = 100, r = 90;
+    const circumference = 2 * Math.PI * r;
+
+    const bg = document.createElementNS(ns, "circle");
+    bg.setAttribute("cx", cx); bg.setAttribute("cy", cy); bg.setAttribute("r", r);
+    bg.setAttribute("fill", "none"); bg.setAttribute("stroke", "#182636"); bg.setAttribute("stroke-width", "10");
+    svg.appendChild(bg);
+
+    const fg = document.createElementNS(ns, "circle");
+    fg.setAttribute("cx", cx); fg.setAttribute("cy", cy); fg.setAttribute("r", r);
+    fg.setAttribute("fill", "none"); fg.setAttribute("stroke", "#4D8DFF"); fg.setAttribute("stroke-width", "10");
+    fg.setAttribute("stroke-linecap", "round");
+    const dashLen = (pctRemaining / 100) * circumference;
+    fg.setAttribute("stroke-dasharray", `${dashLen} ${circumference - dashLen}`);
+    fg.setAttribute("transform", `rotate(-90 ${cx} ${cy})`);
+    fg.style.transition = "stroke-dasharray 1s linear";
+    svg.appendChild(fg);
+  }
+
+  function updateTimerDisplay() {
+    document.getElementById("timerTime").textContent = formatTime(remainingSeconds);
+    drawTimerRing((remainingSeconds / totalSeconds) * 100);
+  }
+
+  function tick() {
+    if (!timerRunning) return;
+    remainingSeconds--;
+    if (remainingSeconds <= 0) {
+      clearInterval(timerInterval);
+      updateTimerDisplay();
+      alert("Session complete 🎉");
+      endTimer();
+      return;
+    }
+    updateTimerDisplay();
+  }
+
+  function startTimer() {
+    const session = SESSIONS[selectedSession];
+    let workMinutes = session.work;
+    if (selectedSession === 3) {
+      workMinutes = parseInt(document.getElementById("customMinutesInput").value);
+      if (!workMinutes || workMinutes < 1) { alert("Enter custom minutes first."); return; }
+    }
+    totalSeconds = workMinutes * 60;
+    remainingSeconds = totalSeconds;
+    timerRunning = true;
+
+    document.getElementById("focusSetup").style.display = "none";
+    document.getElementById("focusTimerScreen").style.display = "block";
+    document.getElementById("timerLabel").textContent = session.name.replace(/^\S+\s/, "") + " session";
+    document.getElementById("pauseResumeBtn").textContent = "⏸";
+    document.body.classList.add("timer-active");
+
+    updateTimerDisplay();
+    clearInterval(timerInterval);
+    timerInterval = setInterval(tick, 1000);
+  }
+
+  function endTimer() {
+    clearInterval(timerInterval);
+    timerRunning = false;
+    document.body.classList.remove("timer-active");
+    document.getElementById("focusTimerScreen").style.display = "none";
+    document.getElementById("focusSetup").style.display = "block";
+  }
+
+  document.getElementById("startFocusBtn").addEventListener("click", startTimer);
+
+  document.getElementById("pauseResumeBtn").addEventListener("click", () => {
+    timerRunning = !timerRunning;
+    const btn = document.getElementById("pauseResumeBtn");
+    btn.textContent = timerRunning ? "⏸" : "▶";
+    btn.classList.toggle("play-icon", !timerRunning);
+  });
+
+  document.getElementById("stopSessionBtn").addEventListener("click", () => {
+    if (!confirm("End this session early?")) return;
+    endTimer();
+  });
+renderAll();
 </script>
 </body>
 </html>
