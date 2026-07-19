@@ -48,7 +48,7 @@
   body { font-family: "Inter", system-ui, -apple-system, sans-serif; background: var(--bg-page); color: var(--text-primary); padding: 1.75rem 1.25rem; transition: background 0.5s ease, color 0.5s ease; -webkit-font-smoothing: antialiased; }
   .container { max-width: 480px; margin: 0 auto; }
 
-  .view-tabs { display: flex; gap: 0.4rem; margin-bottom: 1.5rem; background: var(--border); padding: 0.3rem; border-radius: var(--radius-md); position: relative; z-index: 20; }
+  .view-tabs { display: flex; gap: 0.4rem; margin-bottom: 1.5rem; background: var(--border); padding: 0.3rem; border-radius: var(--radius-md); position: relative; z-index: 6; }
   .view-tab { flex: 1; text-align: center; padding: 0.55rem; border-radius: 10px; border: none; background: transparent; cursor: pointer; font-family: inherit; font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); transition: background 0.2s, color 0.2s; }
   .view-tab.active { background: var(--bg-card); color: var(--text-primary); box-shadow: var(--shadow-card); }
 
@@ -209,7 +209,6 @@
   body.deep-work-mode .view-tab { color: var(--text-secondary); }
   body.deep-work-mode .view-tab.active { background: var(--bg-card); color: var(--text-primary); box-shadow: none; border: 1px solid var(--accent); }
   body.timer-active .view-tabs { opacity: 0; pointer-events: none; transition: opacity 0.5s ease; }
-  body:has(.modal-overlay.open) .view-tabs { opacity: 0.35; pointer-events: none; }
   .view-tabs { transition: opacity 0.5s ease; }
 
   /* Icons */
