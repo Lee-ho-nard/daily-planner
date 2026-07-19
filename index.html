@@ -5,161 +5,190 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Daily Planner</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 <style>
+  :root {
+    --bg: #FAFAFA;
+    --card: #FFFFFF;
+    --text: #1D1D1F;
+    --text-secondary: #6E6E73;
+    --border: #E5E5EA;
+    --accent: #2F5233;
+    --accent-soft: rgba(47, 82, 51, 0.1);
+    --radius-sm: 8px;
+    --radius-md: 14px;
+    --radius-lg: 18px;
+    --shadow-card: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-elevated: 0 4px 16px rgba(0,0,0,0.08);
+  }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: "Space Grotesk", system-ui, sans-serif; background: #f4f5f7; color: #1a1d26; padding: 1.5rem 1rem; transition: background 0.5s ease, color 0.5s ease; }
+  body { font-family: "Inter", system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 1.75rem 1.25rem; transition: background 0.5s ease, color 0.5s ease; -webkit-font-smoothing: antialiased; }
   .container { max-width: 480px; margin: 0 auto; }
 
-  .view-tabs { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; background: #e9ebee; padding: 0.3rem; border-radius: 10px; }
-  .view-tab { flex: 1; text-align: center; padding: 0.5rem; border-radius: 7px; border: none; background: transparent; cursor: pointer; font-family: inherit; font-size: 0.9rem; color: #555; }
-  .view-tab.active { background: white; color: #1a1d26; font-weight: 500; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .view-tabs { display: flex; gap: 0.4rem; margin-bottom: 1.5rem; background: #EFEFF1; padding: 0.3rem; border-radius: var(--radius-md); position: relative; z-index: 20; }
+  .view-tab { flex: 1; text-align: center; padding: 0.55rem; border-radius: 10px; border: none; background: transparent; cursor: pointer; font-family: inherit; font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); transition: background 0.2s, color 0.2s; }
+  .view-tab.active { background: var(--card); color: var(--text); box-shadow: var(--shadow-card); }
 
-  .date-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
-  .date-nav button { background: white; border: 1px solid #ddd; border-radius: 8px; width: 36px; height: 36px; font-size: 1rem; cursor: pointer; }
+  .date-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; }
+  .date-nav button { background: var(--card); border: none; box-shadow: var(--shadow-card); border-radius: 50%; width: 38px; height: 38px; font-size: 1rem; cursor: pointer; color: var(--text); transition: transform 0.15s; }
+  .date-nav button:active { transform: scale(0.92); }
   .date-display { text-align: center; }
-  .date-display .weekday { font-weight: 600; font-size: 1.1rem; }
-  .date-display .fulldate { font-size: 0.8rem; color: #777; }
+  .date-display .weekday { font-weight: 600; font-size: 1.15rem; letter-spacing: -0.01em; }
+  .date-display .fulldate { font-size: 0.8rem; color: var(--text-secondary); margin-top: 1px; }
 
-  .progress-wrap { margin-bottom: 1.25rem; }
-  .progress-text { font-size: 0.8rem; color: #555; margin-bottom: 0.35rem; display: flex; justify-content: space-between; }
-  .progress-bar-track { background: #e2e4e8; border-radius: 999px; height: 6px; overflow: hidden; }
-  .progress-bar-fill { background: #2F5233; height: 100%; border-radius: 999px; transition: width 0.4s ease; }
+  .progress-wrap { margin-bottom: 1.5rem; }
+  .progress-text { font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 0.5rem; display: flex; justify-content: space-between; font-weight: 500; }
+  .progress-bar-track { background: var(--border); border-radius: 999px; height: 5px; overflow: hidden; }
+  .progress-bar-fill { background: var(--accent); height: 100%; border-radius: 999px; transition: width 0.5s ease; }
 
-  .category-tabs { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; flex-wrap: wrap; align-items: center; }
-  .cat-pill { position: relative; border: 1px solid transparent; border-radius: 999px; padding: 0.4rem 0.9rem; font-size: 0.85rem; cursor: pointer; background: white; color: #333; transition: background 0.15s, color 0.15s; }
-  .cat-add { width: 32px; height: 32px; border-radius: 50%; background: white; border: 1px solid #ddd; font-size: 1.1rem; cursor: pointer; }
+  .category-tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; align-items: center; }
+  .cat-pill { position: relative; border: none; box-shadow: var(--shadow-card); border-radius: 999px; padding: 0.45rem 0.95rem; font-size: 0.82rem; font-weight: 500; cursor: pointer; background: var(--card); color: var(--text); transition: background 0.15s, color 0.15s, transform 0.15s; }
+  .cat-pill:active { transform: scale(0.95); }
+  .cat-add { width: 34px; height: 34px; border-radius: 50%; background: var(--card); border: none; box-shadow: var(--shadow-card); font-size: 1.1rem; cursor: pointer; color: var(--text-secondary); }
 
   #taskList, #goalsList { list-style: none; margin-bottom: 5rem; }
   .task-item {
-    background: white; border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 0.5rem;
+    background: var(--card); border-radius: var(--radius-md); padding: 1rem 1.1rem; margin-bottom: 0.55rem;
     display: flex; align-items: center; gap: 0.75rem; cursor: grab; border-left: 4px solid #ccc;
-    transition: opacity 0.4s ease, background 0.15s;
+    box-shadow: var(--shadow-card);
+    transition: opacity 0.4s ease, box-shadow 0.2s, transform 0.15s;
   }
-  .task-item:hover { background: #fafbfa; }
+  .task-item:hover { box-shadow: var(--shadow-elevated); transform: translateY(-1px); }
   .task-item.sortable-ghost { opacity: 0.3; }
   .task-item.completing { opacity: 0.5; }
   .task-item.done .task-name { text-decoration: line-through; opacity: 0.5; }
-  .task-name { flex: 1; font-size: 0.98rem; }
-  .task-meta { font-size: 0.75rem; color: #777; white-space: nowrap; display: flex; align-items: center; gap: 0.25rem; }
-  .task-category { font-size: 0.68rem; padding: 0.15rem 0.5rem; border-radius: 999px; color: #1a1d26; }
-  .delete-btn { background: none; border: none; color: #bbb; cursor: pointer; font-size: 1rem; }
+  .task-name { flex: 1; font-size: 0.96rem; font-weight: 450; }
+  .task-meta { font-size: 0.74rem; color: var(--text-secondary); white-space: nowrap; display: flex; align-items: center; gap: 0.25rem; }
+  .task-category { font-size: 0.68rem; font-weight: 500; padding: 0.18rem 0.55rem; border-radius: 999px; color: #1a1d26; }
+  .delete-btn { background: none; border: none; color: #C7C7CC; cursor: pointer; font-size: 1rem; transition: color 0.15s; }
   .delete-btn:hover { color: #d9534f; }
 
-  .checkbox { width: 20px; height: 20px; border-radius: 6px; border: 2px solid #ccc; cursor: pointer; flex-shrink: 0; position: relative; transition: background 0.2s, border-color 0.2s; }
-  .checkbox.checked { background: #2F5233; border-color: #2F5233; }
+  .checkbox { width: 21px; height: 21px; border-radius: 7px; border: 1.5px solid var(--border); cursor: pointer; flex-shrink: 0; position: relative; transition: background 0.2s, border-color 0.2s, transform 0.1s; }
+  .checkbox:active { transform: scale(0.9); }
+  .checkbox.checked { background: var(--accent); border-color: var(--accent); }
   .checkbox.checked::after { content: "✓"; color: white; font-size: 0.8rem; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 
-  .empty-msg { text-align: center; color: #999; padding: 2.5rem 1rem; font-size: 0.9rem; line-height: 1.5; }
-  .empty-msg .big { font-size: 1.05rem; color: #333; margin-bottom: 0.25rem; }
+  .empty-msg { text-align: center; color: var(--text-secondary); padding: 3rem 1rem; font-size: 0.9rem; line-height: 1.6; }
+  .empty-msg .big { font-size: 1.05rem; color: var(--text); font-weight: 500; margin-bottom: 0.3rem; }
 
-  .fab { position: fixed; bottom: 1.5rem; right: 1.5rem; width: 56px; height: 56px; border-radius: 50%; background: #2F5233; color: white; font-size: 1.75rem; border: none; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.2); transition: transform 0.15s; }
-  .fab:hover { transform: scale(1.05); }
+  .fab { position: fixed; bottom: 1.5rem; right: 1.5rem; width: 56px; height: 56px; border-radius: 50%; background: var(--accent); color: white; font-size: 1.65rem; font-weight: 300; border: none; cursor: pointer; box-shadow: 0 6px 20px rgba(47,82,51,0.35); transition: transform 0.15s; }
+  .fab:hover { transform: scale(1.06); }
+  .fab:active { transform: scale(0.94); }
 
-  .mic-fab { position: fixed; bottom: 1.5rem; right: 5.5rem; width: 56px; height: 56px; border-radius: 50%; background: white; border: 1px solid #ddd; color: #2F5233; font-size: 1.4rem; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+  .mic-fab { position: fixed; bottom: 1.5rem; right: 5.5rem; width: 56px; height: 56px; border-radius: 50%; background: var(--card); border: none; color: var(--accent); font-size: 1.35rem; cursor: pointer; box-shadow: var(--shadow-elevated); transition: transform 0.15s; }
+  .mic-fab:active { transform: scale(0.94); }
   .mic-fab.listening { background: #d9534f; color: white; animation: pulse 1s infinite; }
   @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08); } }
 
-  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); align-items: center; justify-content: center; padding: 1rem; z-index: 10; }
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); backdrop-filter: blur(4px); align-items: center; justify-content: center; padding: 1rem; z-index: 10; }
   .modal-overlay.open { display: flex; }
-  .modal { background: white; border-radius: 12px; padding: 1.5rem; width: 100%; max-width: 360px; max-height: 90vh; overflow-y: auto; }
-  .modal h3 { margin-bottom: 1rem; }
-  .modal label { display: block; font-size: 0.8rem; color: #555; margin: 0.75rem 0 0.25rem; }
-  .modal input, .modal select { width: 100%; padding: 0.55rem; border-radius: 6px; border: 1px solid #ddd; font-size: 0.9rem; font-family: inherit; transition: border-color 0.15s, box-shadow 0.15s; }
-  .modal input:focus, .modal select:focus { outline: none; border-color: #2F5233; box-shadow: 0 0 0 3px rgba(47,82,51,0.12); }
+  .modal { background: var(--card); border-radius: var(--radius-lg); padding: 1.75rem; width: 100%; max-width: 360px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.25); }
+  .modal h3 { margin-bottom: 1rem; font-weight: 600; letter-spacing: -0.01em; }
+  .modal label { display: block; font-size: 0.78rem; color: var(--text-secondary); margin: 0.8rem 0 0.3rem; font-weight: 500; }
+  .modal input, .modal select { width: 100%; padding: 0.65rem 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: #FBFBFB; font-size: 0.9rem; font-family: inherit; transition: border-color 0.15s, box-shadow 0.15s, background 0.15s; }
+  .modal input:focus, .modal select:focus { outline: none; border-color: var(--accent); background: white; box-shadow: 0 0 0 3px var(--accent-soft); }
   .modal-row { display: flex; gap: 0.5rem; }
   .modal-row > div { flex: 1; }
-  .modal-actions { display: flex; gap: 0.5rem; margin-top: 1.25rem; }
-  .modal-actions button { flex: 1; padding: 0.6rem; border-radius: 8px; border: none; cursor: pointer; font-size: 0.9rem; font-family: inherit; }
-  .btn-cancel { background: #eee; }
-  .btn-save { background: #2F5233; color: white; }
-  .btn-delete-modal { background: #d9534f; color: white; }
+  .modal-actions { display: flex; gap: 0.5rem; margin-top: 1.5rem; }
+  .modal-actions button { flex: 1; padding: 0.7rem; border-radius: var(--radius-sm); border: none; cursor: pointer; font-size: 0.9rem; font-weight: 500; font-family: inherit; transition: opacity 0.15s, transform 0.1s; }
+  .modal-actions button:active { transform: scale(0.97); }
+  .btn-cancel { background: #F2F2F3; color: var(--text); }
+  .btn-save { background: var(--accent); color: white; }
+  .btn-delete-modal { background: #FDEDED; color: #d9534f; }
 
   .color-swatches { display: flex; gap: 0.5rem; margin-top: 0.4rem; flex-wrap: wrap; }
-  .swatch { width: 28px; height: 28px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; }
-  .swatch.selected { border-color: #1a1d26; }
+  .swatch { width: 28px; height: 28px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: transform 0.15s; }
+  .swatch:active { transform: scale(0.9); }
+  .swatch.selected { border-color: var(--text); }
 
   .weekday-picker { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
-  .weekday-btn { width: 34px; height: 34px; border-radius: 50%; border: 1px solid #ddd; background: white; font-size: 0.75rem; cursor: pointer; }
-  .weekday-btn.selected { background: #2F5233; color: white; border-color: #2F5233; }
+  .weekday-btn { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--border); background: white; font-size: 0.75rem; cursor: pointer; transition: background 0.15s, color 0.15s; }
+  .weekday-btn.selected { background: var(--accent); color: white; border-color: var(--accent); }
   .repeat-extra { display: none; }
   .repeat-extra.show { display: block; }
 
-  .goal-checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem; }
+  .goal-checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.9rem; }
   .goal-checkbox-row input { width: auto; }
-  .goal-checkbox-row label { margin: 0; font-size: 0.85rem; color: #333; }
+  .goal-checkbox-row label { margin: 0; font-size: 0.85rem; color: var(--text); }
 
-  .goal-card { background: white; border-radius: 10px; padding: 1rem; margin-bottom: 0.75rem; border-left: 4px solid #ccc; }
-  .goal-card-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.25rem; }
-  .goal-name { font-weight: 600; font-size: 1rem; }
-  .goal-pct { font-size: 0.85rem; color: #555; }
-  .goal-sub { font-size: 0.75rem; color: #999; margin-bottom: 0.6rem; }
+  .goal-card { background: var(--card); border-radius: var(--radius-md); padding: 1.1rem; margin-bottom: 0.7rem; border-left: 4px solid #ccc; box-shadow: var(--shadow-card); }
+  .goal-card-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.3rem; }
+  .goal-name { font-weight: 600; font-size: 1rem; letter-spacing: -0.01em; }
+  .goal-pct { font-size: 0.85rem; color: var(--text-secondary); font-weight: 500; }
+  .goal-sub { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.7rem; }
   .goal-dots { display: flex; gap: 4px; flex-wrap: wrap; }
-  .goal-dot { width: 16px; height: 16px; border-radius: 4px; background: #eee; border: 1px solid #ddd; }
+  .goal-dot { width: 15px; height: 15px; border-radius: 5px; background: #F0F0F1; border: 1px solid var(--border); }
   .goal-dot.done { border: none; }
   .goal-dot.future { opacity: 0.4; border-style: dashed; }
-  .ring-section { display:flex; align-items:center; gap:1.5rem; background:white; border-radius:10px; padding:1.25rem; margin-bottom:1.25rem; }
+
+  .ring-section { display:flex; align-items:center; gap:1.5rem; background:var(--card); border-radius:var(--radius-md); padding:1.4rem; margin-bottom:1.25rem; box-shadow: var(--shadow-card); }
   .ring-legend { flex:1; font-size:0.8rem; }
-  .ring-legend-row { display:flex; align-items:center; gap:0.4rem; margin-bottom:0.4rem; }
-  .ring-legend-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
-  .range-tabs { display:flex; gap:0.5rem; margin-bottom:1rem; }
-  .range-tab { flex:1; padding:0.4rem; border-radius:8px; border:1px solid #ddd; background:white; cursor:pointer; font-family:inherit; font-size:0.85rem; }
-  .range-tab.active { background:#2F5233; color:white; border-color:#2F5233; }
-  .bar-chart { display:flex; align-items:flex-end; gap:4px; height:140px; background:white; border-radius:10px; padding:1rem; margin-bottom:0.75rem; }
+  .ring-legend-row { display:flex; align-items:center; gap:0.4rem; margin-bottom:0.45rem; }
+  .ring-legend-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+  .range-tabs { display:flex; gap:0.4rem; margin-bottom:1rem; background:#EFEFF1; padding:0.3rem; border-radius:var(--radius-md); }
+  .range-tab { flex:1; padding:0.5rem; border-radius:10px; border:none; background:transparent; cursor:pointer; font-family:inherit; font-size:0.82rem; font-weight:500; color:var(--text-secondary); transition: background 0.2s, color 0.2s; }
+  .range-tab.active { background:var(--card); color: var(--text); box-shadow: var(--shadow-card); }
+  .bar-chart { display:flex; align-items:flex-end; gap:4px; height:140px; background:var(--card); border-radius:var(--radius-md); padding:1.1rem; margin-bottom:0.8rem; box-shadow: var(--shadow-card); }
   .bar-col { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; }
-  .bar-fill { width:100%; background:#2F5233; border-radius:4px 4px 0 0; min-height:2px; }
-  .bar-label { font-size:0.6rem; color:#999; margin-top:0.3rem; }
-  .best-worst { display:flex; gap:0.75rem; font-size:0.8rem; color:#555; }
-  .best-worst .box { flex:1; background:white; border-radius:8px; padding:0.75rem; text-align:center; }
-  body.deep-work-mode {
-    background: #071320;
-    color: #A7B4C7;
+  .bar-fill { width:100%; background:var(--accent); border-radius:4px 4px 0 0; min-height:2px; transition: height 0.4s ease; }
+  .bar-label { font-size:0.6rem; color:var(--text-secondary); margin-top:0.3rem; }
+  .best-worst { display:flex; gap:0.75rem; font-size:0.8rem; color: var(--text-secondary); }
+  .best-worst .box { flex:1; background:var(--card); border-radius:var(--radius-sm); padding:0.85rem; text-align:center; box-shadow: var(--shadow-card); }
+
+  #focusView{
+    background:#071320;
+    position: fixed;
+    inset: 0;
+    padding: 2.5rem 1.25rem;
+    color:white;
+    overflow-y: auto;
+    z-index: 5;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.4s ease, visibility 0s linear 0.4s;
   }
-  body.deep-work-mode .view-tabs { background: #101D2E; }
-  body.deep-work-mode .view-tab { color: #A7B4C7; }
-  body.deep-work-mode .view-tab.active { background: #101D2E; color: white; box-shadow: none; border: 1px solid #4D8DFF; }
+  #focusView.visible {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.4s ease, visibility 0s linear 0s;
+  }
+  .focus-container{ max-width:450px; margin:0 auto; position: relative; z-index: 1; padding-top: 5.5rem; }
+  .focus-title{ font-size:1.9rem; font-weight:700; letter-spacing:-0.02em; margin-top:1.25rem; margin-bottom:0.5rem; }
+  .focus-subtitle{ color:#8b98ae; line-height:1.6; margin-bottom:2rem; font-size: 0.95rem; }
+  .focus-session-grid{ display:grid; grid-template-columns:1fr 1fr; gap:0.7rem; margin-bottom:2rem; }
+  .focus-session{ background:#111d31; border:1.5px solid transparent; border-radius:var(--radius-md); padding:1.1rem; cursor:pointer; color:white; transition:.2s; font-family: inherit; text-align: left; }
+  .focus-session:hover{ transform:translateY(-2px); }
+  .focus-session.selected{ border-color:#4D8DFF; background:#16253d; }
+  .session-name{ font-size:0.95rem; font-weight:500; margin-bottom:0.4rem; }
+  .session-time{ color:#8da2c3; font-size: 0.8rem; }
+  .focus-heading{ font-size:0.9rem; font-weight:500; margin-bottom:0.9rem; color: white; }
+  .focus-top3{ background:#101c30; border-radius:var(--radius-md); padding:1.3rem; margin-bottom:1.75rem; }
+  .focus-empty{ color:#7d8ea7; font-size: 0.9rem; }
+  .start-focus-btn{ width:100%; padding:0.9rem; border:none; border-radius:var(--radius-sm); font-size:0.95rem; font-weight:600; cursor:pointer; background:#3b82f6; color:white; font-family: inherit; transition:.2s; }
+  .start-focus-btn:hover{ transform:scale(1.02); }
 
-  #focusView { display: none; }
-  .focus-title { font-size: 1.6rem; font-weight: 600; letter-spacing: 0.02em; margin: 0.5rem 0 0.25rem; color: white; }
-  .focus-subtitle { color: #A7B4C7; margin-bottom: 1.75rem; font-size: 0.9rem; }
-
-  .focus-session-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 1.75rem; }
-  .focus-session { background: #101D2E; border: 1px solid transparent; border-radius: 12px; padding: 1rem; cursor: pointer; color: white; text-align: left; font-family: inherit; transition: border-color 0.15s, transform 0.15s; }
-  .focus-session:hover { transform: translateY(-1px); }
-  .focus-session.selected { border-color: #4D8DFF; }
-  .session-name { font-size: 0.95rem; font-weight: 500; margin-bottom: 0.3rem; }
-  .session-time { color: #A7B4C7; font-size: 0.8rem; }
-
-  .focus-heading { font-size: 0.95rem; font-weight: 500; margin-bottom: 0.75rem; color: white; }
-  .focus-top3 { background: #101D2E; border-radius: 12px; padding: 1.1rem; margin-bottom: 1.5rem; }
-  .focus-empty { color: #6b7789; font-size: 0.9rem; }
-  .focus-task-row { padding: 0.5rem 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 0.9rem; color: #dfe4ea; }
-  .focus-task-row:last-child { border-bottom: none; }
-
-  .start-focus-btn { width: 100%; padding: 0.9rem; border: none; border-radius: 10px; font-size: 0.95rem; font-weight: 500; cursor: pointer; background: #4D8DFF; color: white; font-family: inherit; transition: opacity 0.15s; }
-  .start-focus-btn:hover { opacity: 0.9; }
   .custom-minutes-row { margin-bottom: 1.5rem; }
   .custom-minutes-row label { display: block; font-size: 0.8rem; color: #A7B4C7; margin-bottom: 0.3rem; }
-  .custom-minutes-row input { width: 100%; padding: 0.5rem; border-radius: 8px; border: 1px solid #223349; background: #101D2E; color: white; font-family: inherit; }
+  .custom-minutes-row input { width: 100%; padding: 0.5rem; border-radius: var(--radius-sm); border: 1px solid #223349; background: #101D2E; color: white; font-family: inherit; }
 
   #focusTimerScreen { display: none; text-align: center; padding-top: 2rem; }
-  body.timer-active .view-tabs { opacity: 0; pointer-events: none; transition: opacity 0.5s ease; }
-  .view-tabs { transition: opacity 0.5s ease; }
   .timer-ring-wrap { position: relative; display: inline-block; margin-bottom: 1.5rem; }
   .timer-time { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 3.4rem; font-weight: 600; color: white; letter-spacing: -0.02em; }
   .timer-label { color: #A7B4C7; font-size: 0.9rem; margin-bottom: 1rem; }
   .timer-icon-controls { position: fixed; top: 1.5rem; right: 1.5rem; display: flex; gap: 0.75rem; }
   .timer-icon-btn { width: 38px; height: 38px; border-radius: 50%; border: 1px solid #223349; background: #101D2E; color: #A7B4C7; font-family: inherit; cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center; line-height: 1; padding: 0; }
+  .timer-icon-btn:hover { color: white; border-color: #4D8DFF; }
   #pauseResumeBtn { font-size: 0.85rem; }
   #pauseResumeBtn.play-icon { padding-left: 3px; }
-  .timer-icon-btn:hover { color: white; border-color: #4D8DFF; }
 
-.start-focus-btn:hover{
-
-transform:scale(1.02);
-
-}
+  body.deep-work-mode { background: #071320; color: #A7B4C7; }
+  body.deep-work-mode .view-tabs { background: #101D2E; }
+  body.deep-work-mode .view-tab { color: #A7B4C7; }
+  body.deep-work-mode .view-tab.active { background: #101D2E; color: white; box-shadow: none; border: 1px solid #4D8DFF; }
+  body.timer-active .view-tabs { opacity: 0; pointer-events: none; transition: opacity 0.5s ease; }
+  .view-tabs { transition: opacity 0.5s ease; }
 </style>
 </head>
 <body>
@@ -170,6 +199,7 @@ transform:scale(1.02);
     <button class="view-tab" id="tabGoals">Goals</button>
     <button class="view-tab" id="tabAnalysis">Analysis</button>
     <button class="view-tab" id="tabFocus">Deep Work</button>
+    <button class="view-tab" id="tabReflection">Reflection</button>
   </div>
 
   <div id="plannerView">
@@ -182,6 +212,8 @@ transform:scale(1.02);
       <button id="nextDay">→</button>
     </div>
 
+    <div id="lockedBanner" style="display:none;background:#f0f0f0;color:#777;text-align:center;padding:0.5rem;border-radius:8px;font-size:0.8rem;margin-bottom:1rem;">🔒 This day is locked</div>
+    <button id="endDayBtn" class="start-focus-btn" style="background:#1a1d26;margin-bottom:1.25rem;">End Day</button>
     <div class="progress-wrap" id="progressWrap">
       <div class="progress-text">
         <span id="progressCount"></span>
@@ -204,6 +236,8 @@ transform:scale(1.02);
       <svg id="ringChart" viewBox="0 0 200 200" width="180" height="180"></svg>
       <div class="ring-legend" id="ringLegend"></div>
     </div>
+    <div id="momentumBox" style="background:white;border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:center;"></div>
+    <div id="focusScoreBox" style="background:white;border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:center;"></div>
 
     <div class="range-tabs">
       <button class="range-tab active" data-range="week">Week</button>
@@ -214,37 +248,58 @@ transform:scale(1.02);
     <div id="barChart" class="bar-chart"></div>
     <div id="bestWorst" class="best-worst"></div>
   </div>
+  <div id="reflectionView" style="display:none;">
+    <div class="date-nav">
+      <button id="reflPrevDay">←</button>
+      <div class="date-display">
+        <div class="weekday" id="reflWeekday"></div>
+        <div class="fulldate" id="reflFulldate"></div>
+      </div>
+      <button id="reflNextDay">→</button>
+    </div>
+
+    <label style="display:block;font-size:0.85rem;color:#555;margin-bottom:0.4rem;">What went well today?</label>
+    <textarea id="reflWentWell" rows="3" style="width:100%;padding:0.6rem;border-radius:8px;border:1px solid #ddd;font-family:inherit;font-size:0.9rem;margin-bottom:1rem;resize:none;"></textarea>
+
+    <label style="display:block;font-size:0.85rem;color:#555;margin-bottom:0.4rem;">What could improve?</label>
+    <textarea id="reflImprove" rows="3" style="width:100%;padding:0.6rem;border-radius:8px;border:1px solid #ddd;font-family:inherit;font-size:0.9rem;margin-bottom:1rem;resize:none;"></textarea>
+
+    <button id="reflSaveBtn" class="start-focus-btn" style="background:#2F5233;">Save Reflection</button>
+  </div>
   <div id="focusView">
-    <div id="focusSetup">
-      <div class="focus-title">Deep Work</div>
-      <div class="focus-subtitle">One task. No distractions.</div>
-
-      <div class="focus-session-grid" id="focusSessionGrid"></div>
-
-      <div class="custom-minutes-row" id="customMinutesRow" style="display:none;">
-        <label>Custom minutes</label>
-        <input type="number" id="customMinutesInput" min="1" placeholder="e.g. 40">
+    <div class="focus-container">
+      <div id="focusSetup">
+        <div class="focus-title">Deep Work</div>
+        <div class="focus-subtitle">One task. No distractions.</div>
+  
+        <div class="focus-session-grid" id="focusSessionGrid"></div>
+  
+        <div class="custom-minutes-row" id="customMinutesRow" style="display:none;">
+          <label>Custom minutes</label>
+          <input type="number" id="customMinutesInput" min="1" placeholder="e.g. 40">
+        </div>
+  
+        <div class="focus-top3">
+          <div class="focus-heading">Today's Top 3</div>
+          <div id="focusTopTasks"></div>
+        </div>
+  
+        <button id="startFocusBtn" class="start-focus-btn">Start Session</button>
       </div>
-
-      <div class="focus-top3">
-        <div class="focus-heading">Today's Top 3</div>
-        <div id="focusTopTasks"></div>
+  
+      <div id="focusTimerScreen">
+        <div class="timer-icon-controls">
+          <button id="pauseResumeBtn" class="timer-icon-btn" title="Pause">⏸</button>
+          <button id="stopSessionBtn" class="timer-icon-btn" title="End session">✕</button>
+        </div>
+        <div class="timer-ring-wrap">
+          <svg id="timerRing" viewBox="0 0 200 200" width="240" height="240"></svg>
+          <div class="timer-time" id="timerTime">25:00</div>
+        </div>
+        <div class="timer-label" id="timerLabel"></div>
       </div>
-
-      <button id="startFocusBtn" class="start-focus-btn">Start Session</button>
     </div>
-
-    <div id="focusTimerScreen">
-      <div class="timer-icon-controls">
-        <button id="pauseResumeBtn" class="timer-icon-btn" title="Pause">⏸</button>
-        <button id="stopSessionBtn" class="timer-icon-btn" title="End session">✕</button>
-      </div>
-      <div class="timer-ring-wrap">
-        <svg id="timerRing" viewBox="0 0 200 200" width="240" height="240"></svg>
-        <div class="timer-time" id="timerTime">25:00</div>
-      </div>
-      <div class="timer-label" id="timerLabel"></div>
-    </div>
+  </div>
   </div>
 
 </div>
@@ -424,6 +479,29 @@ transform:scale(1.02);
     return rem ? h + "h " + rem + "m" : h + "h";
   }
 
+  function computeStreak(task) {
+    const today = toDateStr(new Date());
+    const start = new Date(task.date + "T00:00:00");
+    const end = new Date((task.endDate || today) + "T00:00:00");
+    let scheduledDays = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      if (occursOn(task, d)) scheduledDays.push(toDateStr(d));
+    }
+    let pastScheduled = scheduledDays.filter(ds => ds <= today).slice().reverse();
+
+    // If today is scheduled but not yet completed, don't let that break the streak —
+    // just skip it and start counting from yesterday instead.
+    if (pastScheduled.length && pastScheduled[0] === today && !(task.completedDates || []).includes(today)) {
+      pastScheduled = pastScheduled.slice(1);
+    }
+
+    let streak = 0;
+    for (const ds of pastScheduled) {
+      if ((task.completedDates || []).includes(ds)) streak++;
+      else break;
+    }
+    return streak;
+  }
   function occursOn(t, dateObj) {
     const dateStr = toDateStr(dateObj);
     if (!t.recurrence || t.recurrence.type === "none") {
@@ -469,21 +547,24 @@ transform:scale(1.02);
     document.getElementById("tabGoals").classList.toggle("active", view === "goals");
     document.getElementById("tabAnalysis").classList.toggle("active", view === "analysis");
     document.getElementById("tabFocus").classList.toggle("active", view === "focus");
+    document.getElementById("tabReflection").classList.toggle("active", view === "reflection");
 
     document.getElementById("plannerView").style.display = view === "planner" ? "block" : "none";
     document.getElementById("goalsView").style.display = view === "goals" ? "block" : "none";
     document.getElementById("analysisView").style.display = view === "analysis" ? "block" : "none";
-    document.getElementById("focusView").style.display = view === "focus" ? "block" : "none";
+    document.getElementById("focusView").classList.toggle("visible", view === "focus");
+    document.getElementById("reflectionView").style.display = view === "reflection" ? "block" : "none";
 
     document.getElementById("openAdd").style.display = view === "planner" ? "block" : "none";
     document.getElementById("openAddGoal").style.display = view === "goals" ? "block" : "none";
     document.getElementById("micBtn").style.display = view === "planner" ? "block" : "none";
     document.getElementById("todayBtn").style.display = view === "planner" ? "block" : "none";
-
     document.body.classList.toggle("deep-work-mode", view === "focus");
 
     if (view === "goals") renderGoals();
     if (view === "analysis") renderAnalysis();
+    
+    if (view === "reflection") renderReflection();
     if (view === "focus") renderFocus();
   }
 
@@ -491,6 +572,7 @@ transform:scale(1.02);
   document.getElementById("tabGoals").addEventListener("click", () => switchView("goals"));
   document.getElementById("tabAnalysis").addEventListener("click", () => switchView("analysis"));
   document.getElementById("tabFocus").addEventListener("click", () => switchView("focus"));
+  document.getElementById("tabReflection").addEventListener("click", () => switchView("reflection"));
 
   // --- Goals ---
   function renderGoals() {
@@ -519,6 +601,7 @@ transform:scale(1.02);
 
       const doneCount = scheduledDays.filter(ds => (goal.completedDates || []).includes(ds)).length;
       const pct = scheduledDays.length ? Math.round((doneCount / scheduledDays.length) * 100) : 0;
+      const streak = computeStreak(goal);
 
       const card = document.createElement("li");
       card.className = "goal-card";
@@ -547,7 +630,8 @@ transform:scale(1.02);
 
       const sub = document.createElement("div");
       sub.className = "goal-sub";
-      sub.textContent = `${goal.category} · ${doneCount} / ${scheduledDays.length} days`;
+      const streakText = streak > 0 ? ` · 🔥 ${streak} day${streak === 1 ? "" : "s"}` : "";
+      sub.textContent = `${goal.category} · ${doneCount} / ${scheduledDays.length} days${streakText}`;
 
       const dots = document.createElement("div");
       dots.className = "goal-dots";
@@ -686,6 +770,7 @@ transform:scale(1.02);
       checkbox.className = "checkbox" + (task.occurrenceDone ? " checked" : "");
       checkbox.addEventListener("click", (e) => {
         e.stopPropagation();
+        if (isDayLocked(task.occurrenceDate)) { alert("This day is locked. Reflection already completed."); return; }
         const realTask = tasks.find(t => t.id === task.id);
         if (task.isRecurring) {
           realTask.completedDates = realTask.completedDates || [];
@@ -708,9 +793,14 @@ transform:scale(1.02);
       meta.className = "task-meta";
       const durText = formatDuration(task.duration);
       const durIcon = durText ? "🕐 " + durText : "";
-      const repeatIcon = task.isRecurring ? "🔁" : "";
       const goalIcon = task.isGoal ? "🎯" : "";
-      meta.innerHTML = [task.time, durIcon, repeatIcon, goalIcon].filter(Boolean).join(" · ");
+      let streakIcon = "";
+      if (task.isRecurring) {
+        const realTask = tasks.find(t => t.id === task.id);
+        const streak = computeStreak(realTask);
+        streakIcon = streak > 0 ? `🔥${streak}` : "🔁";
+      }
+      meta.innerHTML = [task.time, durIcon, streakIcon, goalIcon].filter(Boolean).join(" · ");
 
       const cat = document.createElement("span");
       cat.className = "task-category";
@@ -761,6 +851,10 @@ transform:scale(1.02);
     renderDate();
     renderCategoryTabs();
     renderTasks();
+
+    const locked = isDayLocked(toDateStr(currentDate));
+    document.getElementById("lockedBanner").style.display = locked ? "block" : "none";
+    document.getElementById("endDayBtn").style.display = locked ? "none" : "block";
   }
 
   document.getElementById("prevDay").addEventListener("click", () => { currentDate.setDate(currentDate.getDate() - 1); renderAll(); });
@@ -799,6 +893,7 @@ transform:scale(1.02);
   });
 
   function openAddModal() {
+    if (isDayLocked(toDateStr(currentDate))) { alert("This day is locked. You can't add tasks to a day you've already reflected on."); return; }
     if (categories.length === 0) { alert("Add a category first using the + next to the category tabs."); return; }
     editingTaskId = null;
     document.getElementById("modalTitle").textContent = "Add Task";
@@ -1276,9 +1371,70 @@ document.getElementById("goalViewEdit").addEventListener("click", () => {
 });
 let currentRange = "week";
 
-  function renderAnalysis() {
+function renderAnalysis() {
     renderRingChart();
     renderBarChart(currentRange);
+    renderMomentum();
+    renderFocusScore();
+  }
+
+  function renderFocusScore() {
+    const todayTasks = getTasksForDate(new Date(), "All");
+    const completionPct = todayTasks.length
+      ? (todayTasks.filter(t => t.occurrenceDone).length / todayTasks.length) * 100
+      : 0;
+
+    const goalTasks = tasks.filter(t => t.isGoal);
+    let consistencyPct = 100;
+    if (goalTasks.length > 0) {
+      const aliveStreaks = goalTasks.filter(g => computeStreak(g) > 0).length;
+      consistencyPct = (aliveStreaks / goalTasks.length) * 100;
+    }
+
+    const score = Math.round(completionPct * 0.7 + consistencyPct * 0.3);
+
+    const el = document.getElementById("focusScoreBox");
+    let color = "#B5533C";
+    if (score >= 80) color = "#2F5233";
+    else if (score >= 50) color = "#C7862B";
+
+    el.innerHTML = `
+      <div style="font-size:2rem;font-weight:600;color:${color};">${score}</div>
+      <div style="font-size:0.8rem;color:#999;">Focus Score</div>
+    `;
+  }
+
+  function avgPctForRange(startDaysAgo, endDaysAgo) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    let sum = 0, count = 0;
+    for (let i = startDaysAgo; i >= endDaysAgo; i--) {
+      const d = new Date(today); d.setDate(d.getDate() - i);
+      const p = dayPct(d);
+      if (p !== null) { sum += p; count++; }
+    }
+    return count ? sum / count : null;
+  }
+
+  function renderMomentum() {
+    const thisWeek = avgPctForRange(6, 0);
+    const lastWeek = avgPctForRange(13, 7);
+    const el = document.getElementById("momentumBox");
+
+    if (thisWeek === null || lastWeek === null) {
+      el.innerHTML = `<div style="color:#999;font-size:0.85rem;">Not enough history yet to show momentum.</div>`;
+      return;
+    }
+
+    const diff = Math.round(thisWeek - lastWeek);
+    let icon = "→", label = "Steady", color = "#999";
+    if (diff > 3) { icon = "↗"; label = "You're improving"; color = "#2F5233"; }
+    else if (diff < -3) { icon = "↘"; label = "Momentum dropping"; color = "#B5533C"; }
+
+    el.innerHTML = `
+      <div style="font-size:1.4rem;">${icon}</div>
+      <div style="font-weight:500;color:${color};">${label}</div>
+      <div style="font-size:0.75rem;color:#999;">${Math.round(thisWeek)}% this week vs ${Math.round(lastWeek)}% last week</div>
+    `;
   }
 
   function renderRingChart() {
@@ -1562,6 +1718,82 @@ let currentRange = "week";
   document.getElementById("stopSessionBtn").addEventListener("click", () => {
     if (!confirm("End this session early?")) return;
     endTimer();
+  });
+  let reflectionDate = new Date();
+  let reflections = JSON.parse(localStorage.getItem("reflections")) || {};
+  let lockedDays = JSON.parse(localStorage.getItem("lockedDays")) || [];
+
+  function saveLockedDays() {
+    localStorage.setItem("lockedDays", JSON.stringify(lockedDays));
+  }
+
+  function isDayLocked(dateStr) {
+    return lockedDays.includes(dateStr);
+  }
+
+  function saveReflections() {
+    localStorage.setItem("reflections", JSON.stringify(reflections));
+  }
+
+  function renderReflection() {
+    document.getElementById("reflWeekday").textContent = reflectionDate.toLocaleDateString(undefined, { weekday: "long" });
+    document.getElementById("reflFulldate").textContent = reflectionDate.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
+
+    const dateStr = toDateStr(reflectionDate);
+    const entry = reflections[dateStr] || { wentWell: "", improve: "" };
+    document.getElementById("reflWentWell").value = entry.wentWell;
+    document.getElementById("reflImprove").value = entry.improve;
+  }
+
+  document.getElementById("reflPrevDay").addEventListener("click", () => {
+    reflectionDate.setDate(reflectionDate.getDate() - 1);
+    renderReflection();
+  });
+  document.getElementById("reflNextDay").addEventListener("click", () => {
+    reflectionDate.setDate(reflectionDate.getDate() + 1);
+    renderReflection();
+  });
+
+  document.getElementById("reflSaveBtn").addEventListener("click", () => {
+    const dateStr = toDateStr(reflectionDate);
+    const wentWell = document.getElementById("reflWentWell").value.trim();
+    const improve = document.getElementById("reflImprove").value.trim();
+
+    if (dateStr === pendingLockDate) {
+      if (!wentWell || !improve) {
+        alert("Fill in both fields to end the day.");
+        return;
+      }
+      lockedDays.push(dateStr);
+      saveLockedDays();
+      pendingLockDate = null;
+      reflections[dateStr] = { wentWell, improve };
+      saveReflections();
+      alert("Day ended. Nice work today.");
+      renderAll();
+    } else {
+      reflections[dateStr] = { wentWell, improve };
+      saveReflections();
+      alert("Saved.");
+    }
+  });
+  let pendingLockDate = null;
+
+  document.getElementById("endDayBtn").addEventListener("click", () => {
+    const dateStr = toDateStr(currentDate);
+    const dayTasks = getTasksForDate(currentDate, "All");
+    const unfinished = dayTasks.filter(t => !t.occurrenceDone).length;
+
+    let confirmMsg = "End this day? Write your reflection to finish — you can't check anything off afterward.";
+    if (unfinished > 0) confirmMsg = `You still have ${unfinished} unfinished task${unfinished === 1 ? "" : "s"}. ` + confirmMsg;
+
+    if (!confirm(confirmMsg)) return;
+
+    pendingLockDate = dateStr;
+    switchView("reflection");
+    reflectionDate = new Date(currentDate);
+    renderReflection();
+    document.getElementById("reflWentWell").focus();
   });
 renderAll();
 </script>
