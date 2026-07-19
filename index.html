@@ -80,21 +80,22 @@
   .task-item.sortable-ghost { opacity: 0.3; }
   .task-item.completing { opacity: 0.5; }
   .task-item.done .task-name { text-decoration: line-through; opacity: 0.5; }
-  .task-name { flex: 1; font-size: 0.96rem; font-weight: 450; }
+  .task-name { flex: 1; font-size: 0.96rem; font-weight: 450; transition: color 250ms ease 100ms; }
+  .task-item.completing .task-name { color: var(--text-muted); text-decoration: line-through; }
   .task-meta { font-size: 0.74rem; color: var(--text-secondary); white-space: nowrap; display: flex; align-items: center; gap: 0.25rem; }
   /* fixed dark text: sits on user-chosen pastel category colors, which don't shift with theme */
   .task-category { font-size: 0.68rem; font-weight: 500; padding: 0.18rem 0.55rem; border-radius: 999px; color: #1a1d26; }
   .delete-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1rem; transition: color 0.15s; }
   .delete-btn:hover { color: var(--danger); }
 
-  .checkbox { width: 21px; height: 21px; border-radius: 7px; border: 1.5px solid var(--border); cursor: pointer; flex-shrink: 0; position: relative; display: flex; align-items: center; justify-content: center; transition: background 0.2s, border-color 0.2s, transform 0.1s; }
+  .checkbox { width: 21px; height: 21px; border-radius: 7px; border: 1.5px solid var(--border); cursor: pointer; flex-shrink: 0; position: relative; display: flex; align-items: center; justify-content: center; transition: background 200ms, border-color 200ms, transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1); }
   .checkbox:active { transform: scale(0.9); }
   .checkbox.checked { background: var(--accent); border-color: var(--accent); }
 
   .empty-msg { text-align: center; color: var(--text-secondary); padding: 3rem 1rem; font-size: 0.9rem; line-height: 1.6; }
   .empty-msg .big { font-size: 1.05rem; color: var(--text-primary); font-weight: 500; margin-bottom: 0.3rem; }
 
-  .fab { position: fixed; bottom: 1.5rem; right: 1.5rem; width: 56px; height: 56px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 1.65rem; font-weight: 300; border: none; cursor: pointer; box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 35%, transparent); transition: transform 0.15s; display: flex; align-items: center; justify-content: center; padding-top: 1px; }
+  .fab { position: fixed; bottom: 1.5rem; right: 1.5rem; width: 56px; height: 56px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 1.65rem; font-weight: 300; border: none; cursor: pointer; box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 35%, transparent); transition: transform 0.15s; display: flex; align-items: center; justify-content: center; }
   .fab:hover { transform: scale(1.06); }
   .fab:active { transform: scale(0.94); }
 
@@ -140,9 +141,10 @@
   .goal-pct { font-size: 0.85rem; color: var(--text-secondary); font-weight: 500; }
   .goal-sub { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.7rem; }
   .goal-dots { display: flex; gap: 4px; flex-wrap: wrap; }
-  .goal-dot { width: 15px; height: 15px; border-radius: 5px; background: var(--bg-page); border: 1px solid var(--border); }
+  .goal-dot { width: 15px; height: 15px; border-radius: 5px; background: var(--bg-page); border: 1px solid var(--border); transition: transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1), background 200ms, opacity 250ms; }
   .goal-dot.done { border: none; }
   .goal-dot.future { opacity: 0.4; border-style: dashed; }
+  .goal-dot.milestone { box-shadow: 0 0 0 3px var(--accent-bg); }
 
   .ring-section { display:flex; align-items:center; gap:1.5rem; background:var(--bg-card); border-radius:var(--radius-md); padding:1.4rem; margin-bottom:1.25rem; box-shadow: var(--shadow-card); }
   .ring-legend { flex:1; font-size:0.8rem; }
@@ -207,6 +209,7 @@
   body.deep-work-mode .view-tab { color: var(--text-secondary); }
   body.deep-work-mode .view-tab.active { background: var(--bg-card); color: var(--text-primary); box-shadow: none; border: 1px solid var(--accent); }
   body.timer-active .view-tabs { opacity: 0; pointer-events: none; transition: opacity 0.5s ease; }
+  body:has(.modal-overlay.open) .view-tabs { opacity: 0.35; pointer-events: none; }
   .view-tabs { transition: opacity 0.5s ease; }
 
   /* Icons */
@@ -218,6 +221,23 @@
   .drag-handle .icon { color: inherit; }
   .icon-accent { color: var(--accent); }
   .label-icon { display: flex; align-items: center; gap: 0.3rem; }
+
+  /* Toast + field errors */
+  .toast {
+    position: fixed; bottom: 1.5rem; left: 50%; z-index: 100;
+    background: var(--bg-card); box-shadow: var(--shadow-elevated); border-radius: var(--radius-md);
+    padding: 0.75rem 1.25rem; font-size: 0.85rem; color: var(--text-primary);
+    display: flex; align-items: center; gap: 0.5rem; max-width: calc(100% - 2.5rem);
+    opacity: 0; pointer-events: none;
+    transform: translateX(-50%) translateY(8px);
+    transition: opacity 200ms cubic-bezier(0.34, 1.56, 0.64, 1), transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .field-error { display: none; color: var(--danger); font-size: 0.8rem; margin-top: 0.4rem; }
+  .field-error.show { display: block; }
+
+  /* View crossfade */
+  #plannerView, #goalsView, #analysisView, #reflectionView { transition: opacity 150ms ease; }
 </style>
 </head>
 <body>
@@ -293,6 +313,7 @@
     <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.4rem;"><i data-lucide="edit-3" class="icon"></i>What could improve?</label>
     <textarea id="reflImprove" rows="3" style="width:100%;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:0.9rem;margin-bottom:1rem;resize:none;"></textarea>
 
+    <div class="field-error" id="reflFormError"></div>
     <button id="reflSaveBtn" class="start-focus-btn" style="background:var(--accent);">Save Reflection</button>
   </div>
   <div id="focusView">
@@ -306,6 +327,7 @@
         <div class="custom-minutes-row" id="customMinutesRow" style="display:none;">
           <label>Custom minutes</label>
           <input type="number" id="customMinutesInput" min="1" placeholder="e.g. 40">
+          <div class="field-error" id="customMinutesError"></div>
         </div>
   
         <div class="focus-top3">
@@ -450,6 +472,7 @@
       <button class="btn-cancel" id="goalCancel">Cancel</button>
       <button class="btn-save" id="goalSave">Save</button>
     </div>
+    <div class="field-error" id="goalFormError"></div>
   </div>
 </div>
 <div class="modal-overlay" id="goalViewModalOverlay">
@@ -488,6 +511,58 @@
   function setIcon(el, name, extraClass) {
     el.innerHTML = `<i data-lucide="${name}" class="icon${extraClass ? " " + extraClass : ""}"></i>`;
     lucide.createIcons();
+  }
+
+  let toastEl = null;
+  let toastHideTimeout = null;
+  const TOAST_ICONS = { info: "info", warning: "alert-triangle", success: "check-circle-2" };
+  function showToast(message, variant, duration) {
+    variant = variant || "info";
+    if (!toastEl) {
+      toastEl = document.createElement("div");
+      toastEl.className = "toast";
+      document.body.appendChild(toastEl);
+    }
+    clearTimeout(toastHideTimeout);
+    const iconColor = variant === "success" ? "var(--accent)" : "var(--text-secondary)";
+    toastEl.innerHTML = `<i data-lucide="${TOAST_ICONS[variant]}" class="icon" style="color:${iconColor};"></i><span>${message}</span>`;
+    lucide.createIcons();
+    toastEl.classList.remove("visible");
+    void toastEl.offsetWidth;
+    toastEl.classList.add("visible");
+    toastHideTimeout = setTimeout(() => {
+      toastEl.classList.remove("visible");
+    }, duration || 2500);
+  }
+
+  let confirmOverlayEl = null;
+  function showConfirm({ title, message, confirmLabel, danger, onConfirm }) {
+    if (!confirmOverlayEl) {
+      confirmOverlayEl = document.createElement("div");
+      confirmOverlayEl.className = "modal-overlay";
+      document.body.appendChild(confirmOverlayEl);
+    }
+    confirmOverlayEl.innerHTML = `
+      <div class="modal">
+        <h3></h3>
+        <p style="font-size:0.9rem;color:var(--text-secondary);line-height:1.5;margin-top:0.25rem;"></p>
+        <div class="modal-actions">
+          <button class="btn-cancel" id="confirmCancelBtn">Cancel</button>
+          <button class="${danger ? "btn-delete-modal" : "btn-save"}" id="confirmOkBtn"></button>
+        </div>
+      </div>
+    `;
+    confirmOverlayEl.querySelector("h3").textContent = title;
+    confirmOverlayEl.querySelector("p").textContent = message;
+    confirmOverlayEl.querySelector("#confirmOkBtn").textContent = confirmLabel || "Confirm";
+    confirmOverlayEl.querySelector("#confirmCancelBtn").addEventListener("click", () => {
+      confirmOverlayEl.classList.remove("open");
+    });
+    confirmOverlayEl.querySelector("#confirmOkBtn").addEventListener("click", () => {
+      confirmOverlayEl.classList.remove("open");
+      onConfirm();
+    });
+    confirmOverlayEl.classList.add("open");
   }
 
   function toDateStr(d) {
@@ -574,7 +649,14 @@
   }
 
   // --- View switching ---
+  const CROSSFADE_VIEW_IDS = { planner: "plannerView", goals: "goalsView", analysis: "analysisView", reflection: "reflectionView" };
+
   function switchView(view) {
+    if (pendingLockDate && view !== "reflection") {
+      showToast("Finish your reflection to end the day.", "warning");
+      return;
+    }
+    const previousView = currentView;
     currentView = view;
 
     document.getElementById("tabPlanner").classList.toggle("active", view === "planner");
@@ -583,11 +665,7 @@
     document.getElementById("tabFocus").classList.toggle("active", view === "focus");
     document.getElementById("tabReflection").classList.toggle("active", view === "reflection");
 
-    document.getElementById("plannerView").style.display = view === "planner" ? "block" : "none";
-    document.getElementById("goalsView").style.display = view === "goals" ? "block" : "none";
-    document.getElementById("analysisView").style.display = view === "analysis" ? "block" : "none";
     document.getElementById("focusView").classList.toggle("visible", view === "focus");
-    document.getElementById("reflectionView").style.display = view === "reflection" ? "block" : "none";
 
     document.getElementById("openAdd").style.display = view === "planner" ? "block" : "none";
     document.getElementById("openAddGoal").style.display = view === "goals" ? "block" : "none";
@@ -596,11 +674,38 @@
     document.body.classList.toggle("deep-work-mode", view === "focus");
     document.documentElement.setAttribute("data-theme", view === "focus" ? "dark" : "light");
 
-    if (view === "goals") renderGoals();
-    if (view === "analysis") renderAnalysis();
-    
-    if (view === "reflection") renderReflection();
-    if (view === "focus") renderFocus();
+    function renderNewView() {
+      if (view === "goals") renderGoals();
+      if (view === "analysis") renderAnalysis();
+      if (view === "reflection") renderReflection();
+      if (view === "focus") renderFocus();
+    }
+
+    const prevEl = CROSSFADE_VIEW_IDS[previousView] ? document.getElementById(CROSSFADE_VIEW_IDS[previousView]) : null;
+    const nextEl = CROSSFADE_VIEW_IDS[view] ? document.getElementById(CROSSFADE_VIEW_IDS[view]) : null;
+
+    function showNextView() {
+      if (nextEl) {
+        nextEl.style.display = "block";
+        nextEl.style.opacity = "0";
+        requestAnimationFrame(() => { nextEl.style.opacity = "1"; });
+      }
+      renderNewView();
+    }
+
+    if (prevEl && nextEl && prevEl !== nextEl) {
+      prevEl.style.opacity = "0";
+      setTimeout(() => {
+        prevEl.style.display = "none";
+        showNextView();
+      }, 120);
+    } else {
+      if (prevEl && prevEl !== nextEl) {
+        prevEl.style.opacity = "";
+        prevEl.style.display = "none";
+      }
+      showNextView();
+    }
   }
 
   document.getElementById("tabPlanner").addEventListener("click", () => switchView("planner"));
@@ -678,14 +783,32 @@
 
       const dots = document.createElement("div");
       dots.className = "goal-dots";
-      scheduledDays.forEach(ds => {
+      let consecutiveDone = 0;
+      scheduledDays.forEach((ds, idx) => {
         const dot = document.createElement("div");
         const isDone = (goal.completedDates || []).includes(ds);
         const isFuture = ds > today;
         dot.className = "goal-dot" + (isDone ? " done" : "") + (isFuture && !isDone ? " future" : "");
-        if (isDone) dot.style.background = categoryColor(goal.category);
+        if (isDone) {
+          dot.style.background = categoryColor(goal.category);
+          consecutiveDone++;
+          if (consecutiveDone % 7 === 0) dot.classList.add("milestone");
+        } else {
+          consecutiveDone = 0;
+        }
         dot.title = ds;
+        dot.style.opacity = "0";
+        dot.style.transform = "scale(0.7)";
         dots.appendChild(dot);
+
+        const targetOpacity = (isFuture && !isDone) ? "0.4" : "1";
+        const delay = Math.min(idx * 12, 300);
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            dot.style.opacity = targetOpacity;
+            dot.style.transform = "scale(1)";
+          }, delay);
+        });
       });
 
       card.appendChild(top);
@@ -821,16 +944,35 @@
       checkbox.innerHTML = task.occurrenceDone ? '<i data-lucide="check" class="icon"></i>' : "";
       checkbox.addEventListener("click", (e) => {
         e.stopPropagation();
-        if (isDayLocked(task.occurrenceDate)) { alert("This day is locked. Reflection already completed."); return; }
+        if (isDayLocked(task.occurrenceDate)) { showToast("This day is locked. Reflection already completed.", "warning"); return; }
         const realTask = tasks.find(t => t.id === task.id);
+        let nowDone;
         if (task.isRecurring) {
           realTask.completedDates = realTask.completedDates || [];
           const idx = realTask.completedDates.indexOf(task.occurrenceDate);
-          if (idx === -1) realTask.completedDates.push(task.occurrenceDate);
-          else realTask.completedDates.splice(idx, 1);
+          if (idx === -1) { realTask.completedDates.push(task.occurrenceDate); nowDone = true; }
+          else { realTask.completedDates.splice(idx, 1); nowDone = false; }
         } else {
           realTask.done = !realTask.done;
+          nowDone = realTask.done;
         }
+
+        checkbox.classList.toggle("checked", nowDone);
+        checkbox.style.transform = "scale(1.08)";
+        setTimeout(() => { checkbox.style.transform = "scale(1)"; }, 200);
+
+        if (nowDone) {
+          checkbox.innerHTML = '<i data-lucide="check" class="icon" style="opacity:0;transform:scale(0.5);transition:opacity 200ms cubic-bezier(0.34,1.56,0.64,1), transform 200ms cubic-bezier(0.34,1.56,0.64,1);"></i>';
+          lucide.createIcons();
+          const checkIcon = checkbox.querySelector(".icon");
+          requestAnimationFrame(() => {
+            checkIcon.style.opacity = "1";
+            checkIcon.style.transform = "scale(1)";
+          });
+        } else {
+          checkbox.innerHTML = "";
+        }
+
         li.classList.add("completing");
         save();
         setTimeout(() => renderTasks(), 450);
@@ -865,10 +1007,17 @@
       del.addEventListener("click", (e) => {
         e.stopPropagation();
         const label = task.isRecurring ? "Delete this whole repeating task series?" : "Delete this task?";
-        if (!confirm(label)) return;
-        tasks = tasks.filter(t => t.id !== task.id);
-        save();
-        renderTasks();
+        showConfirm({
+          title: "Delete task",
+          message: label,
+          confirmLabel: "Delete",
+          danger: true,
+          onConfirm: () => {
+            tasks = tasks.filter(t => t.id !== task.id);
+            save();
+            renderTasks();
+          }
+        });
       });
 
       li.addEventListener("click", (e) => {
@@ -947,8 +1096,8 @@
   });
 
   function openAddModal() {
-    if (isDayLocked(toDateStr(currentDate))) { alert("This day is locked. You can't add tasks to a day you've already reflected on."); return; }
-    if (categories.length === 0) { alert("Add a category first using the + next to the category tabs."); return; }
+    if (isDayLocked(toDateStr(currentDate))) { showToast("This day is locked. You can't add tasks to a day you've already reflected on.", "warning"); return; }
+    if (categories.length === 0) { showToast("Add a category first using the + next to the category tabs.", "warning"); return; }
     editingTaskId = null;
     document.getElementById("modalTitle").textContent = "Add Task";
     document.getElementById("modalName").value = "";
@@ -1137,12 +1286,19 @@
   });
 
   document.getElementById("editCatDelete").addEventListener("click", () => {
-    if (!confirm(`Delete "${editingCategoryName}"? Tasks in this category will keep the category name but it won't be selectable anymore.`)) return;
-    categories = categories.filter(c => c.name !== editingCategoryName);
-    if (activeCategory === editingCategoryName) activeCategory = "All";
-    save();
     editCatOverlay.classList.remove("open");
-    renderAll();
+    showConfirm({
+      title: "Delete category",
+      message: `Delete "${editingCategoryName}"? Tasks in this category will keep the category name but it won't be selectable anymore.`,
+      confirmLabel: "Delete",
+      danger: true,
+      onConfirm: () => {
+        categories = categories.filter(c => c.name !== editingCategoryName);
+        if (activeCategory === editingCategoryName) activeCategory = "All";
+        save();
+        renderAll();
+      }
+    });
   });
 
   const micBtn = document.getElementById("micBtn");
@@ -1298,14 +1454,16 @@
   }
 
   document.getElementById("openAddGoal").addEventListener("click", () => {
-    if (categories.length === 0) { alert("Add a category first from the Planner tab."); return; }
+    if (categories.length === 0) { showToast("Add a category first from the Planner tab.", "warning"); return; }
 
+    editingGoalId = null;
     document.getElementById("goalName").value = "";
     document.getElementById("goalStartDate").value = toDateStr(new Date());
     document.getElementById("goalLength").value = "";
     document.getElementById("goalTime").value = "";
     goalSelectedWeekdays = [0,1,2,3,4,5,6];
     buildGoalWeekdayPicker();
+    document.getElementById("goalFormError").classList.remove("show");
 
     const sel = document.getElementById("goalCategory");
     sel.innerHTML = "";
@@ -1330,9 +1488,12 @@
     const time = document.getElementById("goalTime").value;
 
     if (!name || !category || !startDate || !length || goalSelectedWeekdays.length === 0) {
-      alert("Please fill in the goal name, length, and at least one day of the week.");
+      const err = document.getElementById("goalFormError");
+      err.textContent = "Please fill in the goal name, length, and at least one day of the week.";
+      err.classList.add("show");
       return;
     }
+    document.getElementById("goalFormError").classList.remove("show");
 
     const endD = new Date(startDate + "T00:00:00");
     endD.setDate(endD.getDate() + length - 1);
@@ -1370,6 +1531,9 @@
     if (e.key === "Enter") document.getElementById("goalSave").click();
     if (e.key === "Escape") goalOverlay.classList.remove("open");
   });
+  goalOverlay.addEventListener("input", () => {
+    document.getElementById("goalFormError").classList.remove("show");
+  });
   const goalViewOverlay = document.getElementById("goalViewModalOverlay");
 
 function openGoalViewModal(goalId) {
@@ -1388,11 +1552,18 @@ document.getElementById("goalViewClose").addEventListener("click", () => {
 });
 
 document.getElementById("goalViewDelete").addEventListener("click", () => {
-  if (!confirm("Delete this goal entirely?")) return;
-  tasks = tasks.filter(t => t.id !== editingGoalId);
-  save();
   goalViewOverlay.classList.remove("open");
-  renderGoals();
+  showConfirm({
+    title: "Delete goal",
+    message: "Delete this goal entirely?",
+    confirmLabel: "Delete",
+    danger: true,
+    onConfirm: () => {
+      tasks = tasks.filter(t => t.id !== editingGoalId);
+      save();
+      renderGoals();
+    }
+  });
 });
 
 document.getElementById("goalViewEdit").addEventListener("click", () => {
@@ -1421,6 +1592,7 @@ document.getElementById("goalViewEdit").addEventListener("click", () => {
   });
   sel.value = g.category;
 
+  document.getElementById("goalFormError").classList.remove("show");
   goalOverlay.classList.add("open");
 });
 let currentRange = "week";
@@ -1519,7 +1691,8 @@ function renderAnalysis() {
     svg.appendChild(bg);
 
     let cumulative = 0;
-    Object.keys(byCat).forEach(catName => {
+    const catKeys = Object.keys(byCat);
+    catKeys.forEach((catName, idx) => {
       const info = byCat[catName];
       const segPct = total ? (info.done / total) * 100 : 0;
       if (segPct <= 0) return;
@@ -1529,10 +1702,16 @@ function renderAnalysis() {
       circle.setAttribute("fill", "none");
       circle.setAttribute("stroke", categoryColor(catName));
       circle.setAttribute("stroke-width", "20");
-      circle.setAttribute("stroke-dasharray", `${segLen} ${circumference - segLen}`);
+      circle.setAttribute("stroke-dasharray", `0 ${circumference}`);
       circle.setAttribute("stroke-dashoffset", -((cumulative / 100) * circumference));
       circle.setAttribute("transform", `rotate(-90 ${cx} ${cy})`);
+      circle.style.transition = "stroke-dasharray 700ms cubic-bezier(0.16, 1, 0.3, 1)";
       svg.appendChild(circle);
+      const finalDasharray = `${segLen} ${circumference - segLen}`;
+      const delay = catKeys.length > 1 ? idx * 60 : 0;
+      requestAnimationFrame(() => {
+        setTimeout(() => circle.setAttribute("stroke-dasharray", finalDasharray), delay);
+      });
       cumulative += segPct;
     });
 
@@ -1608,12 +1787,13 @@ function renderAnalysis() {
       }
     }
 
-    dataPoints.forEach(dp => {
+    const skipStagger = dataPoints.length > 20;
+    dataPoints.forEach((dp, idx) => {
       const col = document.createElement("div");
       col.className = "bar-col";
       const fill = document.createElement("div");
       fill.className = "bar-fill";
-      fill.style.height = (dp.pct ?? 0) + "%";
+      fill.style.height = "0%";
       if (dp.pct === null) fill.style.background = "var(--border)";
       const label = document.createElement("div");
       label.className = "bar-label";
@@ -1621,6 +1801,12 @@ function renderAnalysis() {
       col.appendChild(fill);
       col.appendChild(label);
       container.appendChild(col);
+
+      const targetHeight = (dp.pct ?? 0) + "%";
+      const delay = skipStagger ? 0 : idx * 20;
+      requestAnimationFrame(() => {
+        setTimeout(() => { fill.style.height = targetHeight; }, delay);
+      });
     });
 
     const valid = dataPoints.filter(dp => dp.pct !== null);
@@ -1728,7 +1914,7 @@ function renderAnalysis() {
     if (remainingSeconds <= 0) {
       clearInterval(timerInterval);
       updateTimerDisplay();
-      alert("Session complete");
+      showToast("Session complete", "success", 3500);
       endTimer();
       return;
     }
@@ -1740,8 +1926,14 @@ function renderAnalysis() {
     let workMinutes = session.work;
     if (selectedSession === 3) {
       workMinutes = parseInt(document.getElementById("customMinutesInput").value);
-      if (!workMinutes || workMinutes < 1) { alert("Enter custom minutes first."); return; }
+      if (!workMinutes || workMinutes < 1) {
+        const err = document.getElementById("customMinutesError");
+        err.textContent = "Enter custom minutes first.";
+        err.classList.add("show");
+        return;
+      }
     }
+    document.getElementById("customMinutesError").classList.remove("show");
     totalSeconds = workMinutes * 60;
     remainingSeconds = totalSeconds;
     timerRunning = true;
@@ -1765,6 +1957,10 @@ function renderAnalysis() {
     document.getElementById("focusSetup").style.display = "block";
   }
 
+  document.getElementById("customMinutesInput").addEventListener("input", () => {
+    document.getElementById("customMinutesError").classList.remove("show");
+  });
+
   document.getElementById("startFocusBtn").addEventListener("click", startTimer);
 
   document.getElementById("pauseResumeBtn").addEventListener("click", () => {
@@ -1774,8 +1970,13 @@ function renderAnalysis() {
   });
 
   document.getElementById("stopSessionBtn").addEventListener("click", () => {
-    if (!confirm("End this session early?")) return;
-    endTimer();
+    showConfirm({
+      title: "End session",
+      message: "End this session early?",
+      confirmLabel: "End Session",
+      danger: true,
+      onConfirm: endTimer
+    });
   });
   let reflectionDate = new Date();
   let reflections = JSON.parse(localStorage.getItem("reflections")) || {};
@@ -1801,6 +2002,7 @@ function renderAnalysis() {
     const entry = reflections[dateStr] || { wentWell: "", improve: "" };
     document.getElementById("reflWentWell").value = entry.wentWell;
     document.getElementById("reflImprove").value = entry.improve;
+    document.getElementById("reflFormError").classList.remove("show");
   }
 
   document.getElementById("reflPrevDay").addEventListener("click", () => {
@@ -1811,6 +2013,12 @@ function renderAnalysis() {
     reflectionDate.setDate(reflectionDate.getDate() + 1);
     renderReflection();
   });
+  document.getElementById("reflWentWell").addEventListener("input", () => {
+    document.getElementById("reflFormError").classList.remove("show");
+  });
+  document.getElementById("reflImprove").addEventListener("input", () => {
+    document.getElementById("reflFormError").classList.remove("show");
+  });
 
   document.getElementById("reflSaveBtn").addEventListener("click", () => {
     const dateStr = toDateStr(reflectionDate);
@@ -1819,20 +2027,23 @@ function renderAnalysis() {
 
     if (dateStr === pendingLockDate) {
       if (!wentWell || !improve) {
-        alert("Fill in both fields to end the day.");
+        const err = document.getElementById("reflFormError");
+        err.textContent = "Fill in both fields to end the day.";
+        err.classList.add("show");
         return;
       }
+      document.getElementById("reflFormError").classList.remove("show");
       lockedDays.push(dateStr);
       saveLockedDays();
       pendingLockDate = null;
       reflections[dateStr] = { wentWell, improve };
       saveReflections();
-      alert("Day ended. Nice work today.");
+      showToast("Day ended. Nice work today.", "success");
       renderAll();
     } else {
       reflections[dateStr] = { wentWell, improve };
       saveReflections();
-      alert("Saved.");
+      showToast("Saved.", "info");
     }
   });
   let pendingLockDate = null;
@@ -1845,13 +2056,19 @@ function renderAnalysis() {
     let confirmMsg = "End this day? Write your reflection to finish — you can't check anything off afterward.";
     if (unfinished > 0) confirmMsg = `You still have ${unfinished} unfinished task${unfinished === 1 ? "" : "s"}. ` + confirmMsg;
 
-    if (!confirm(confirmMsg)) return;
-
-    pendingLockDate = dateStr;
-    switchView("reflection");
-    reflectionDate = new Date(currentDate);
-    renderReflection();
-    document.getElementById("reflWentWell").focus();
+    showConfirm({
+      title: "End day",
+      message: confirmMsg,
+      confirmLabel: "End Day",
+      danger: false,
+      onConfirm: () => {
+        pendingLockDate = dateStr;
+        switchView("reflection");
+        reflectionDate = new Date(currentDate);
+        renderReflection();
+        document.getElementById("reflWentWell").focus();
+      }
+    });
   });
 renderAll();
 lucide.createIcons();
