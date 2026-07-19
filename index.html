@@ -79,6 +79,9 @@
   .task-item:hover { box-shadow: var(--shadow-elevated); transform: translateY(-1px); }
   .task-item.sortable-ghost { opacity: 0.3; }
   .task-item.completing { opacity: 0.5; }
+  .task-item.entering { animation: taskEnter 200ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+  @keyframes taskEnter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .task-item.exiting { overflow: hidden; transition: opacity 200ms ease-out, max-height 200ms ease-out, margin-bottom 200ms ease-out, padding-top 200ms ease-out, padding-bottom 200ms ease-out; }
   .task-item.done .task-name { text-decoration: line-through; opacity: 0.5; }
   .task-name { flex: 1; font-size: 0.96rem; font-weight: 450; transition: color 250ms ease 100ms; }
   .task-item.completing .task-name { color: var(--text-muted); text-decoration: line-through; }
@@ -415,9 +418,6 @@
       <button class="btn-cancel" id="cancelAdd">Cancel</button>
       <button class="btn-save" id="saveAdd">Save</button>
     </div>
-    <div class="modal-actions" id="deleteRow" style="display:none; margin-top: 0.5rem;">
-      <button class="btn-delete-modal" id="deleteFromModal">Delete Task</button>
-    </div>
   </div>
 </div>
 
@@ -508,6 +508,7 @@
   let currentDate = new Date();
   let activeCategory = "All";
   let editingTaskId = null;
+  let lastAddedTaskId = null;
   let selectedColor = null;
   let sortableInstance = null;
   let selectedWeekdays = [];
@@ -575,6 +576,24 @@
 
   function openModal(el) { el.classList.add("open"); }
   function closeModal(el) { el.classList.remove("open"); }
+  function closeModalInstant(el) {
+    el.style.transition = "none";
+    el.classList.remove("open");
+    void el.offsetWidth;
+    el.style.transition = "";
+  }
+
+  function animateCountUp(element, targetValue, duration, suffix) {
+    suffix = suffix || "";
+    duration = duration || 550;
+    const startTime = performance.now();
+    function frame(now) {
+      const progress = Math.min((now - startTime) / duration, 1);
+      element.textContent = Math.round(targetValue * progress) + suffix;
+      if (progress < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
 
   function toDateStr(d) {
   const y = d.getFullYear();
@@ -944,7 +963,7 @@
 
     dayTasks.forEach(task => {
       const li = document.createElement("li");
-      li.className = "task-item" + (task.occurrenceDone ? " done" : "");
+      li.className = "task-item" + (task.occurrenceDone ? " done" : "") + (task.id === lastAddedTaskId ? " entering" : "");
       li.style.borderLeftColor = categoryColor(task.category);
       li.dataset.taskId = task.id;
 
@@ -982,13 +1001,14 @@
             checkIcon.style.opacity = "1";
             checkIcon.style.transform = "scale(1)";
           });
+          li.classList.add("completing");
+          save();
+          setTimeout(() => renderTasks(), 450);
         } else {
           checkbox.innerHTML = "";
+          save();
+          setTimeout(() => renderTasks(), 200);
         }
-
-        li.classList.add("completing");
-        save();
-        setTimeout(() => renderTasks(), 450);
       });
 
       const name = document.createElement("span");
@@ -1026,9 +1046,22 @@
           confirmLabel: "Delete",
           danger: true,
           onConfirm: () => {
-            tasks = tasks.filter(t => t.id !== task.id);
-            save();
-            renderTasks();
+            const height = li.offsetHeight;
+            li.style.maxHeight = height + "px";
+            li.classList.add("exiting");
+            void li.offsetHeight;
+            requestAnimationFrame(() => {
+              li.style.opacity = "0";
+              li.style.maxHeight = "0px";
+              li.style.marginBottom = "0px";
+              li.style.paddingTop = "0px";
+              li.style.paddingBottom = "0px";
+            });
+            setTimeout(() => {
+              tasks = tasks.filter(t => t.id !== task.id);
+              save();
+              renderTasks();
+            }, 200);
           }
         });
       });
@@ -1047,6 +1080,7 @@
       listEl.appendChild(li);
     });
     lucide.createIcons();
+    lastAddedTaskId = null;
 
     if (sortableInstance) sortableInstance.destroy();
     sortableInstance = new Sortable(listEl, {
@@ -1084,7 +1118,6 @@
   });
 
   const overlay = document.getElementById("modalOverlay");
-  const deleteRow = document.getElementById("deleteRow");
   const repeatSelect = document.getElementById("modalRepeat");
   const repeatExtra = document.getElementById("repeatExtra");
   const weekdayPicker = document.getElementById("weekdayPicker");
@@ -1127,7 +1160,6 @@
     repeatExtra.classList.remove("show");
     selectedWeekdays = [currentDate.getDay()];
     buildWeekdayPicker();
-    deleteRow.style.display = "none";
     openModal(overlay);
     setTimeout(() => document.getElementById("modalName").focus(), 50);
   }
@@ -1162,20 +1194,12 @@
     }
     buildWeekdayPicker();
 
-    deleteRow.style.display = "flex";
     openModal(overlay);
     setTimeout(() => document.getElementById("modalName").focus(), 50);
   }
 
   document.getElementById("openAdd").addEventListener("click", openAddModal);
   document.getElementById("cancelAdd").addEventListener("click", () => closeModal(overlay));
-
-  document.getElementById("deleteFromModal").addEventListener("click", () => {
-    tasks = tasks.filter(t => t.id !== editingTaskId);
-    save();
-    closeModal(overlay);
-    renderAll();
-  });
 
   function submitTaskForm() {
     const name = document.getElementById("modalName").value.trim();
@@ -1204,10 +1228,12 @@
     } else {
       const dateTasks = tasks.filter(t => t.date === date);
       const maxOrder = dateTasks.length ? Math.max(...dateTasks.map(t => t.order ?? 0)) : -1;
+      const newId = Date.now().toString();
       tasks.push({
-        id: Date.now().toString(), name, category, time, duration, date, endDate,
+        id: newId, name, category, time, duration, date, endDate,
         done: false, order: maxOrder + 1, recurrence, completedDates: [], isGoal
       });
+      lastAddedTaskId = newId;
     }
     save();
     closeModal(overlay);
@@ -1299,7 +1325,7 @@
   });
 
   document.getElementById("editCatDelete").addEventListener("click", () => {
-    closeModal(editCatOverlay);
+    closeModalInstant(editCatOverlay);
     showConfirm({
       title: "Delete category",
       message: `Delete "${editingCategoryName}"? Tasks in this category will keep the category name but it won't be selectable anymore.`,
@@ -1441,7 +1467,6 @@
     }
     buildWeekdayPicker();
     if (parsedCategory) document.getElementById("modalCategory").value = parsedCategory;
-    deleteRow.style.display = "none";
     openModal(overlay);
   }
 
@@ -1565,7 +1590,7 @@ document.getElementById("goalViewClose").addEventListener("click", () => {
 });
 
 document.getElementById("goalViewDelete").addEventListener("click", () => {
-  closeModal(goalViewOverlay);
+  closeModalInstant(goalViewOverlay);
   showConfirm({
     title: "Delete goal",
     message: "Delete this goal entirely?",
@@ -1638,10 +1663,11 @@ function renderAnalysis() {
     else if (score >= 50) color = "var(--warning)";
 
     el.innerHTML = `
-      <div style="font-size:2rem;font-weight:600;color:${color};">${score}</div>
+      <div id="focusScoreNum" style="font-size:2rem;font-weight:600;color:${color};">0</div>
       <div style="font-size:0.8rem;color:var(--text-muted);"><i data-lucide="activity" class="icon"></i> Focus Score</div>
     `;
     lucide.createIcons();
+    animateCountUp(document.getElementById("focusScoreNum"), score, 550);
   }
 
   function avgPctForRange(startDaysAgo, endDaysAgo) {
@@ -1673,9 +1699,11 @@ function renderAnalysis() {
     el.innerHTML = `
       <div style="font-size:1.4rem;color:${color};"><i data-lucide="${icon}" class="icon icon-lg" style="color:inherit;"></i></div>
       <div style="font-weight:500;color:${color};">${label}</div>
-      <div style="font-size:0.75rem;color:var(--text-muted);">${Math.round(thisWeek)}% this week vs ${Math.round(lastWeek)}% last week</div>
+      <div style="font-size:0.75rem;color:var(--text-muted);"><span id="momentumThisWeek">0</span>% this week vs <span id="momentumLastWeek">0</span>% last week</div>
     `;
     lucide.createIcons();
+    animateCountUp(document.getElementById("momentumThisWeek"), Math.round(thisWeek), 550);
+    animateCountUp(document.getElementById("momentumLastWeek"), Math.round(lastWeek), 550);
   }
 
   function renderRingChart() {
@@ -1737,8 +1765,9 @@ function renderAnalysis() {
     const text2 = document.createElementNS(ns, "text");
     text2.setAttribute("x", cx); text2.setAttribute("y", cy + 22); text2.setAttribute("text-anchor", "middle");
     text2.setAttribute("font-size", "28"); text2.setAttribute("font-weight", "600"); text2.setAttribute("fill", "var(--text-primary)");
-    text2.textContent = pct + "%";
+    text2.textContent = "0%";
     svg.appendChild(text2);
+    animateCountUp(text2, pct, 550, "%");
 
     const legend = document.getElementById("ringLegend");
     legend.innerHTML = "";
@@ -2051,11 +2080,15 @@ function renderAnalysis() {
       pendingLockDate = null;
       reflections[dateStr] = { wentWell, improve };
       saveReflections();
+      document.getElementById("reflWentWell").value = "";
+      document.getElementById("reflImprove").value = "";
       showToast("Day ended. Nice work today.", "success");
       renderAll();
     } else {
       reflections[dateStr] = { wentWell, improve };
       saveReflections();
+      document.getElementById("reflWentWell").value = "";
+      document.getElementById("reflImprove").value = "";
       showToast("Saved.", "info");
     }
   });
