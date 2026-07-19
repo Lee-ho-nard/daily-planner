@@ -7,15 +7,21 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 <style>
   :root {
-    --bg: #FAFAFA;
-    --card: #FFFFFF;
-    --text: #1D1D1F;
-    --text-secondary: #6E6E73;
-    --border: #E5E5EA;
+    --bg-page: #FAFAF7;
+    --bg-card: #FFFFFF;
+    --border: #E8E6DE;
+    --text-primary: #232520;
+    --text-secondary: #5C5F56;
+    --text-muted: #8B8E82;
     --accent: #2F5233;
-    --accent-soft: rgba(47, 82, 51, 0.1);
+    --accent-hover: #3D6B43;
+    --accent-bg: #EAF3DE;
+    --danger: #B23A2E;
+    --warning: #B5811F;
+    --on-accent: #EAF3DE;
     --radius-sm: 8px;
     --radius-md: 14px;
     --radius-lg: 18px;
@@ -23,16 +29,31 @@
     --shadow-elevated: 0 4px 16px rgba(0,0,0,0.08);
   }
 
+  :root[data-theme="dark"] {
+    --bg-page: #0C120D;
+    --bg-card: #141C15;
+    --border: #22301F;
+    --text-primary: #EDEFE8;
+    --text-secondary: #A9ADA0;
+    --text-muted: #6E7266;
+    --accent: #6FCF87;
+    --accent-hover: #8FE0A3;
+    --accent-bg: #1C2A1E;
+    --danger: #E2726A;
+    --warning: #E0AC4E;
+    --on-accent: #0C120D;
+  }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: "Inter", system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 1.75rem 1.25rem; transition: background 0.5s ease, color 0.5s ease; -webkit-font-smoothing: antialiased; }
+  body { font-family: "Inter", system-ui, -apple-system, sans-serif; background: var(--bg-page); color: var(--text-primary); padding: 1.75rem 1.25rem; transition: background 0.5s ease, color 0.5s ease; -webkit-font-smoothing: antialiased; }
   .container { max-width: 480px; margin: 0 auto; }
 
-  .view-tabs { display: flex; gap: 0.4rem; margin-bottom: 1.5rem; background: #EFEFF1; padding: 0.3rem; border-radius: var(--radius-md); position: relative; z-index: 20; }
+  .view-tabs { display: flex; gap: 0.4rem; margin-bottom: 1.5rem; background: var(--border); padding: 0.3rem; border-radius: var(--radius-md); position: relative; z-index: 20; }
   .view-tab { flex: 1; text-align: center; padding: 0.55rem; border-radius: 10px; border: none; background: transparent; cursor: pointer; font-family: inherit; font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); transition: background 0.2s, color 0.2s; }
-  .view-tab.active { background: var(--card); color: var(--text); box-shadow: var(--shadow-card); }
+  .view-tab.active { background: var(--bg-card); color: var(--text-primary); box-shadow: var(--shadow-card); }
 
   .date-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; }
-  .date-nav button { background: var(--card); border: none; box-shadow: var(--shadow-card); border-radius: 50%; width: 38px; height: 38px; font-size: 1rem; cursor: pointer; color: var(--text); transition: transform 0.15s; }
+  .date-nav button { background: var(--bg-card); border: none; box-shadow: var(--shadow-card); border-radius: 50%; width: 38px; height: 38px; font-size: 1rem; cursor: pointer; color: var(--text-primary); transition: transform 0.15s; }
   .date-nav button:active { transform: scale(0.92); }
   .date-display { text-align: center; }
   .date-display .weekday { font-weight: 600; font-size: 1.15rem; letter-spacing: -0.01em; }
@@ -44,14 +65,14 @@
   .progress-bar-fill { background: var(--accent); height: 100%; border-radius: 999px; transition: width 0.5s ease; }
 
   .category-tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; align-items: center; }
-  .cat-pill { position: relative; border: none; box-shadow: var(--shadow-card); border-radius: 999px; padding: 0.45rem 0.95rem; font-size: 0.82rem; font-weight: 500; cursor: pointer; background: var(--card); color: var(--text); transition: background 0.15s, color 0.15s, transform 0.15s; }
+  .cat-pill { position: relative; border: none; box-shadow: var(--shadow-card); border-radius: 999px; padding: 0.45rem 0.95rem; font-size: 0.82rem; font-weight: 500; cursor: pointer; background: var(--bg-card); color: var(--text-primary); transition: background 0.15s, color 0.15s, transform 0.15s; }
   .cat-pill:active { transform: scale(0.95); }
-  .cat-add { width: 34px; height: 34px; border-radius: 50%; background: var(--card); border: none; box-shadow: var(--shadow-card); font-size: 1.1rem; cursor: pointer; color: var(--text-secondary); }
+  .cat-add { width: 34px; height: 34px; border-radius: 50%; background: var(--bg-card); border: none; box-shadow: var(--shadow-card); cursor: pointer; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; }
 
   #taskList, #goalsList { list-style: none; margin-bottom: 5rem; }
   .task-item {
-    background: var(--card); border-radius: var(--radius-md); padding: 1rem 1.1rem; margin-bottom: 0.55rem;
-    display: flex; align-items: center; gap: 0.75rem; cursor: grab; border-left: 4px solid #ccc;
+    background: var(--bg-card); border-radius: var(--radius-md); padding: 1rem 1.1rem; margin-bottom: 0.55rem;
+    display: flex; align-items: center; gap: 0.75rem; cursor: grab; border-left: 4px solid var(--border);
     box-shadow: var(--shadow-card);
     transition: opacity 0.4s ease, box-shadow 0.2s, transform 0.15s;
   }
@@ -61,134 +82,142 @@
   .task-item.done .task-name { text-decoration: line-through; opacity: 0.5; }
   .task-name { flex: 1; font-size: 0.96rem; font-weight: 450; }
   .task-meta { font-size: 0.74rem; color: var(--text-secondary); white-space: nowrap; display: flex; align-items: center; gap: 0.25rem; }
+  /* fixed dark text: sits on user-chosen pastel category colors, which don't shift with theme */
   .task-category { font-size: 0.68rem; font-weight: 500; padding: 0.18rem 0.55rem; border-radius: 999px; color: #1a1d26; }
-  .delete-btn { background: none; border: none; color: #C7C7CC; cursor: pointer; font-size: 1rem; transition: color 0.15s; }
-  .delete-btn:hover { color: #d9534f; }
+  .delete-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1rem; transition: color 0.15s; }
+  .delete-btn:hover { color: var(--danger); }
 
-  .checkbox { width: 21px; height: 21px; border-radius: 7px; border: 1.5px solid var(--border); cursor: pointer; flex-shrink: 0; position: relative; transition: background 0.2s, border-color 0.2s, transform 0.1s; }
+  .checkbox { width: 21px; height: 21px; border-radius: 7px; border: 1.5px solid var(--border); cursor: pointer; flex-shrink: 0; position: relative; display: flex; align-items: center; justify-content: center; transition: background 0.2s, border-color 0.2s, transform 0.1s; }
   .checkbox:active { transform: scale(0.9); }
   .checkbox.checked { background: var(--accent); border-color: var(--accent); }
-  .checkbox.checked::after { content: "✓"; color: white; font-size: 0.8rem; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 
   .empty-msg { text-align: center; color: var(--text-secondary); padding: 3rem 1rem; font-size: 0.9rem; line-height: 1.6; }
-  .empty-msg .big { font-size: 1.05rem; color: var(--text); font-weight: 500; margin-bottom: 0.3rem; }
+  .empty-msg .big { font-size: 1.05rem; color: var(--text-primary); font-weight: 500; margin-bottom: 0.3rem; }
 
-  .fab { position: fixed; bottom: 1.5rem; right: 1.5rem; width: 56px; height: 56px; border-radius: 50%; background: var(--accent); color: white; font-size: 1.65rem; font-weight: 300; border: none; cursor: pointer; box-shadow: 0 6px 20px rgba(47,82,51,0.35); transition: transform 0.15s; }
+  .fab { position: fixed; bottom: 1.5rem; right: 1.5rem; width: 56px; height: 56px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 1.65rem; font-weight: 300; border: none; cursor: pointer; box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 35%, transparent); transition: transform 0.15s; display: flex; align-items: center; justify-content: center; padding-top: 1px; }
   .fab:hover { transform: scale(1.06); }
   .fab:active { transform: scale(0.94); }
 
-  .mic-fab { position: fixed; bottom: 1.5rem; right: 5.5rem; width: 56px; height: 56px; border-radius: 50%; background: var(--card); border: none; color: var(--accent); font-size: 1.35rem; cursor: pointer; box-shadow: var(--shadow-elevated); transition: transform 0.15s; }
+  .mic-fab { position: fixed; bottom: 1.5rem; right: 5.5rem; width: 56px; height: 56px; border-radius: 50%; background: var(--bg-card); border: none; color: var(--accent); font-size: 1.35rem; cursor: pointer; box-shadow: var(--shadow-elevated); transition: transform 0.15s; }
   .mic-fab:active { transform: scale(0.94); }
-  .mic-fab.listening { background: #d9534f; color: white; animation: pulse 1s infinite; }
+  .mic-fab.listening { background: var(--danger); color: var(--on-accent); animation: pulse 1s infinite; }
   @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08); } }
 
   .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); backdrop-filter: blur(4px); align-items: center; justify-content: center; padding: 1rem; z-index: 10; }
   .modal-overlay.open { display: flex; }
-  .modal { background: var(--card); border-radius: var(--radius-lg); padding: 1.75rem; width: 100%; max-width: 360px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.25); }
+  .modal { background: var(--bg-card); border-radius: var(--radius-lg); padding: 1.75rem; width: 100%; max-width: 360px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.25); }
   .modal h3 { margin-bottom: 1rem; font-weight: 600; letter-spacing: -0.01em; }
   .modal label { display: block; font-size: 0.78rem; color: var(--text-secondary); margin: 0.8rem 0 0.3rem; font-weight: 500; }
-  .modal input, .modal select { width: 100%; padding: 0.65rem 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: #FBFBFB; font-size: 0.9rem; font-family: inherit; transition: border-color 0.15s, box-shadow 0.15s, background 0.15s; }
-  .modal input:focus, .modal select:focus { outline: none; border-color: var(--accent); background: white; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .modal input, .modal select { width: 100%; padding: 0.65rem 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-page); color: var(--text-primary); font-size: 0.9rem; font-family: inherit; transition: border-color 0.15s, box-shadow 0.15s, background 0.15s; }
+  .modal input:focus, .modal select:focus { outline: none; border-color: var(--accent); background: var(--bg-card); box-shadow: 0 0 0 3px var(--accent-bg); }
   .modal-row { display: flex; gap: 0.5rem; }
   .modal-row > div { flex: 1; }
   .modal-actions { display: flex; gap: 0.5rem; margin-top: 1.5rem; }
   .modal-actions button { flex: 1; padding: 0.7rem; border-radius: var(--radius-sm); border: none; cursor: pointer; font-size: 0.9rem; font-weight: 500; font-family: inherit; transition: opacity 0.15s, transform 0.1s; }
   .modal-actions button:active { transform: scale(0.97); }
-  .btn-cancel { background: #F2F2F3; color: var(--text); }
-  .btn-save { background: var(--accent); color: white; }
-  .btn-delete-modal { background: #FDEDED; color: #d9534f; }
+  .btn-cancel { background: var(--border); color: var(--text-primary); }
+  .btn-save { background: var(--accent); color: var(--on-accent); }
+  .btn-delete-modal { background: color-mix(in srgb, var(--danger) 14%, var(--bg-card)); color: var(--danger); }
 
   .color-swatches { display: flex; gap: 0.5rem; margin-top: 0.4rem; flex-wrap: wrap; }
   .swatch { width: 28px; height: 28px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: transform 0.15s; }
   .swatch:active { transform: scale(0.9); }
-  .swatch.selected { border-color: var(--text); }
+  .swatch.selected { border-color: var(--text-primary); }
 
   .weekday-picker { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
-  .weekday-btn { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--border); background: white; font-size: 0.75rem; cursor: pointer; transition: background 0.15s, color 0.15s; }
-  .weekday-btn.selected { background: var(--accent); color: white; border-color: var(--accent); }
+  .weekday-btn { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font-size: 0.75rem; cursor: pointer; transition: background 0.15s, color 0.15s; }
+  .weekday-btn.selected { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
   .repeat-extra { display: none; }
   .repeat-extra.show { display: block; }
 
   .goal-checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.9rem; }
   .goal-checkbox-row input { width: auto; }
-  .goal-checkbox-row label { margin: 0; font-size: 0.85rem; color: var(--text); }
+  .goal-checkbox-row label { margin: 0; font-size: 0.85rem; color: var(--text-primary); }
 
-  .goal-card { background: var(--card); border-radius: var(--radius-md); padding: 1.1rem; margin-bottom: 0.7rem; border-left: 4px solid #ccc; box-shadow: var(--shadow-card); }
+  .goal-card { background: var(--bg-card); border-radius: var(--radius-md); padding: 1.1rem; margin-bottom: 0.7rem; border-left: 4px solid var(--border); box-shadow: var(--shadow-card); }
   .goal-card-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.3rem; }
   .goal-name { font-weight: 600; font-size: 1rem; letter-spacing: -0.01em; }
   .goal-pct { font-size: 0.85rem; color: var(--text-secondary); font-weight: 500; }
   .goal-sub { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.7rem; }
   .goal-dots { display: flex; gap: 4px; flex-wrap: wrap; }
-  .goal-dot { width: 15px; height: 15px; border-radius: 5px; background: #F0F0F1; border: 1px solid var(--border); }
+  .goal-dot { width: 15px; height: 15px; border-radius: 5px; background: var(--bg-page); border: 1px solid var(--border); }
   .goal-dot.done { border: none; }
   .goal-dot.future { opacity: 0.4; border-style: dashed; }
 
-  .ring-section { display:flex; align-items:center; gap:1.5rem; background:var(--card); border-radius:var(--radius-md); padding:1.4rem; margin-bottom:1.25rem; box-shadow: var(--shadow-card); }
+  .ring-section { display:flex; align-items:center; gap:1.5rem; background:var(--bg-card); border-radius:var(--radius-md); padding:1.4rem; margin-bottom:1.25rem; box-shadow: var(--shadow-card); }
   .ring-legend { flex:1; font-size:0.8rem; }
   .ring-legend-row { display:flex; align-items:center; gap:0.4rem; margin-bottom:0.45rem; }
   .ring-legend-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
-  .range-tabs { display:flex; gap:0.4rem; margin-bottom:1rem; background:#EFEFF1; padding:0.3rem; border-radius:var(--radius-md); }
+  .range-tabs { display:flex; gap:0.4rem; margin-bottom:1rem; background:var(--border); padding:0.3rem; border-radius:var(--radius-md); }
   .range-tab { flex:1; padding:0.5rem; border-radius:10px; border:none; background:transparent; cursor:pointer; font-family:inherit; font-size:0.82rem; font-weight:500; color:var(--text-secondary); transition: background 0.2s, color 0.2s; }
-  .range-tab.active { background:var(--card); color: var(--text); box-shadow: var(--shadow-card); }
-  .bar-chart { display:flex; align-items:flex-end; gap:4px; height:140px; background:var(--card); border-radius:var(--radius-md); padding:1.1rem; margin-bottom:0.8rem; box-shadow: var(--shadow-card); }
+  .range-tab.active { background:var(--bg-card); color: var(--text-primary); box-shadow: var(--shadow-card); }
+  .bar-chart { display:flex; align-items:flex-end; gap:4px; height:140px; background:var(--bg-card); border-radius:var(--radius-md); padding:1.1rem; margin-bottom:0.8rem; box-shadow: var(--shadow-card); }
   .bar-col { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; }
   .bar-fill { width:100%; background:var(--accent); border-radius:4px 4px 0 0; min-height:2px; transition: height 0.4s ease; }
   .bar-label { font-size:0.6rem; color:var(--text-secondary); margin-top:0.3rem; }
   .best-worst { display:flex; gap:0.75rem; font-size:0.8rem; color: var(--text-secondary); }
-  .best-worst .box { flex:1; background:var(--card); border-radius:var(--radius-sm); padding:0.85rem; text-align:center; box-shadow: var(--shadow-card); }
+  .best-worst .box { flex:1; background:var(--bg-card); border-radius:var(--radius-sm); padding:0.85rem; text-align:center; box-shadow: var(--shadow-card); }
 
   #focusView{
-    background:#071320;
+    background: var(--bg-page);
     position: fixed;
     inset: 0;
     padding: 2.5rem 1.25rem;
-    color:white;
+    color: var(--text-primary);
     overflow-y: auto;
     z-index: 5;
     opacity: 0;
     visibility: hidden;
-    transition: opacity 0.4s ease, visibility 0s linear 0.4s;
+    transition: opacity 0.4s ease, visibility 0s linear 0.4s, background 0.4s ease, color 0.4s ease;
   }
   #focusView.visible {
     opacity: 1;
     visibility: visible;
-    transition: opacity 0.4s ease, visibility 0s linear 0s;
+    transition: opacity 0.4s ease, visibility 0s linear 0s, background 0.4s ease, color 0.4s ease;
   }
   .focus-container{ max-width:450px; margin:0 auto; position: relative; z-index: 1; padding-top: 5.5rem; }
   .focus-title{ font-size:1.9rem; font-weight:700; letter-spacing:-0.02em; margin-top:1.25rem; margin-bottom:0.5rem; }
-  .focus-subtitle{ color:#8b98ae; line-height:1.6; margin-bottom:2rem; font-size: 0.95rem; }
+  .focus-subtitle{ color: var(--text-secondary); line-height:1.6; margin-bottom:2rem; font-size: 0.95rem; }
   .focus-session-grid{ display:grid; grid-template-columns:1fr 1fr; gap:0.7rem; margin-bottom:2rem; }
-  .focus-session{ background:#111d31; border:1.5px solid transparent; border-radius:var(--radius-md); padding:1.1rem; cursor:pointer; color:white; transition:.2s; font-family: inherit; text-align: left; }
+  .focus-session{ background: var(--bg-card); border:1.5px solid transparent; border-radius:var(--radius-md); padding:1.1rem; cursor:pointer; color: var(--text-primary); transition:.2s; font-family: inherit; text-align: left; }
   .focus-session:hover{ transform:translateY(-2px); }
-  .focus-session.selected{ border-color:#4D8DFF; background:#16253d; }
+  .focus-session.selected{ border-color: var(--accent); background: var(--accent-bg); }
   .session-name{ font-size:0.95rem; font-weight:500; margin-bottom:0.4rem; }
-  .session-time{ color:#8da2c3; font-size: 0.8rem; }
-  .focus-heading{ font-size:0.9rem; font-weight:500; margin-bottom:0.9rem; color: white; }
-  .focus-top3{ background:#101c30; border-radius:var(--radius-md); padding:1.3rem; margin-bottom:1.75rem; }
-  .focus-empty{ color:#7d8ea7; font-size: 0.9rem; }
-  .start-focus-btn{ width:100%; padding:0.9rem; border:none; border-radius:var(--radius-sm); font-size:0.95rem; font-weight:600; cursor:pointer; background:#3b82f6; color:white; font-family: inherit; transition:.2s; }
+  .session-time{ color: var(--text-secondary); font-size: 0.8rem; }
+  .focus-heading{ font-size:0.9rem; font-weight:500; margin-bottom:0.9rem; color: var(--text-primary); }
+  .focus-top3{ background: var(--bg-card); border-radius:var(--radius-md); padding:1.3rem; margin-bottom:1.75rem; }
+  .focus-empty{ color: var(--text-muted); font-size: 0.9rem; }
+  .start-focus-btn{ width:100%; padding:0.9rem; border:none; border-radius:var(--radius-sm); font-size:0.95rem; font-weight:600; cursor:pointer; background: var(--accent); color: var(--on-accent); font-family: inherit; transition:.2s; }
   .start-focus-btn:hover{ transform:scale(1.02); }
 
   .custom-minutes-row { margin-bottom: 1.5rem; }
-  .custom-minutes-row label { display: block; font-size: 0.8rem; color: #A7B4C7; margin-bottom: 0.3rem; }
-  .custom-minutes-row input { width: 100%; padding: 0.5rem; border-radius: var(--radius-sm); border: 1px solid #223349; background: #101D2E; color: white; font-family: inherit; }
+  .custom-minutes-row label { display: block; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.3rem; }
+  .custom-minutes-row input { width: 100%; padding: 0.5rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-page); color: var(--text-primary); font-family: inherit; }
 
   #focusTimerScreen { display: none; text-align: center; padding-top: 2rem; }
   .timer-ring-wrap { position: relative; display: inline-block; margin-bottom: 1.5rem; }
-  .timer-time { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 3.4rem; font-weight: 600; color: white; letter-spacing: -0.02em; }
-  .timer-label { color: #A7B4C7; font-size: 0.9rem; margin-bottom: 1rem; }
+  .timer-time { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 3.4rem; font-weight: 600; color: var(--text-primary); letter-spacing: -0.02em; }
+  .timer-label { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem; }
   .timer-icon-controls { position: fixed; top: 1.5rem; right: 1.5rem; display: flex; gap: 0.75rem; }
-  .timer-icon-btn { width: 38px; height: 38px; border-radius: 50%; border: 1px solid #223349; background: #101D2E; color: #A7B4C7; font-family: inherit; cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center; line-height: 1; padding: 0; }
-  .timer-icon-btn:hover { color: white; border-color: #4D8DFF; }
-  #pauseResumeBtn { font-size: 0.85rem; }
-  #pauseResumeBtn.play-icon { padding-left: 3px; }
+  .timer-icon-btn { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); font-family: inherit; cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center; line-height: 1; padding: 0; }
+  .timer-icon-btn:hover { color: var(--text-primary); border-color: var(--accent); }
 
-  body.deep-work-mode { background: #071320; color: #A7B4C7; }
-  body.deep-work-mode .view-tabs { background: #101D2E; }
-  body.deep-work-mode .view-tab { color: #A7B4C7; }
-  body.deep-work-mode .view-tab.active { background: #101D2E; color: white; box-shadow: none; border: 1px solid #4D8DFF; }
+  body.deep-work-mode { background: var(--bg-page); color: var(--text-secondary); }
+  body.deep-work-mode .view-tabs { background: var(--bg-card); }
+  body.deep-work-mode .view-tab { color: var(--text-secondary); }
+  body.deep-work-mode .view-tab.active { background: var(--bg-card); color: var(--text-primary); box-shadow: none; border: 1px solid var(--accent); }
   body.timer-active .view-tabs { opacity: 0; pointer-events: none; transition: opacity 0.5s ease; }
   .view-tabs { transition: opacity 0.5s ease; }
+
+  /* Icons */
+  .icon { width: 18px; height: 18px; stroke-width: 2; color: var(--text-secondary); flex-shrink: 0; vertical-align: -4px; }
+  .icon-lg { width: 22px; height: 22px; }
+  .date-nav button .icon, .timer-icon-btn .icon, .fab .icon, .mic-fab .icon, .delete-btn .icon, .range-tab .icon, .focus-session .icon, .cat-add .icon { color: inherit; }
+  .checkbox .icon { width: 14px; height: 14px; color: var(--on-accent); }
+  .drag-handle { display: flex; align-items: center; cursor: grab; color: var(--text-muted); flex-shrink: 0; }
+  .drag-handle .icon { color: inherit; }
+  .icon-accent { color: var(--accent); }
+  .label-icon { display: flex; align-items: center; gap: 0.3rem; }
 </style>
 </head>
 <body>
@@ -204,16 +233,16 @@
 
   <div id="plannerView">
     <div class="date-nav">
-      <button id="prevDay">←</button>
+      <button id="prevDay"><i data-lucide="chevron-left" class="icon"></i></button>
       <div class="date-display">
         <div class="weekday" id="weekday"></div>
         <div class="fulldate" id="fulldate"></div>
       </div>
-      <button id="nextDay">→</button>
+      <button id="nextDay"><i data-lucide="chevron-right" class="icon"></i></button>
     </div>
 
-    <div id="lockedBanner" style="display:none;background:#f0f0f0;color:#777;text-align:center;padding:0.5rem;border-radius:8px;font-size:0.8rem;margin-bottom:1rem;">🔒 This day is locked</div>
-    <button id="endDayBtn" class="start-focus-btn" style="background:#1a1d26;margin-bottom:1.25rem;">End Day</button>
+    <div id="lockedBanner" style="display:none;background:var(--border);color:var(--text-secondary);text-align:center;padding:0.5rem;border-radius:8px;font-size:0.8rem;margin-bottom:1rem;"><i data-lucide="lock" class="icon icon-accent"></i> This day is locked</div>
+    <button id="endDayBtn" class="start-focus-btn" style="background:var(--text-primary);margin-bottom:1.25rem;">End Day</button>
     <div class="progress-wrap" id="progressWrap">
       <div class="progress-text">
         <span id="progressCount"></span>
@@ -236,13 +265,13 @@
       <svg id="ringChart" viewBox="0 0 200 200" width="180" height="180"></svg>
       <div class="ring-legend" id="ringLegend"></div>
     </div>
-    <div id="momentumBox" style="background:white;border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:center;"></div>
-    <div id="focusScoreBox" style="background:white;border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:center;"></div>
+    <div id="momentumBox" style="background:var(--bg-card);border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:center;"></div>
+    <div id="focusScoreBox" style="background:var(--bg-card);border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:center;"></div>
 
     <div class="range-tabs">
-      <button class="range-tab active" data-range="week">Week</button>
-      <button class="range-tab" data-range="month">Month</button>
-      <button class="range-tab" data-range="year">Year</button>
+      <button class="range-tab active" data-range="week"><i data-lucide="bar-chart-3" class="icon"></i> Week</button>
+      <button class="range-tab" data-range="month"><i data-lucide="bar-chart-3" class="icon"></i> Month</button>
+      <button class="range-tab" data-range="year"><i data-lucide="bar-chart-3" class="icon"></i> Year</button>
     </div>
 
     <div id="barChart" class="bar-chart"></div>
@@ -250,21 +279,21 @@
   </div>
   <div id="reflectionView" style="display:none;">
     <div class="date-nav">
-      <button id="reflPrevDay">←</button>
+      <button id="reflPrevDay"><i data-lucide="chevron-left" class="icon"></i></button>
       <div class="date-display">
         <div class="weekday" id="reflWeekday"></div>
         <div class="fulldate" id="reflFulldate"></div>
       </div>
-      <button id="reflNextDay">→</button>
+      <button id="reflNextDay"><i data-lucide="chevron-right" class="icon"></i></button>
     </div>
 
-    <label style="display:block;font-size:0.85rem;color:#555;margin-bottom:0.4rem;">What went well today?</label>
-    <textarea id="reflWentWell" rows="3" style="width:100%;padding:0.6rem;border-radius:8px;border:1px solid #ddd;font-family:inherit;font-size:0.9rem;margin-bottom:1rem;resize:none;"></textarea>
+    <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.4rem;"><i data-lucide="book-open" class="icon"></i>What went well today?</label>
+    <textarea id="reflWentWell" rows="3" style="width:100%;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:0.9rem;margin-bottom:1rem;resize:none;"></textarea>
 
-    <label style="display:block;font-size:0.85rem;color:#555;margin-bottom:0.4rem;">What could improve?</label>
-    <textarea id="reflImprove" rows="3" style="width:100%;padding:0.6rem;border-radius:8px;border:1px solid #ddd;font-family:inherit;font-size:0.9rem;margin-bottom:1rem;resize:none;"></textarea>
+    <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.4rem;"><i data-lucide="edit-3" class="icon"></i>What could improve?</label>
+    <textarea id="reflImprove" rows="3" style="width:100%;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:0.9rem;margin-bottom:1rem;resize:none;"></textarea>
 
-    <button id="reflSaveBtn" class="start-focus-btn" style="background:#2F5233;">Save Reflection</button>
+    <button id="reflSaveBtn" class="start-focus-btn" style="background:var(--accent);">Save Reflection</button>
   </div>
   <div id="focusView">
     <div class="focus-container">
@@ -289,14 +318,14 @@
   
       <div id="focusTimerScreen">
         <div class="timer-icon-controls">
-          <button id="pauseResumeBtn" class="timer-icon-btn" title="Pause">⏸</button>
-          <button id="stopSessionBtn" class="timer-icon-btn" title="End session">✕</button>
+          <button id="pauseResumeBtn" class="timer-icon-btn" title="Pause"><i data-lucide="pause" class="icon"></i></button>
+          <button id="stopSessionBtn" class="timer-icon-btn" title="End session"><i data-lucide="x" class="icon"></i></button>
         </div>
         <div class="timer-ring-wrap">
           <svg id="timerRing" viewBox="0 0 200 200" width="240" height="240"></svg>
           <div class="timer-time" id="timerTime">25:00</div>
         </div>
-        <div class="timer-label" id="timerLabel"></div>
+        <div class="timer-label"><i data-lucide="timer" class="icon"></i> <span id="timerLabel"></span></div>
       </div>
     </div>
   </div>
@@ -306,17 +335,17 @@
 
 </div>
 
-<button class="fab" id="openAdd">+</button>
-<button class="fab" id="openAddGoal" style="display:none;">+</button>
-<button class="mic-fab" id="micBtn">🎤</button>
-<button class="mic-fab" id="todayBtn" style="right: 9.5rem;">•</button>
+<button class="fab" id="openAdd"><i data-lucide="plus" class="icon icon-lg"></i></button>
+<button class="fab" id="openAddGoal" style="display:none;"><i data-lucide="plus" class="icon icon-lg"></i></button>
+<button class="mic-fab" id="micBtn"><i data-lucide="mic" class="icon icon-lg"></i></button>
+<button class="mic-fab" id="todayBtn" style="right: 9.5rem;"><i data-lucide="circle-dot" class="icon icon-lg"></i></button>
 
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
     <h3 id="modalTitle">Add Task</h3>
     <label>Task name</label>
     <input type="text" id="modalName" placeholder="e.g. Read 30 pages">
-    <label>Category</label>
+    <label class="label-icon"><i data-lucide="tag" class="icon"></i>Category</label>
     <select id="modalCategory"></select>
     <div class="modal-row">
       <div>
@@ -397,7 +426,7 @@
     <h3>Add Goal</h3>
     <label>Goal name</label>
     <input type="text" id="goalName" placeholder="e.g. Play Fortnite">
-    <label>Category</label>
+    <label class="label-icon"><i data-lucide="tag" class="icon"></i>Category</label>
     <select id="goalCategory"></select>
     <label>Start date</label>
     <input type="date" id="goalStartDate">
@@ -426,9 +455,9 @@
 <div class="modal-overlay" id="goalViewModalOverlay">
   <div class="modal">
     <h3 id="goalViewName"></h3>
-    <p style="font-size:0.85rem; color:#555; margin-top:0.5rem;" id="goalViewCheckoff"></p>
-    <p style="font-size:0.85rem; color:#777; margin-top:0.75rem;"><strong>Why:</strong> <span id="goalViewWhy"></span></p>
-    <p style="font-size:0.85rem; color:#777; margin-top:0.5rem;"><strong>Plan:</strong> <span id="goalViewPlan"></span></p>
+    <p style="font-size:0.85rem; color:var(--text-secondary); margin-top:0.5rem;" id="goalViewCheckoff"></p>
+    <p style="font-size:0.85rem; color:var(--text-muted); margin-top:0.75rem;"><strong>Why:</strong> <span id="goalViewWhy"></span></p>
+    <p style="font-size:0.85rem; color:var(--text-muted); margin-top:0.5rem;"><strong>Plan:</strong> <span id="goalViewPlan"></span></p>
     <div class="modal-actions">
       <button class="btn-cancel" id="goalViewClose">Close</button>
       <button class="btn-save" id="goalViewEdit">Edit</button>
@@ -456,6 +485,11 @@
   const PALETTE = ["#B8D8BA", "#F4C7A8", "#A8C8E8", "#D4B8E8", "#F4D48A", "#9EDAD1", "#F0B8D4", "#C5C9D4"];
   const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
 
+  function setIcon(el, name, extraClass) {
+    el.innerHTML = `<i data-lucide="${name}" class="icon${extraClass ? " " + extraClass : ""}"></i>`;
+    lucide.createIcons();
+  }
+
   function toDateStr(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -468,7 +502,7 @@
   }
   function categoryColor(name) {
     const cat = categories.find(c => c.name === name);
-    return cat ? cat.color : "#ddd";
+    return cat ? cat.color : "var(--border)";
   }
   function formatDuration(mins) {
     const m = parseInt(mins);
@@ -560,6 +594,7 @@
     document.getElementById("micBtn").style.display = view === "planner" ? "block" : "none";
     document.getElementById("todayBtn").style.display = view === "planner" ? "block" : "none";
     document.body.classList.toggle("deep-work-mode", view === "focus");
+    document.documentElement.setAttribute("data-theme", view === "focus" ? "dark" : "light");
 
     if (view === "goals") renderGoals();
     if (view === "analysis") renderAnalysis();
@@ -611,14 +646,15 @@
       top.className = "goal-card-top";
       const name = document.createElement("div");
       name.className = "goal-name";
-      name.textContent = goal.name;
+      name.innerHTML = '<i data-lucide="target" class="icon"></i> ';
+      name.append(goal.name);
       const pctEl = document.createElement("div");
       pctEl.className = "goal-pct";
       pctEl.textContent = pct + "%";
 
       const menuBtn = document.createElement("button");
-      menuBtn.textContent = "⋮";
-      menuBtn.style.cssText = "background:none;border:none;font-size:1.1rem;cursor:pointer;color:#999;padding:0 0.3rem;";
+      menuBtn.innerHTML = '<i data-lucide="more-vertical" class="icon"></i>';
+      menuBtn.style.cssText = "background:none;border:none;cursor:pointer;color:var(--text-muted);padding:0 0.3rem;display:flex;align-items:center;";
       menuBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         openGoalViewModal(goal.id);
@@ -630,8 +666,15 @@
 
       const sub = document.createElement("div");
       sub.className = "goal-sub";
-      const streakText = streak > 0 ? ` · 🔥 ${streak} day${streak === 1 ? "" : "s"}` : "";
-      sub.textContent = `${goal.category} · ${doneCount} / ${scheduledDays.length} days${streakText}`;
+      sub.append(`${goal.category} · ${doneCount} / ${scheduledDays.length} days`);
+      if (streak > 0) {
+        sub.append(" · ");
+        const flame = document.createElement("i");
+        flame.setAttribute("data-lucide", "flame");
+        flame.className = "icon";
+        sub.appendChild(flame);
+        sub.append(` ${streak} day${streak === 1 ? "" : "s"}`);
+      }
 
       const dots = document.createElement("div");
       dots.className = "goal-dots";
@@ -650,6 +693,7 @@
       card.appendChild(dots);
       listEl.appendChild(card);
     });
+    lucide.createIcons();
   }
 
    
@@ -679,8 +723,8 @@
     document.getElementById("progressFill").style.width = pct + "%";
     const remaining = total - done;
     let msg = "";
-    if (remaining === 0) msg = "Everything completed 🎉";
-    else if (remaining === 1) msg = "Only 1 task left 💪";
+    if (remaining === 0) msg = "Everything completed";
+    else if (remaining === 1) msg = "Only 1 task left";
     else if (pct >= 75) msg = `Almost there — ${remaining} to go`;
     else if (pct >= 50) msg = `Over halfway — ${remaining} to go`;
     else if (done > 0) msg = `${remaining} more to go`;
@@ -694,8 +738,8 @@
     const allCount = getTasksForDate(currentDate, "All").length;
     const allPill = document.createElement("button");
     allPill.className = "cat-pill";
-    allPill.style.background = activeCategory === "All" ? "#2F5233" : "white";
-    allPill.style.color = activeCategory === "All" ? "white" : "#333";
+    allPill.style.background = activeCategory === "All" ? "var(--accent)" : "var(--bg-card)";
+    allPill.style.color = activeCategory === "All" ? "var(--on-accent)" : "var(--text-primary)";
     allPill.textContent = allCount > 0 ? `All (${allCount})` : "All";
     allPill.addEventListener("click", () => { activeCategory = "All"; renderAll(); });
     wrap.appendChild(allPill);
@@ -705,8 +749,8 @@
       const pill = document.createElement("button");
       const isActive = activeCategory === cat.name;
       pill.className = "cat-pill";
-      pill.style.background = isActive ? cat.color : "white";
-      pill.style.color = isActive ? "#1a1d26" : "#333";
+      pill.style.background = isActive ? cat.color : "var(--bg-card)";
+      pill.style.color = isActive ? "#1a1d26" : "var(--text-primary)";
       pill.textContent = count > 0 ? `${cat.name} (${count})` : cat.name;
       pill.addEventListener("click", () => { activeCategory = cat.name; renderAll(); });
       pill.addEventListener("dblclick", (e) => {
@@ -718,9 +762,10 @@
 
     const addBtn = document.createElement("button");
     addBtn.className = "cat-add";
-    addBtn.textContent = "+";
+    addBtn.innerHTML = '<i data-lucide="plus" class="icon"></i>';
     addBtn.addEventListener("click", openCategoryModal);
     wrap.appendChild(addBtn);
+    lucide.createIcons();
 
     const sel = document.getElementById("modalCategory");
     sel.innerHTML = "";
@@ -755,8 +800,9 @@
     if (dayTasks.every(t => t.occurrenceDone)) {
       const msg = document.createElement("div");
       msg.className = "empty-msg";
-      msg.innerHTML = `<div class="big">🎉 Everything is done for today.</div>Go enjoy your day.`;
+      msg.innerHTML = `<div class="big"><i data-lucide="check-circle-2" class="icon icon-accent"></i> Everything is done for today.</div>Go enjoy your day.`;
       listEl.appendChild(msg);
+      lucide.createIcons();
       return;
     }
 
@@ -766,8 +812,13 @@
       li.style.borderLeftColor = categoryColor(task.category);
       li.dataset.taskId = task.id;
 
+      const drag = document.createElement("div");
+      drag.className = "drag-handle";
+      drag.innerHTML = '<i data-lucide="grip-vertical" class="icon"></i>';
+
       const checkbox = document.createElement("div");
       checkbox.className = "checkbox" + (task.occurrenceDone ? " checked" : "");
+      checkbox.innerHTML = task.occurrenceDone ? '<i data-lucide="check" class="icon"></i>' : "";
       checkbox.addEventListener("click", (e) => {
         e.stopPropagation();
         if (isDayLocked(task.occurrenceDate)) { alert("This day is locked. Reflection already completed."); return; }
@@ -792,15 +843,16 @@
       const meta = document.createElement("span");
       meta.className = "task-meta";
       const durText = formatDuration(task.duration);
-      const durIcon = durText ? "🕐 " + durText : "";
-      const goalIcon = task.isGoal ? "🎯" : "";
+      const durIcon = durText ? '<i data-lucide="clock" class="icon"></i>' + durText : "";
+      const goalIcon = task.isGoal ? '<i data-lucide="target" class="icon"></i>' : "";
       let streakIcon = "";
       if (task.isRecurring) {
         const realTask = tasks.find(t => t.id === task.id);
         const streak = computeStreak(realTask);
-        streakIcon = streak > 0 ? `🔥${streak}` : "🔁";
+        streakIcon = streak > 0 ? `<i data-lucide="flame" class="icon"></i>${streak}` : '<i data-lucide="repeat" class="icon"></i>';
       }
-      meta.innerHTML = [task.time, durIcon, streakIcon, goalIcon].filter(Boolean).join(" · ");
+      const metaParts = [task.time, durIcon, streakIcon, goalIcon].filter(Boolean);
+      meta.innerHTML = metaParts.join(" · ");
 
       const cat = document.createElement("span");
       cat.className = "task-category";
@@ -809,7 +861,7 @@
 
       const del = document.createElement("button");
       del.className = "delete-btn";
-      del.textContent = "✕";
+      del.innerHTML = '<i data-lucide="x" class="icon"></i>';
       del.addEventListener("click", (e) => {
         e.stopPropagation();
         const label = task.isRecurring ? "Delete this whole repeating task series?" : "Delete this task?";
@@ -824,13 +876,15 @@
         openEditModal(task.id);
       });
 
+      li.appendChild(drag);
       li.appendChild(checkbox);
       li.appendChild(name);
-      if (meta.textContent) li.appendChild(meta);
+      if (metaParts.length) li.appendChild(meta);
       li.appendChild(cat);
       li.appendChild(del);
       listEl.appendChild(li);
     });
+    lucide.createIcons();
 
     if (sortableInstance) sortableInstance.destroy();
     sortableInstance = new Sortable(listEl, {
@@ -1394,14 +1448,15 @@ function renderAnalysis() {
     const score = Math.round(completionPct * 0.7 + consistencyPct * 0.3);
 
     const el = document.getElementById("focusScoreBox");
-    let color = "#B5533C";
-    if (score >= 80) color = "#2F5233";
-    else if (score >= 50) color = "#C7862B";
+    let color = "var(--danger)";
+    if (score >= 80) color = "var(--accent)";
+    else if (score >= 50) color = "var(--warning)";
 
     el.innerHTML = `
       <div style="font-size:2rem;font-weight:600;color:${color};">${score}</div>
-      <div style="font-size:0.8rem;color:#999;">Focus Score</div>
+      <div style="font-size:0.8rem;color:var(--text-muted);"><i data-lucide="activity" class="icon"></i> Focus Score</div>
     `;
+    lucide.createIcons();
   }
 
   function avgPctForRange(startDaysAgo, endDaysAgo) {
@@ -1421,20 +1476,21 @@ function renderAnalysis() {
     const el = document.getElementById("momentumBox");
 
     if (thisWeek === null || lastWeek === null) {
-      el.innerHTML = `<div style="color:#999;font-size:0.85rem;">Not enough history yet to show momentum.</div>`;
+      el.innerHTML = `<div style="color:var(--text-muted);font-size:0.85rem;">Not enough history yet to show momentum.</div>`;
       return;
     }
 
     const diff = Math.round(thisWeek - lastWeek);
-    let icon = "→", label = "Steady", color = "#999";
-    if (diff > 3) { icon = "↗"; label = "You're improving"; color = "#2F5233"; }
-    else if (diff < -3) { icon = "↘"; label = "Momentum dropping"; color = "#B5533C"; }
+    let icon = "minus", label = "Steady", color = "var(--text-muted)";
+    if (diff > 3) { icon = "trending-up"; label = "You're improving"; color = "var(--accent)"; }
+    else if (diff < -3) { icon = "trending-down"; label = "Momentum dropping"; color = "var(--danger)"; }
 
     el.innerHTML = `
-      <div style="font-size:1.4rem;">${icon}</div>
+      <div style="font-size:1.4rem;color:${color};"><i data-lucide="${icon}" class="icon icon-lg" style="color:inherit;"></i></div>
       <div style="font-weight:500;color:${color};">${label}</div>
-      <div style="font-size:0.75rem;color:#999;">${Math.round(thisWeek)}% this week vs ${Math.round(lastWeek)}% last week</div>
+      <div style="font-size:0.75rem;color:var(--text-muted);">${Math.round(thisWeek)}% this week vs ${Math.round(lastWeek)}% last week</div>
     `;
+    lucide.createIcons();
   }
 
   function renderRingChart() {
@@ -1459,7 +1515,7 @@ function renderAnalysis() {
 
     const bg = document.createElementNS(ns, "circle");
     bg.setAttribute("cx", cx); bg.setAttribute("cy", cy); bg.setAttribute("r", r);
-    bg.setAttribute("fill", "none"); bg.setAttribute("stroke", "#eee"); bg.setAttribute("stroke-width", "20");
+    bg.setAttribute("fill", "none"); bg.setAttribute("stroke", "var(--border)"); bg.setAttribute("stroke-width", "20");
     svg.appendChild(bg);
 
     let cumulative = 0;
@@ -1482,20 +1538,20 @@ function renderAnalysis() {
 
     const text1 = document.createElementNS(ns, "text");
     text1.setAttribute("x", cx); text1.setAttribute("y", cy - 6); text1.setAttribute("text-anchor", "middle");
-    text1.setAttribute("font-size", "13"); text1.setAttribute("fill", "#777");
+    text1.setAttribute("font-size", "13"); text1.setAttribute("fill", "var(--text-secondary)");
     text1.textContent = "Locked in";
     svg.appendChild(text1);
 
     const text2 = document.createElementNS(ns, "text");
     text2.setAttribute("x", cx); text2.setAttribute("y", cy + 22); text2.setAttribute("text-anchor", "middle");
-    text2.setAttribute("font-size", "28"); text2.setAttribute("font-weight", "600"); text2.setAttribute("fill", "#1a1d26");
+    text2.setAttribute("font-size", "28"); text2.setAttribute("font-weight", "600"); text2.setAttribute("fill", "var(--text-primary)");
     text2.textContent = pct + "%";
     svg.appendChild(text2);
 
     const legend = document.getElementById("ringLegend");
     legend.innerHTML = "";
     if (Object.keys(byCat).length === 0) {
-      legend.innerHTML = "<div style='color:#999'>No tasks scheduled today.</div>";
+      legend.innerHTML = "<div style='color:var(--text-muted)'>No tasks scheduled today.</div>";
     }
     Object.keys(byCat).forEach(catName => {
       const info = byCat[catName];
@@ -1558,7 +1614,7 @@ function renderAnalysis() {
       const fill = document.createElement("div");
       fill.className = "bar-fill";
       fill.style.height = (dp.pct ?? 0) + "%";
-      if (dp.pct === null) fill.style.background = "#eee";
+      if (dp.pct === null) fill.style.background = "var(--border)";
       const label = document.createElement("div");
       label.className = "bar-label";
       label.textContent = dp.label;
@@ -1573,7 +1629,8 @@ function renderAnalysis() {
      if (valid.length > 0) {
       const best = valid.reduce((a, b) => b.pct > a.pct ? b : a);
       const worst = valid.reduce((a, b) => b.pct < a.pct ? b : a);
-      bestWorstEl.innerHTML = `<div class="box">🔥 Best: ${best.label} (${best.pct}%)</div><div class="box">📉 Toughest: ${worst.label} (${worst.pct}%)</div>`;
+      bestWorstEl.innerHTML = `<div class="box"><i data-lucide="flame" class="icon"></i> Best: ${best.label} (${best.pct}%)</div><div class="box"><i data-lucide="trending-down" class="icon"></i> Toughest: ${worst.label} (${worst.pct}%)</div>`;
+      lucide.createIcons();
     }
   }
 
@@ -1586,10 +1643,10 @@ function renderAnalysis() {
     });
   });
   const SESSIONS = [
-    { name: "⚡ Sprint", time: "25 / 5", work: 25 },
-    { name: "🔥 Flow", time: "50 / 10", work: 50 },
-    { name: "🧠 Ultra", time: "90 / 20", work: 90 },
-    { name: "⚙ Custom", time: "Choose", work: null }
+    { name: "Sprint", icon: "zap", time: "25 / 5", work: 25 },
+    { name: "Flow", icon: "waves", time: "50 / 10", work: 50 },
+    { name: "Ultra", icon: "flame", time: "90 / 20", work: 90 },
+    { name: "Custom", icon: "settings", time: "Choose", work: null }
   ];
   let selectedSession = 0;
 
@@ -1602,10 +1659,11 @@ function renderAnalysis() {
     SESSIONS.forEach((s, i) => {
       const card = document.createElement("button");
       card.className = "focus-session" + (i === selectedSession ? " selected" : "");
-      card.innerHTML = `<div class="session-name">${s.name}</div><div class="session-time">${s.time}</div>`;
+      card.innerHTML = `<div class="session-name"><i data-lucide="${s.icon}" class="icon"></i> ${s.name}</div><div class="session-time">${s.time}</div>`;
       card.addEventListener("click", () => { selectedSession = i; renderFocus(); });
       grid.appendChild(card);
     });
+    lucide.createIcons();
 
     document.getElementById("customMinutesRow").style.display = selectedSession === 3 ? "block" : "none";
 
@@ -1614,7 +1672,8 @@ function renderAnalysis() {
     const todayTasks = getTasksForDate(new Date(), "All").filter(t => !t.occurrenceDone).slice(0, 3);
 
     if (todayTasks.length === 0) {
-      container.innerHTML = '<div class="focus-empty">Everything is done today 🎉</div>';
+      container.innerHTML = '<div class="focus-empty"><i data-lucide="check-circle-2" class="icon icon-accent"></i> Everything is done today</div>';
+      lucide.createIcons();
       return;
     }
     todayTasks.forEach(task => {
@@ -1644,12 +1703,12 @@ function renderAnalysis() {
 
     const bg = document.createElementNS(ns, "circle");
     bg.setAttribute("cx", cx); bg.setAttribute("cy", cy); bg.setAttribute("r", r);
-    bg.setAttribute("fill", "none"); bg.setAttribute("stroke", "#182636"); bg.setAttribute("stroke-width", "10");
+    bg.setAttribute("fill", "none"); bg.setAttribute("stroke", "var(--border)"); bg.setAttribute("stroke-width", "10");
     svg.appendChild(bg);
 
     const fg = document.createElementNS(ns, "circle");
     fg.setAttribute("cx", cx); fg.setAttribute("cy", cy); fg.setAttribute("r", r);
-    fg.setAttribute("fill", "none"); fg.setAttribute("stroke", "#4D8DFF"); fg.setAttribute("stroke-width", "10");
+    fg.setAttribute("fill", "none"); fg.setAttribute("stroke", "var(--accent)"); fg.setAttribute("stroke-width", "10");
     fg.setAttribute("stroke-linecap", "round");
     const dashLen = (pctRemaining / 100) * circumference;
     fg.setAttribute("stroke-dasharray", `${dashLen} ${circumference - dashLen}`);
@@ -1669,7 +1728,7 @@ function renderAnalysis() {
     if (remainingSeconds <= 0) {
       clearInterval(timerInterval);
       updateTimerDisplay();
-      alert("Session complete 🎉");
+      alert("Session complete");
       endTimer();
       return;
     }
@@ -1689,8 +1748,8 @@ function renderAnalysis() {
 
     document.getElementById("focusSetup").style.display = "none";
     document.getElementById("focusTimerScreen").style.display = "block";
-    document.getElementById("timerLabel").textContent = session.name.replace(/^\S+\s/, "") + " session";
-    document.getElementById("pauseResumeBtn").textContent = "⏸";
+    document.getElementById("timerLabel").textContent = session.name + " session";
+    setIcon(document.getElementById("pauseResumeBtn"), "pause");
     document.body.classList.add("timer-active");
 
     updateTimerDisplay();
@@ -1711,8 +1770,7 @@ function renderAnalysis() {
   document.getElementById("pauseResumeBtn").addEventListener("click", () => {
     timerRunning = !timerRunning;
     const btn = document.getElementById("pauseResumeBtn");
-    btn.textContent = timerRunning ? "⏸" : "▶";
-    btn.classList.toggle("play-icon", !timerRunning);
+    setIcon(btn, timerRunning ? "pause" : "play");
   });
 
   document.getElementById("stopSessionBtn").addEventListener("click", () => {
@@ -1796,6 +1854,7 @@ function renderAnalysis() {
     document.getElementById("reflWentWell").focus();
   });
 renderAll();
+lucide.createIcons();
 </script>
 </body>
 </html>
