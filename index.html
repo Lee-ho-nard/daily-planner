@@ -1765,12 +1765,181 @@ function renderAnalysis() {
     return { icon: "book-open", text: `A week ago you wrote: '${text}'` };
   }
 
+  function timeOfDaySplitInsight() {
+    const today = toDateStr(new Date());
+    let beforeTotal = 0, beforeDone = 0, afterTotal = 0, afterDone = 0;
+
+    tasks.forEach(t => {
+      if (!t.time) return;
+      const isBefore = t.time < "12:00";
+
+      if (!t.recurrence || t.recurrence.type === "none") {
+        if (t.date <= today) {
+          if (isBefore) { beforeTotal++; if (t.done) beforeDone++; }
+          else { afterTotal++; if (t.done) afterDone++; }
+        }
+      } else {
+        const start = new Date(t.date + "T00:00:00");
+        const end = new Date((t.endDate || today) + "T00:00:00");
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          const ds = toDateStr(d);
+          if (ds > today) break;
+          if (occursOn(t, d)) {
+            const done = (t.completedDates || []).includes(ds);
+            if (isBefore) { beforeTotal++; if (done) beforeDone++; }
+            else { afterTotal++; if (done) afterDone++; }
+          }
+        }
+      }
+    });
+
+    if (beforeTotal < 5 || afterTotal < 5) return null;
+
+    const beforeRate = Math.round((beforeDone / beforeTotal) * 100);
+    const afterRate = Math.round((afterDone / afterTotal) * 100);
+    const diff = beforeRate - afterRate;
+    if (Math.abs(diff) < 5) return null;
+
+    if (diff > 0) {
+      return { icon: "sunrise", text: `You complete tasks scheduled before noon ${diff} percentage points more often than ones after noon` };
+    }
+    return { icon: "sunset", text: `You complete tasks scheduled after noon ${Math.abs(diff)} percentage points more often than ones before noon` };
+  }
+
+  function bestWeekdayInsight() {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    let earliest = today;
+    tasks.forEach(t => {
+      const d = new Date(t.date + "T00:00:00");
+      if (d < earliest) earliest = d;
+    });
+    const daysBack = Math.min(Math.round((today - earliest) / 86400000), 365);
+
+    const weekdaySums = [0, 0, 0, 0, 0, 0, 0];
+    const weekdayCounts = [0, 0, 0, 0, 0, 0, 0];
+    for (let i = 0; i <= daysBack; i++) {
+      const d = new Date(today); d.setDate(d.getDate() - i);
+      const p = dayPct(d);
+      if (p !== null) {
+        const wd = d.getDay();
+        weekdaySums[wd] += p;
+        weekdayCounts[wd]++;
+      }
+    }
+
+    const WEEKDAY_NAMES_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    let best = null;
+    let eligibleCount = 0;
+    for (let wd = 0; wd < 7; wd++) {
+      if (weekdayCounts[wd] >= 3) {
+        eligibleCount++;
+        const avg = weekdaySums[wd] / weekdayCounts[wd];
+        if (!best || avg > best.avg) best = { wd, avg };
+      }
+    }
+    if (eligibleCount < 2 || !best) return null;
+    return { icon: "star", text: `Your best day of the week is ${WEEKDAY_NAMES_FULL[best.wd]}, averaging ${Math.round(best.avg)}%` };
+  }
+
+  function weekendCategorySkewInsight() {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    let earliest = today;
+    tasks.forEach(t => {
+      const d = new Date(t.date + "T00:00:00");
+      if (d < earliest) earliest = d;
+    });
+    const daysBack = Math.min(Math.round((today - earliest) / 86400000), 365);
+
+    let elapsedWeekendDays = 0, elapsedWeekdays = 0;
+    for (let i = 0; i <= daysBack; i++) {
+      const d = new Date(today); d.setDate(d.getDate() - i);
+      const wd = d.getDay();
+      if (wd === 0 || wd === 6) elapsedWeekendDays++; else elapsedWeekdays++;
+    }
+    if (elapsedWeekendDays === 0 || elapsedWeekdays === 0) return null;
+
+    const todayStr = toDateStr(today);
+    const stats = {};
+    categories.forEach(cat => { stats[cat.name] = { weekendCompleted: 0, weekdayCompleted: 0, totalCompleted: 0 }; });
+
+    tasks.forEach(t => {
+      if (!stats[t.category]) return;
+      if (!t.recurrence || t.recurrence.type === "none") {
+        if (t.date <= todayStr && t.done) {
+          const wd = new Date(t.date + "T00:00:00").getDay();
+          if (wd === 0 || wd === 6) stats[t.category].weekendCompleted++; else stats[t.category].weekdayCompleted++;
+          stats[t.category].totalCompleted++;
+        }
+      } else {
+        const start = new Date(t.date + "T00:00:00");
+        const end = new Date((t.endDate || todayStr) + "T00:00:00");
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          const ds = toDateStr(d);
+          if (ds > todayStr) break;
+          if (occursOn(t, d) && (t.completedDates || []).includes(ds)) {
+            const wd = d.getDay();
+            if (wd === 0 || wd === 6) stats[t.category].weekendCompleted++; else stats[t.category].weekdayCompleted++;
+            stats[t.category].totalCompleted++;
+          }
+        }
+      }
+    });
+
+    let best = null;
+    Object.keys(stats).forEach(catName => {
+      const s = stats[catName];
+      if (s.totalCompleted < 6) return;
+      const weekendAvg = s.weekendCompleted / elapsedWeekendDays;
+      const weekdayAvg = s.weekdayCompleted / elapsedWeekdays;
+      let relDiff;
+      if (weekdayAvg === 0) {
+        if (weekendAvg === 0) return;
+        relDiff = Infinity;
+      } else {
+        relDiff = (weekendAvg - weekdayAvg) / weekdayAvg;
+      }
+      if (relDiff >= 0.3) {
+        if (!best || relDiff > best.relDiff) best = { catName, relDiff };
+      }
+    });
+
+    if (!best) return null;
+    return { icon: "calendar-days", text: `You do more ${best.catName} tasks on weekends than weekdays` };
+  }
+
+  function missedCategoryThisWeekInsight() {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const missed = {};
+    categories.forEach(cat => { missed[cat.name] = 0; });
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today); d.setDate(d.getDate() - i);
+      const dayTasks = getTasksForDate(d, "All");
+      dayTasks.forEach(t => {
+        if (missed[t.category] === undefined) return;
+        if (!t.occurrenceDone) missed[t.category]++;
+      });
+    }
+
+    let worst = null;
+    Object.keys(missed).forEach(catName => {
+      if (!worst || missed[catName] > worst.count) worst = { catName, count: missed[catName] };
+    });
+
+    if (!worst || worst.count < 1) return null;
+    return { icon: "alert-circle", text: `You've missed ${worst.catName} tasks ${worst.count} time${worst.count === 1 ? "" : "s"} this week` };
+  }
+
   const INSIGHT_GENERATORS = [
     weeklyTrendInsight,
     weakestCategoryInsight,
     longestStreakEverInsight,
     reflectionStreakInsight,
-    resurfacedReflectionInsight
+    resurfacedReflectionInsight,
+    timeOfDaySplitInsight,
+    bestWeekdayInsight,
+    weekendCategorySkewInsight,
+    missedCategoryThisWeekInsight
   ];
 
   function getActiveInsights() {
