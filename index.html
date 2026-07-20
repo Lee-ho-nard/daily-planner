@@ -158,6 +158,11 @@
   .goal-dot.future { opacity: 0.4; border-style: dashed; }
   .goal-dot.milestone { box-shadow: 0 0 0 3px var(--accent-bg); }
 
+  .insight-nav-btn { background: var(--bg-card); border: none; box-shadow: var(--shadow-card); border-radius: 50%; width: 32px; height: 32px; flex-shrink: 0; cursor: pointer; display: grid; place-items: center; color: var(--text-primary); transition: transform 0.15s; }
+  .insight-nav-btn:active { transform: scale(0.92); }
+  .insight-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin: 0 3px; background: var(--border); }
+  .insight-dot.active { background: var(--accent); }
+
   .ring-section { display:flex; align-items:center; gap:1.5rem; background:var(--bg-card); border-radius:var(--radius-md); padding:1.4rem; margin-bottom:1.25rem; box-shadow: var(--shadow-card); }
   .ring-legend { flex:1; font-size:0.8rem; }
   .ring-legend-row { display:flex; align-items:center; gap:0.4rem; margin-bottom:0.45rem; }
@@ -298,6 +303,7 @@
       <svg id="ringChart" viewBox="0 0 200 200" width="180" height="180"></svg>
       <div class="ring-legend" id="ringLegend"></div>
     </div>
+    <div id="insightsCard" style="background:var(--bg-card);border-radius:var(--radius-md);padding:1.1rem 1.3rem;margin-bottom:1.25rem;box-shadow:var(--shadow-card);"></div>
     <div id="momentumBox" style="background:var(--bg-card);border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:center;"></div>
     <div id="focusScoreBox" style="background:var(--bg-card);border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:center;"></div>
 
@@ -1641,6 +1647,191 @@ function renderAnalysis() {
     renderBarChart(currentRange);
     renderMomentum();
     renderFocusScore();
+    renderInsights();
+  }
+
+  // --- Smart Insights ---
+  function weeklyTrendInsight() {
+    const thisWeek = avgPctForRange(6, 0);
+    const lastWeek = avgPctForRange(13, 7);
+    if (thisWeek === null || lastWeek === null) return null;
+    const diff = Math.round(thisWeek - lastWeek);
+    if (Math.abs(diff) <= 3) return { icon: "minus", text: "You're steady with last week" };
+    if (diff > 0) return { icon: "trending-up", text: `This week is up ${diff}% compared to last week` };
+    return { icon: "trending-down", text: `This week is down ${Math.abs(diff)}% compared to last week` };
+  }
+
+  function weakestCategoryInsight() {
+    const today = toDateStr(new Date());
+    const stats = {};
+    categories.forEach(cat => { stats[cat.name] = { scheduled: 0, completed: 0 }; });
+
+    tasks.forEach(t => {
+      if (!stats[t.category]) return;
+      if (!t.recurrence || t.recurrence.type === "none") {
+        if (t.date <= today) {
+          stats[t.category].scheduled++;
+          if (t.done) stats[t.category].completed++;
+        }
+      } else {
+        const start = new Date(t.date + "T00:00:00");
+        const end = new Date((t.endDate || today) + "T00:00:00");
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          const ds = toDateStr(d);
+          if (ds > today) break;
+          if (occursOn(t, d)) {
+            stats[t.category].scheduled++;
+            if ((t.completedDates || []).includes(ds)) stats[t.category].completed++;
+          }
+        }
+      }
+    });
+
+    let weakest = null;
+    let eligibleCount = 0;
+    Object.keys(stats).forEach(catName => {
+      const s = stats[catName];
+      if (s.scheduled >= 5) {
+        eligibleCount++;
+        const rate = s.completed / s.scheduled;
+        if (!weakest || rate < weakest.rate) weakest = { catName, rate };
+      }
+    });
+
+    if (eligibleCount < 2 || !weakest) return null;
+    const pct = Math.round(weakest.rate * 100);
+    return { icon: "trending-down", text: `${weakest.catName} tasks get completed least often, at ${pct}%` };
+  }
+
+  function computeLongestStreakEver(task) {
+    const today = toDateStr(new Date());
+    const start = new Date(task.date + "T00:00:00");
+    const end = new Date((task.endDate || today) + "T00:00:00");
+    let scheduledDays = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      if (occursOn(task, d)) scheduledDays.push(toDateStr(d));
+    }
+    let longest = 0, current = 0;
+    scheduledDays.forEach(ds => {
+      if ((task.completedDates || []).includes(ds)) {
+        current++;
+        if (current > longest) longest = current;
+      } else {
+        current = 0;
+      }
+    });
+    return longest;
+  }
+
+  function longestStreakEverInsight() {
+    const goalTasks = tasks.filter(t => t.isGoal);
+    let best = null;
+    goalTasks.forEach(g => {
+      const streak = computeLongestStreakEver(g);
+      if (!best || streak > best.streak) best = { streak, name: g.name };
+    });
+    if (!best || best.streak < 3) return null;
+    return { icon: "trophy", text: `Your longest streak ever was ${best.streak} days, on ${best.name}` };
+  }
+
+  function reflectionStreakInsight() {
+    const today = toDateStr(new Date());
+    const anchorDate = lockedDays.includes(today) ? today : (lockedDays.length ? lockedDays.slice().sort().reverse()[0] : null);
+    if (!anchorDate) return null;
+
+    let streak = 0;
+    let d = new Date(anchorDate + "T00:00:00");
+    while (true) {
+      const ds = toDateStr(d);
+      const entry = reflections[ds];
+      if (entry && (entry.wentWell || entry.improve)) {
+        streak++;
+        d.setDate(d.getDate() - 1);
+      } else {
+        break;
+      }
+    }
+    if (streak < 2) return null;
+    return { icon: "flame", text: `You've reflected ${streak} days in a row` };
+  }
+
+  function resurfacedReflectionInsight() {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    const entry = reflections[toDateStr(d)];
+    if (!entry || !entry.wentWell) return null;
+    let text = entry.wentWell;
+    if (text.length > 100) text = text.slice(0, 100) + "…";
+    return { icon: "book-open", text: `A week ago you wrote: '${text}'` };
+  }
+
+  const INSIGHT_GENERATORS = [
+    weeklyTrendInsight,
+    weakestCategoryInsight,
+    longestStreakEverInsight,
+    reflectionStreakInsight,
+    resurfacedReflectionInsight
+  ];
+
+  function getActiveInsights() {
+    return INSIGHT_GENERATORS.map(fn => fn()).filter(Boolean);
+  }
+
+  let currentInsightIndex = 0;
+  let activeInsightsCache = [];
+
+  function renderInsightContent() {
+    const card = document.getElementById("insightsCard");
+    if (activeInsightsCache.length === 0) {
+      card.innerHTML = `
+        <div style="text-align:center;">
+          <i data-lucide="sparkles" class="icon" style="width:28px;height:28px;color:var(--text-muted);display:block;margin:0 auto 0.5rem;"></i>
+          <div style="font-size:0.9rem;color:var(--text-muted);line-height:1.5;">Not enough history yet — keep going and insights will show up here.</div>
+        </div>
+      `;
+      lucide.createIcons();
+      return;
+    }
+
+    const insight = activeInsightsCache[currentInsightIndex];
+    const multi = activeInsightsCache.length > 1;
+    const dots = multi ? activeInsightsCache.map((_, i) => `<span class="insight-dot${i === currentInsightIndex ? " active" : ""}"></span>`).join("") : "";
+
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;gap:0.5rem;">
+        ${multi ? `<button id="insightPrev" class="insight-nav-btn"><i data-lucide="chevron-left" class="icon"></i></button>` : ""}
+        <div id="insightContent" style="flex:1;text-align:center;transition:opacity 150ms ease;">
+          <i data-lucide="${insight.icon}" class="icon icon-lg" style="color:var(--accent);display:block;margin:0 auto 0.5rem;"></i>
+          <div style="font-size:0.9rem;color:var(--text-primary);line-height:1.5;">${insight.text}</div>
+        </div>
+        ${multi ? `<button id="insightNext" class="insight-nav-btn"><i data-lucide="chevron-right" class="icon"></i></button>` : ""}
+      </div>
+      ${multi ? `<div style="text-align:center;margin-top:0.6rem;">${dots}</div>` : ""}
+    `;
+    lucide.createIcons();
+
+    if (multi) {
+      document.getElementById("insightPrev").addEventListener("click", () => stepInsight(-1));
+      document.getElementById("insightNext").addEventListener("click", () => stepInsight(1));
+    }
+  }
+
+  function stepInsight(dir) {
+    const content = document.getElementById("insightContent");
+    content.style.opacity = "0";
+    setTimeout(() => {
+      currentInsightIndex = (currentInsightIndex + dir + activeInsightsCache.length) % activeInsightsCache.length;
+      renderInsightContent();
+      const newContent = document.getElementById("insightContent");
+      newContent.style.opacity = "0";
+      requestAnimationFrame(() => { newContent.style.opacity = "1"; });
+    }, 150);
+  }
+
+  function renderInsights() {
+    activeInsightsCache = getActiveInsights();
+    currentInsightIndex = 0;
+    renderInsightContent();
   }
 
   function renderFocusScore() {
