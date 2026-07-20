@@ -222,6 +222,8 @@
   .custom-minutes-row input { width: 100%; padding: 0.5rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-page); color: var(--text-primary); font-family: inherit; }
 
   #focusTimerScreen { display: none; text-align: center; padding-top: 2rem; }
+  #focusSetup, #focusTimerScreen { opacity: 1; transform: scale(1); transition: opacity 200ms ease, transform 200ms cubic-bezier(0.16, 1, 0.3, 1); }
+  #focusSetup.fs-hidden, #focusTimerScreen.fs-hidden { opacity: 0; transform: scale(0.97); }
   .timer-ring-wrap { position: relative; display: inline-block; margin-bottom: 1.5rem; }
   .timer-time { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: var(--text-display); font-weight: 600; color: var(--text-primary); letter-spacing: -0.02em; }
   .timer-label { color: var(--text-secondary); font-size: var(--text-base); margin-bottom: 1rem; }
@@ -244,6 +246,22 @@
   #sealScreen.visible .seal-icon { opacity: 1; transform: scale(1); }
   .seal-date { font-size: var(--text-base); color: var(--text-secondary); margin-bottom: 0.5rem; text-align: center; }
   .seal-text { font-size: var(--text-xl); font-weight: 600; color: var(--text-primary); text-align: center; }
+
+  #sessionCompleteScreen {
+    position: fixed; inset: 0; z-index: 15;
+    background: var(--bg-page);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; visibility: hidden;
+    transition: opacity 0.4s ease, visibility 0s linear 0.4s;
+  }
+  #sessionCompleteScreen.visible {
+    opacity: 1; visibility: visible;
+    transition: opacity 0.4s ease, visibility 0s linear 0s;
+  }
+  .session-complete-icon { width: 48px; height: 48px; color: var(--accent); stroke-width: 1.75; display: block; margin: 0 auto 1.25rem; opacity: 0; transform: scale(0.8); transition: opacity 400ms ease-out, transform 400ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+  #sessionCompleteScreen.visible .session-complete-icon { opacity: 1; transform: scale(1); }
+  .session-complete-info { font-size: var(--text-base); color: var(--text-secondary); margin-bottom: 0.5rem; text-align: center; }
+  .session-complete-text { font-size: var(--text-xl); font-weight: 600; color: var(--text-primary); text-align: center; }
 
   #lockedBanner { transition: opacity 300ms ease-out, transform 300ms ease-out; }
 
@@ -417,6 +435,14 @@
     <i data-lucide="lock" class="seal-icon"></i>
     <div class="seal-date" id="sealDate"></div>
     <div class="seal-text">Day sealed.</div>
+  </div>
+</div>
+
+<div id="sessionCompleteScreen">
+  <div>
+    <i data-lucide="check-circle-2" class="session-complete-icon"></i>
+    <div class="session-complete-info" id="sessionCompleteInfo"></div>
+    <div class="session-complete-text">Session complete.</div>
   </div>
 </div>
 
@@ -2355,14 +2381,41 @@ function renderAnalysis() {
     drawTimerRing((remainingSeconds / totalSeconds) * 100);
   }
 
+  function crossfadeFocusScreens(hideEl, showEl) {
+    hideEl.classList.add("fs-hidden");
+    setTimeout(() => {
+      hideEl.style.display = "none";
+      hideEl.classList.remove("fs-hidden");
+      showEl.style.display = "block";
+      showEl.classList.add("fs-hidden");
+      void showEl.offsetWidth;
+      requestAnimationFrame(() => {
+        showEl.classList.remove("fs-hidden");
+      });
+    }, 150);
+  }
+
+  function showSessionCompleteScreen(session, workMinutes, onDone) {
+    const screen = document.getElementById("sessionCompleteScreen");
+    document.getElementById("sessionCompleteInfo").textContent = `${session.name} session — ${workMinutes} minutes`;
+    screen.classList.add("visible");
+    setTimeout(() => {
+      screen.classList.remove("visible");
+      onDone();
+    }, 1200);
+  }
+
   function tick() {
     if (!timerRunning) return;
     remainingSeconds--;
     if (remainingSeconds <= 0) {
       clearInterval(timerInterval);
       updateTimerDisplay();
-      showToast("Session complete", "success", 3500);
-      endTimer();
+      const session = SESSIONS[selectedSession];
+      const workMinutes = Math.round(totalSeconds / 60);
+      showSessionCompleteScreen(session, workMinutes, () => {
+        endTimer();
+      });
       return;
     }
     updateTimerDisplay();
@@ -2385,8 +2438,7 @@ function renderAnalysis() {
     remainingSeconds = totalSeconds;
     timerRunning = true;
 
-    document.getElementById("focusSetup").style.display = "none";
-    document.getElementById("focusTimerScreen").style.display = "block";
+    crossfadeFocusScreens(document.getElementById("focusSetup"), document.getElementById("focusTimerScreen"));
     document.getElementById("timerLabel").textContent = session.name + " session";
     setIcon(document.getElementById("pauseResumeBtn"), "pause");
     document.body.classList.add("timer-active");
@@ -2400,8 +2452,7 @@ function renderAnalysis() {
     clearInterval(timerInterval);
     timerRunning = false;
     document.body.classList.remove("timer-active");
-    document.getElementById("focusTimerScreen").style.display = "none";
-    document.getElementById("focusSetup").style.display = "block";
+    crossfadeFocusScreens(document.getElementById("focusTimerScreen"), document.getElementById("focusSetup"));
   }
 
   document.getElementById("customMinutesInput").addEventListener("input", () => {
