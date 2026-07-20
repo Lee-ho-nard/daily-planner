@@ -221,6 +221,24 @@
   .timer-icon-btn { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); font-family: inherit; cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center; line-height: 1; padding: 0; }
   .timer-icon-btn:hover { color: var(--text-primary); border-color: var(--accent); }
 
+  #sealScreen {
+    position: fixed; inset: 0; z-index: 15;
+    background: var(--bg-page);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; visibility: hidden;
+    transition: opacity 0.4s ease, visibility 0s linear 0.4s;
+  }
+  #sealScreen.visible {
+    opacity: 1; visibility: visible;
+    transition: opacity 0.4s ease, visibility 0s linear 0s;
+  }
+  .seal-icon { width: 48px; height: 48px; color: var(--accent); stroke-width: 1.75; display: block; margin: 0 auto 1.25rem; opacity: 0; transform: scale(0.8); transition: opacity 400ms ease-out, transform 400ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+  #sealScreen.visible .seal-icon { opacity: 1; transform: scale(1); }
+  .seal-date { font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.5rem; text-align: center; }
+  .seal-text { font-size: 1.3rem; font-weight: 600; color: var(--text-primary); text-align: center; }
+
+  #lockedBanner { transition: opacity 300ms ease-out, transform 300ms ease-out; }
+
   body.deep-work-mode { background: var(--bg-page); color: var(--text-secondary); }
   body.deep-work-mode .view-tabs { background: var(--bg-card); }
   body.deep-work-mode .view-tab { color: var(--text-secondary); }
@@ -382,6 +400,14 @@
 
 </div>
 
+</div>
+
+<div id="sealScreen">
+  <div>
+    <i data-lucide="lock" class="seal-icon"></i>
+    <div class="seal-date" id="sealDate"></div>
+    <div class="seal-text">Day sealed.</div>
+  </div>
 </div>
 
 <button class="fab" id="openAdd"><i data-lucide="plus" class="icon icon-lg"></i></button>
@@ -2462,6 +2488,37 @@ function renderAnalysis() {
     renderReflection();
   });
 
+  function showSealScreen(dateForDisplay, onDone) {
+    const sealScreen = document.getElementById("sealScreen");
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const check = new Date(dateForDisplay); check.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((check - today) / 86400000);
+    let prefix = "";
+    if (diffDays === 0) prefix = "Today, ";
+    else if (diffDays === 1) prefix = "Tomorrow, ";
+    else if (diffDays === -1) prefix = "Yesterday, ";
+    const weekday = prefix + dateForDisplay.toLocaleDateString(undefined, { weekday: "long" });
+    const fulldate = dateForDisplay.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
+    document.getElementById("sealDate").textContent = `${weekday}, ${fulldate}`;
+
+    sealScreen.classList.add("visible");
+    setTimeout(() => {
+      sealScreen.classList.remove("visible");
+      onDone();
+    }, 1100);
+  }
+
+  function animateBannerIn() {
+    const banner = document.getElementById("lockedBanner");
+    banner.style.opacity = "0";
+    banner.style.transform = "translateY(6px)";
+    void banner.offsetWidth;
+    requestAnimationFrame(() => {
+      banner.style.opacity = "1";
+      banner.style.transform = "translateY(0)";
+    });
+  }
+
   document.getElementById("reflSaveBtn").addEventListener("click", () => {
     const dateStr = toDateStr(reflectionDate);
     const wentWell = document.getElementById("reflWentWell").value.trim();
@@ -2477,14 +2534,17 @@ function renderAnalysis() {
       document.getElementById("reflFormError").classList.remove("show");
       lockedDays.push(dateStr);
       saveLockedDays();
-      pendingLockDate = null;
       reflections[dateStr] = { wentWell, improve };
       saveReflections();
       document.getElementById("reflWentWell").value = "";
       document.getElementById("reflImprove").value = "";
-      showToast("Day sealed.", "success");
-      renderAll();
-      switchView("planner");
+
+      showSealScreen(new Date(reflectionDate), () => {
+        pendingLockDate = null;
+        renderAll();
+        switchView("planner");
+        setTimeout(animateBannerIn, 150);
+      });
     } else {
       reflections[dateStr] = { wentWell, improve };
       saveReflections();
