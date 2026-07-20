@@ -79,7 +79,7 @@
   .task-item:hover { box-shadow: var(--shadow-elevated); transform: translateY(-1px); }
   .task-item.sortable-ghost { opacity: 0.3; }
   .task-item.completing { opacity: 0.5; }
-  .task-item.entering { animation: taskEnter 200ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .task-item.entering { animation: taskEnter 500ms cubic-bezier(0.34, 1.56, 0.64, 1) 150ms backwards; }
   @keyframes taskEnter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
   .task-item.exiting { overflow: hidden; transition: opacity 200ms ease-out, max-height 200ms ease-out, margin-bottom 200ms ease-out, padding-top 200ms ease-out, padding-bottom 200ms ease-out; }
   .task-item.done .task-name { text-decoration: line-through; opacity: 0.5; }
@@ -2087,8 +2087,8 @@ function renderAnalysis() {
     } else {
       reflections[dateStr] = { wentWell, improve };
       saveReflections();
-      document.getElementById("reflWentWell").value = "";
-      document.getElementById("reflImprove").value = "";
+      document.getElementById("reflWentWell").value = wentWell;
+      document.getElementById("reflImprove").value = improve;
       showToast("Saved.", "info");
     }
   });
