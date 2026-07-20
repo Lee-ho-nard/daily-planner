@@ -2484,6 +2484,7 @@ function renderAnalysis() {
       document.getElementById("reflImprove").value = "";
       showToast("Day sealed.", "success");
       renderAll();
+      switchView("planner");
     } else {
       reflections[dateStr] = { wentWell, improve };
       saveReflections();
