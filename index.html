@@ -252,6 +252,9 @@
   .field-error { display: none; color: var(--danger); font-size: 0.8rem; margin-top: 0.4rem; }
   .field-error.show { display: block; }
 
+  .refl-group { transition: opacity 300ms ease-out, transform 300ms ease-out; }
+  .refl-group.reveal-pending { opacity: 0; transform: translateY(8px); }
+
   /* View crossfade */
   #plannerView, #goalsView, #analysisView, #reflectionView { transition: opacity 150ms ease; }
 </style>
@@ -326,11 +329,15 @@
       <button id="reflNextDay"><i data-lucide="chevron-right" class="icon"></i></button>
     </div>
 
-    <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.4rem;"><i data-lucide="book-open" class="icon"></i>What went well today?</label>
-    <textarea id="reflWentWell" rows="3" style="width:100%;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:0.9rem;margin-bottom:1rem;resize:none;"></textarea>
+    <div id="reflWentWellGroup" class="refl-group">
+      <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.4rem;"><i data-lucide="book-open" class="icon"></i>What went well today?</label>
+      <textarea id="reflWentWell" rows="3" style="width:100%;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:0.9rem;margin-bottom:1rem;resize:none;"></textarea>
+    </div>
 
-    <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.4rem;"><i data-lucide="edit-3" class="icon"></i>What could improve?</label>
-    <textarea id="reflImprove" rows="3" style="width:100%;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:0.9rem;margin-bottom:1rem;resize:none;"></textarea>
+    <div id="reflImproveGroup" class="refl-group">
+      <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.4rem;"><i data-lucide="edit-3" class="icon"></i>What could improve?</label>
+      <textarea id="reflImprove" rows="3" style="width:100%;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:0.9rem;margin-bottom:1rem;resize:none;"></textarea>
+    </div>
 
     <div class="field-error" id="reflFormError"></div>
     <button id="reflSaveBtn" class="start-focus-btn" style="background:var(--accent);">Save Reflection</button>
@@ -554,7 +561,7 @@
   }
 
   let confirmOverlayEl = null;
-  function showConfirm({ title, message, confirmLabel, danger, onConfirm }) {
+  function showConfirm({ title, message, confirmLabel, danger, onConfirm, statsHtml }) {
     if (!confirmOverlayEl) {
       confirmOverlayEl = document.createElement("div");
       confirmOverlayEl.className = "modal-overlay";
@@ -564,6 +571,7 @@
       <div class="modal">
         <h3></h3>
         <p style="font-size:0.9rem;color:var(--text-secondary);line-height:1.5;margin-top:0.25rem;"></p>
+        ${statsHtml || ""}
         <div class="modal-actions">
           <button class="btn-cancel" id="confirmCancelBtn">Cancel</button>
           <button class="${danger ? "btn-delete-modal" : "btn-save"}" id="confirmOkBtn"></button>
@@ -2416,6 +2424,19 @@ function renderAnalysis() {
     document.getElementById("reflNextDay").style.visibility = reflectionReadOnly ? "hidden" : "visible";
   }
 
+  function startReflectionReveal() {
+    const wentWellGroup = document.getElementById("reflWentWellGroup");
+    const improveGroup = document.getElementById("reflImproveGroup");
+    wentWellGroup.classList.add("reveal-pending");
+    improveGroup.classList.add("reveal-pending");
+    requestAnimationFrame(() => {
+      wentWellGroup.classList.remove("reveal-pending");
+    });
+    setTimeout(() => {
+      improveGroup.classList.remove("reveal-pending");
+    }, 400);
+  }
+
   document.getElementById("reflPrevDay").addEventListener("click", () => {
     reflectionDate.setDate(reflectionDate.getDate() - 1);
     renderReflection();
@@ -2436,6 +2457,7 @@ function renderAnalysis() {
     e.stopPropagation();
     reflectionReadOnly = true;
     reflectionDate = new Date(currentDate);
+    document.getElementById("reflectionView").style.transitionDuration = "";
     switchView("reflection");
     renderReflection();
   });
@@ -2460,7 +2482,7 @@ function renderAnalysis() {
       saveReflections();
       document.getElementById("reflWentWell").value = "";
       document.getElementById("reflImprove").value = "";
-      showToast("Day ended. Nice work today.", "success");
+      showToast("Day sealed.", "success");
       renderAll();
     } else {
       reflections[dateStr] = { wentWell, improve };
@@ -2475,23 +2497,36 @@ function renderAnalysis() {
   document.getElementById("endDayBtn").addEventListener("click", () => {
     const dateStr = toDateStr(currentDate);
     const dayTasks = getTasksForDate(currentDate, "All");
-    const unfinished = dayTasks.filter(t => !t.occurrenceDone).length;
+    const total = dayTasks.length;
+    const done = dayTasks.filter(t => t.occurrenceDone).length;
+    const unfinished = total - done;
 
-    let confirmMsg = "End this day? Write your reflection to finish — you can't check anything off afterward.";
-    if (unfinished > 0) confirmMsg = `You still have ${unfinished} unfinished task${unfinished === 1 ? "" : "s"}. ` + confirmMsg;
+    const statsHtml = `
+      <div style="text-align:center;margin:0.75rem 0;">
+        <div style="font-size:2rem;font-weight:600;color:var(--text-primary);">${done} / ${total}</div>
+        <div style="font-size:0.8rem;color:var(--text-muted);">tasks completed</div>
+        ${unfinished > 0 ? `<div style="font-size:0.85rem;color:var(--warning);margin-top:0.5rem;">${unfinished} unfinished task${unfinished === 1 ? "" : "s"}</div>` : ""}
+      </div>
+    `;
 
     showConfirm({
-      title: "End day",
-      message: confirmMsg,
+      title: "End today?",
+      message: "You can't check anything off after this.",
+      statsHtml,
       confirmLabel: "End Day",
       danger: false,
       onConfirm: () => {
         pendingLockDate = dateStr;
         reflectionReadOnly = false;
+        document.getElementById("reflectionView").style.transitionDuration = "400ms";
         switchView("reflection");
         reflectionDate = new Date(currentDate);
         renderReflection();
+        startReflectionReveal();
         document.getElementById("reflWentWell").focus();
+        setTimeout(() => {
+          document.getElementById("reflectionView").style.transitionDuration = "";
+        }, 450);
       }
     });
   });
