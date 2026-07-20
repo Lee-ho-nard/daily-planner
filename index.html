@@ -2420,8 +2420,8 @@ function renderAnalysis() {
     document.getElementById("reflImprove").disabled = reflectionReadOnly;
     document.getElementById("reflSaveBtn").style.display = reflectionReadOnly ? "none" : "block";
     document.getElementById("reflBackBtn").style.display = reflectionReadOnly ? "block" : "none";
-    document.getElementById("reflPrevDay").style.visibility = reflectionReadOnly ? "hidden" : "visible";
-    document.getElementById("reflNextDay").style.visibility = reflectionReadOnly ? "hidden" : "visible";
+    document.getElementById("reflPrevDay").style.visibility = (reflectionReadOnly || pendingLockDate) ? "hidden" : "visible";
+    document.getElementById("reflNextDay").style.visibility = (reflectionReadOnly || pendingLockDate) ? "hidden" : "visible";
   }
 
   function startReflectionReveal() {
