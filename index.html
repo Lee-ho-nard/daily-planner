@@ -53,11 +53,12 @@
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: "Inter", system-ui, -apple-system, sans-serif; background: var(--bg-page); color: var(--text-primary); padding: 1.75rem 1.25rem; transition: background 0.5s ease, color 0.5s ease; -webkit-font-smoothing: antialiased; }
+  body { font-family: "Inter", system-ui, -apple-system, sans-serif; background: var(--bg-page); color: var(--text-primary); padding: 1.75rem 1.25rem; transition: background 0.4s ease, color 0.4s ease; -webkit-font-smoothing: antialiased; }
+  button, input, select, textarea { font-family: inherit; }
   .container { max-width: 480px; margin: 0 auto; }
 
   .view-tabs { display: flex; gap: 0.4rem; margin-bottom: 1.5rem; background: var(--border); padding: 0.3rem; border-radius: var(--radius-md); position: relative; z-index: 6; }
-  .view-tab { flex: 1; text-align: center; padding: 0.55rem; border-radius: 10px; border: none; background: transparent; cursor: pointer; font-family: inherit; font-size: var(--text-sm); font-weight: 500; color: var(--text-secondary); transition: background 0.2s, color 0.2s; }
+  .view-tab { flex: 1; text-align: center; padding: 0.55rem; border-radius: 10px; border: 1px solid transparent; background: transparent; cursor: pointer; font-family: inherit; font-size: var(--text-sm); font-weight: 500; color: var(--text-secondary); transition: background 0.4s ease, color 0.4s ease, box-shadow 0.4s ease, border-color 0.4s ease; }
   .view-tab.active { background: var(--bg-card); color: var(--text-primary); box-shadow: var(--shadow-card); }
 
   .date-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; }
@@ -73,7 +74,7 @@
   .progress-bar-fill { background: var(--accent); height: 100%; border-radius: 999px; transition: width 300ms ease; }
 
   .category-tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; align-items: center; }
-  .cat-pill { position: relative; border: none; box-shadow: var(--shadow-card); border-radius: 999px; padding: 0.45rem 0.95rem; font-size: var(--text-sm); font-weight: 500; cursor: pointer; background: var(--bg-card); color: var(--text-primary); transition: background 0.15s, color 0.15s, transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .cat-pill { position: relative; border: none; box-shadow: var(--shadow-card); border-radius: 999px; padding: 0.45rem 0.95rem; font-size: var(--text-sm); font-weight: 500; font-family: inherit; cursor: pointer; background: var(--bg-card); color: var(--text-primary); transition: background 0.15s, color 0.15s, transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1); }
   .cat-pill:active { transform: scale(0.95); }
   .cat-add { width: 34px; height: 34px; border-radius: 50%; background: var(--bg-card); border: none; box-shadow: var(--shadow-card); cursor: pointer; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; }
 
@@ -195,7 +196,7 @@
     z-index: 5;
     opacity: 0;
     visibility: hidden;
-    transition: opacity 0.4s ease, visibility 0s linear 0.4s, background 0.4s ease, color 0.4s ease;
+    transition: opacity 0.15s ease, visibility 0s linear 0.15s, background 0.15s ease, color 0.15s ease;
   }
   #focusView.visible {
     opacity: 1;
@@ -206,7 +207,7 @@
   .focus-title{ font-size:var(--text-2xl); font-weight:600; letter-spacing:-0.02em; margin-top:1.25rem; margin-bottom:0.5rem; }
   .focus-subtitle{ color: var(--text-secondary); line-height:1.6; margin-bottom:2rem; font-size: var(--text-md); }
   .focus-session-grid{ display:grid; grid-template-columns:1fr 1fr; gap:0.7rem; margin-bottom:2rem; }
-  .focus-session{ background: var(--bg-card); border:1.5px solid transparent; border-radius:var(--radius-md); padding:1.1rem; cursor:pointer; color: var(--text-primary); transition:.2s; font-family: inherit; text-align: left; }
+  .focus-session{ background: var(--bg-card); border:1.5px solid transparent; border-radius:var(--radius-md); padding:1.1rem; cursor:pointer; color: var(--text-primary); transition: transform 0.2s, border-color 0.2s, background 0.4s ease, color 0.4s ease; font-family: inherit; text-align: left; }
   .focus-session:hover{ transform:translateY(-2px); }
   .focus-session.selected{ border-color: var(--accent); background: var(--accent-bg); }
   .session-name{ font-size:var(--text-md); font-weight:500; margin-bottom:0.4rem; }
@@ -282,23 +283,46 @@
     visibility: visible;
     transition: opacity 0.4s ease, visibility 0s linear 0s;
   }
+  body.onboarding-active .container,
+  body.onboarding-active .fab,
+  body.onboarding-active .mic-fab {
+    display: none;
+  }
   .onboarding-container { max-width: 420px; margin: 0 auto; }
   .onboarding-progress-wrap { max-width: 420px; margin: 0 auto 2rem; }
   #onboardingContent { transition: opacity 180ms ease; }
-  #onboardingView.ob-emphasis-bg { background: radial-gradient(circle at center, color-mix(in srgb, var(--accent) 12%, transparent) 0%, var(--bg-page) 70%); }
-  .onboarding-hook-headline { font-size: 2.75rem; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 0.75rem; opacity: 0; transform: translateY(10px); transition: opacity 250ms ease, transform 250ms ease; }
+  #onboardingView.ob-emphasis-bg { background: radial-gradient(circle at center, color-mix(in srgb, var(--accent) 12%, var(--bg-page)) 0%, var(--bg-page) 70%); }
+  .onboarding-reveal { opacity: 0; transform: translateY(8px); transition: opacity 250ms ease, transform 250ms ease; pointer-events: none; }
+  .onboarding-reveal.ob-in { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  .onboarding-hook-headline { font-size: 2.75rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 0.75rem; opacity: 0; transform: translateY(10px); transition: opacity 250ms ease, transform 250ms ease; }
   .onboarding-hook-headline.ob-in { opacity: 1; transform: translateY(0); }
   .onboarding-hook-subtext { font-size: var(--text-md); color: var(--text-secondary); line-height: 1.6; margin-bottom: 2.5rem; opacity: 0; transform: translateY(10px); transition: opacity 250ms ease, transform 250ms ease; }
   .onboarding-hook-subtext.ob-in { opacity: 1; transform: translateY(0); }
+
+  .ob-row-list { display: flex; flex-direction: column; margin-bottom: 2rem; }
+  .ob-row { display: flex; align-items: center; gap: 0.75rem; width: 100%; padding: 0.8rem 0.4rem; border: none; border-bottom: 1px solid var(--border); border-radius: 8px; background: transparent; font-family: inherit; text-align: left; cursor: pointer; transition: background 0.15s ease; }
+  .ob-row:last-child { border-bottom: none; }
+  .ob-row.selected { background: var(--accent-bg); }
+  .ob-row-swatch { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .ob-row-name { flex: 1; font-size: var(--text-base); font-weight: 500; color: var(--text-primary); }
+  .ob-row-check { width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--accent); opacity: 0; transform: scale(0.5); transition: opacity 200ms cubic-bezier(0.34, 1.56, 0.64, 1), transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .ob-row.selected .ob-row-check { opacity: 1; transform: scale(1); }
+  .ob-row-check::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--on-accent); }
+  .ob-section-label { font-size: var(--text-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin: 1.5rem 0 0.5rem; }
+  .ob-section-label:first-of-type { margin-top: 0; }
+  .ob-readonly-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0.4rem; border-bottom: 1px solid var(--border); }
+  .ob-readonly-row:last-child { border-bottom: none; }
+  .ob-readonly-swatch { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; }
+  .ob-readonly-name, .ob-readonly-task { font-size: var(--text-base); color: var(--text-primary); font-weight: 500; }
 
   #lockedBanner { transition: opacity 300ms ease-out, transform 300ms ease-out; }
 
   body.deep-work-mode { background: var(--bg-page); color: var(--text-secondary); }
   body.deep-work-mode .view-tabs { background: var(--bg-card); }
   body.deep-work-mode .view-tab { color: var(--text-secondary); }
-  body.deep-work-mode .view-tab.active { background: var(--bg-card); color: var(--text-primary); box-shadow: none; border: 1px solid var(--accent); }
+  body.deep-work-mode .view-tab.active { background: var(--bg-card); color: var(--text-primary); box-shadow: none; border-color: var(--accent); }
   body.timer-active .view-tabs { opacity: 0; pointer-events: none; transition: opacity 0.5s ease; }
-  .view-tabs { transition: opacity 0.5s ease; }
+  .view-tabs { transition: opacity 0.5s ease, background 0.4s ease; }
 
   /* Icons */
   .icon { width: 18px; height: 18px; stroke-width: 2; color: var(--text-secondary); flex-shrink: 0; vertical-align: -4px; }
@@ -2704,18 +2728,39 @@ function renderAnalysis() {
   const ONBOARDING_DEEPER_OPTIONS = [
     "A visible daily record",
     "Something that locks in once it's done",
-    "Seeing real numbers, not vibes",
+    "Actual progress, not guesses",
     "A reason to stop scrolling and start"
   ];
   const ONBOARDING_CATEGORY_PRESETS = ["Fitness", "Building/Business", "School/Work", "Deep Work", "Personal"];
+  const ONBOARDING_TIME_LOST_CAUSE_OPTIONS = [
+    "No clear plan",
+    "Jumping between tasks",
+    "Phone / distractions",
+    "Procrastinating before starting"
+  ];
+  const ONBOARDING_TIME_LOST_HOURS = {
+    "Less than 30 min": 0.4,
+    "30 min – 1 hour": 0.75,
+    "1–2 hours": 1.5,
+    "No idea, probably more than I think": 1.5
+  };
 
   let currentOnboardingStep = 1;
   let onboardingName = "";
   let onboardingTimeLost = "";
+  let onboardingTimeLostCause = "";
   let onboardingProblems = [];
   let onboardingDeeperAnswer = [];
   let onboardingCategories = [];
   let onboardingSeedTasks = [];
+
+  function setMainAppVisible(visible) {
+    document.querySelector(".container").style.display = visible ? "" : "none";
+    document.getElementById("openAdd").style.display = visible ? "" : "none";
+    document.getElementById("openAddGoal").style.display = visible ? "" : "none";
+    document.getElementById("micBtn").style.display = visible ? "" : "none";
+    document.getElementById("todayBtn").style.display = visible ? "" : "none";
+  }
 
   // No haptic system existed in the app prior to this — navigator.vibrate is the real
   // web-platform API for this, and no-ops safely on devices/browsers without support.
@@ -2754,10 +2799,10 @@ function renderAnalysis() {
 
   function updateOnboardingProgress() {
     const wrap = document.getElementById("onboardingProgressWrap");
-    const showProgress = currentOnboardingStep >= 5 && currentOnboardingStep <= 14 && currentOnboardingStep !== 13;
+    const showProgress = currentOnboardingStep >= 3 && currentOnboardingStep <= 12 && currentOnboardingStep !== 11;
     wrap.style.display = showProgress ? "block" : "none";
     if (showProgress) {
-      const pct = Math.round(((currentOnboardingStep - 4) / 10) * 100);
+      const pct = Math.round(((currentOnboardingStep - 2) / 10) * 100);
       document.getElementById("onboardingProgressFill").style.width = pct + "%";
     }
   }
@@ -2775,33 +2820,32 @@ function renderAnalysis() {
 
   function renderOnboardingStep() {
     updateOnboardingProgress();
-    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1 || currentOnboardingStep === 14);
+    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1 || currentOnboardingStep === 11);
     const content = document.getElementById("onboardingContent");
     const step = currentOnboardingStep;
 
     if (step === 1) {
       content.innerHTML = `
-        <div class="onboarding-container" style="padding-top:6rem;text-align:center;">
-          <div class="onboarding-hook-headline" id="obHookHeadline">You're building something.</div>
-          <div class="onboarding-hook-subtext" id="obHookSubtext">Most days, nothing's tracking it.</div>
-          <button id="obContinue" class="start-focus-btn">Continue</button>
+        <div class="onboarding-container" style="padding-top:5rem;text-align:center;">
+          <div class="onboarding-hook-headline" id="obHookLine1">Hey.</div>
+          <div class="onboarding-reveal" id="obHookLine2" style="font-size:var(--text-xl);font-weight:600;line-height:1.5;margin-bottom:0.4rem;">Most people don't have a real system for managing their time.</div>
+          <div class="onboarding-reveal" id="obHookLine2Caption" style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:2.5rem;">— Acuity Training, 2024 survey of 500 working adults</div>
+          <div class="onboarding-hook-subtext" id="obHookLine3">You're building something. Most days, nothing's tracking it.</div>
+          <button id="obContinue" class="start-focus-btn onboarding-reveal">Continue</button>
         </div>
       `;
-      requestAnimationFrame(() => { document.getElementById("obHookHeadline").classList.add("ob-in"); });
-      setTimeout(() => { document.getElementById("obHookSubtext").classList.add("ob-in"); }, 200);
+      requestAnimationFrame(() => { document.getElementById("obHookLine1").classList.add("ob-in"); });
+      setTimeout(() => {
+        document.getElementById("obHookLine2").classList.add("ob-in");
+        document.getElementById("obHookLine2Caption").classList.add("ob-in");
+      }, 200);
+      setTimeout(() => {
+        document.getElementById("obHookLine3").classList.add("ob-in");
+        document.getElementById("obContinue").classList.add("ob-in");
+      }, 400);
       document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(2));
 
     } else if (step === 2) {
-      content.innerHTML = `
-        <div class="onboarding-container" style="padding-top:6rem;text-align:center;">
-          <div style="font-size:var(--text-xl);font-weight:600;letter-spacing:-0.02em;margin-bottom:0.75rem;">Here's what this actually does.</div>
-          <div style="font-size:var(--text-md);color:var(--text-secondary);line-height:1.6;margin-bottom:2.5rem;">This app locks in your systems: tasks, streaks, focus sessions, and a daily reflection you can't fudge later.</div>
-          <button id="obContinue" class="start-focus-btn">Continue</button>
-        </div>
-      `;
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(3));
-
-    } else if (step === 3) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:6rem;">
           <label style="display:block;font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:0.5rem;font-weight:500;">What should we call you?</label>
@@ -2816,96 +2860,138 @@ function renderAnalysis() {
       btn.addEventListener("click", () => {
         onboardingName = input.value.trim();
         if (!onboardingName) return;
-        goToOnboardingStep(4);
+        goToOnboardingStep(3);
       });
       setTimeout(() => input.focus(), 50);
 
-    } else if (step === 4) {
+    } else if (step === 3) {
       content.innerHTML = `
-        <div class="onboarding-container" style="padding-top:6rem;text-align:center;">
-          <div id="obBreatherText" style="font-size:var(--text-xl);font-weight:600;letter-spacing:-0.02em;margin-bottom:2.5rem;"></div>
-          <button id="obContinue" class="start-focus-btn">Continue</button>
+        <div class="onboarding-container" style="padding-top:5rem;">
+          <div class="onboarding-reveal" id="obConsiderHeader" style="font-size:var(--text-xl);font-weight:600;letter-spacing:-0.02em;margin-bottom:1.5rem;">Alright ${onboardingName}, here's something worth noticing—</div>
+          <div class="onboarding-reveal" id="obConsiderBody">
+            <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;">Most days slip by without anyone tracking where the time went.</div>
+            <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;">How much time do you think you lose most days?</div>
+            <div id="obTimeLostChips" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:2rem;"></div>
+            <div id="obTimeLostCauseGroup" class="onboarding-reveal${onboardingTimeLost ? " ob-in" : ""}">
+              <div style="font-size:var(--text-lg);font-weight:600;margin-bottom:1.25rem;">Mostly because of—</div>
+              <div id="obTimeLostCauseChips" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:2rem;"></div>
+            </div>
+            <button id="obContinue" class="start-focus-btn"${(onboardingTimeLost && onboardingTimeLostCause) ? "" : " disabled"}>Continue</button>
+          </div>
         </div>
       `;
-      document.getElementById("obBreatherText").textContent = `Alright ${onboardingName}, consider this...`;
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(5));
-
-    } else if (step === 5) {
-      content.innerHTML = `
-        <div class="onboarding-container" style="padding-top:4rem;">
-          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">How much time do you think you lose most days?</div>
-          <div id="obTimeLostChips" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:2rem;"></div>
-          <button id="obContinue" class="start-focus-btn"${onboardingTimeLost ? "" : " disabled"}>Continue</button>
-        </div>
-      `;
+      requestAnimationFrame(() => { document.getElementById("obConsiderHeader").classList.add("ob-in"); });
+      setTimeout(() => { document.getElementById("obConsiderBody").classList.add("ob-in"); }, 200);
       const btn = document.getElementById("obContinue");
+      const causeGroup = document.getElementById("obTimeLostCauseGroup");
       renderOnboardingChips(
         document.getElementById("obTimeLostChips"),
         ONBOARDING_TIME_LOST_OPTIONS,
         (option) => onboardingTimeLost === option,
-        (option) => { onboardingTimeLost = option; btn.disabled = false; }
+        (option) => {
+          const wasEmpty = !onboardingTimeLost;
+          onboardingTimeLost = option;
+          btn.disabled = !(onboardingTimeLost && onboardingTimeLostCause);
+          if (wasEmpty) requestAnimationFrame(() => causeGroup.classList.add("ob-in"));
+        }
       );
-      btn.addEventListener("click", () => { if (onboardingTimeLost) goToOnboardingStep(6); });
+      renderOnboardingChips(
+        document.getElementById("obTimeLostCauseChips"),
+        ONBOARDING_TIME_LOST_CAUSE_OPTIONS,
+        (option) => onboardingTimeLostCause === option,
+        (option) => {
+          onboardingTimeLostCause = option;
+          btn.disabled = !(onboardingTimeLost && onboardingTimeLostCause);
+        }
+      );
+      btn.addEventListener("click", () => { if (onboardingTimeLost && onboardingTimeLostCause) goToOnboardingStep(4); });
 
-    } else if (step === 6) {
+    } else if (step === 4) {
+      const dailyHours = ONBOARDING_TIME_LOST_HOURS[onboardingTimeLost] || 1;
+      const weekly = Math.round(dailyHours * 7);
+      const yearly = Math.round(dailyHours * 365);
+      content.innerHTML = `
+        <div class="onboarding-container" style="padding-top:6rem;text-align:center;">
+          <div style="font-size:var(--text-xl);font-weight:600;line-height:1.6;margin-bottom:2.5rem;">
+            <div>If you get even some of that back:</div>
+            <div style="color:var(--accent);margin-top:0.5rem;">roughly ${weekly} hours a week.</div>
+            <div style="font-size:var(--text-md);color:var(--text-secondary);margin-top:0.5rem;">About ${yearly} hours a year.</div>
+          </div>
+          <button id="obContinue" class="start-focus-btn">Continue</button>
+        </div>
+      `;
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(5));
+
+    } else if (step === 5) {
+      const PROBLEM_TO_DEEPER_MAP = {
+        "Losing momentum after a few good days": "A visible daily record",
+        "No real system, just willpower": "Something that locks in once it's done",
+        "Hard to tell if I'm actually improving": "Actual progress, not guesses",
+        "Too many tabs open, nothing finished": "A reason to stop scrolling and start"
+      };
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">What's been getting in the way?</div>
           <div id="obProblemChips" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:2rem;"></div>
-          <button id="obContinue" class="start-focus-btn"${onboardingProblems.length ? "" : " disabled"}>Continue</button>
+          <div id="obDeeperGroup" class="onboarding-reveal${onboardingProblems.length ? " ob-in" : ""}">
+            <div style="font-size:var(--text-lg);font-weight:600;margin-bottom:1.25rem;">So what you need is—</div>
+            <div id="obDeeperChips" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:2rem;"></div>
+          </div>
+          <button id="obContinue" class="start-focus-btn"${(onboardingProblems.length && onboardingDeeperAnswer.length) ? "" : " disabled"}>Continue</button>
         </div>
       `;
       const btn = document.getElementById("obContinue");
+      const deeperGroup = document.getElementById("obDeeperGroup");
+      const deeperChipsEl = document.getElementById("obDeeperChips");
+      let deeperManuallySet = false;
+
+      function renderDeeperChips() {
+        renderOnboardingChips(
+          deeperChipsEl,
+          ONBOARDING_DEEPER_OPTIONS,
+          (option) => onboardingDeeperAnswer.includes(option),
+          (option) => {
+            deeperManuallySet = true;
+            onboardingDeeperAnswer = [option];
+            btn.disabled = !(onboardingProblems.length && onboardingDeeperAnswer.length);
+          }
+        );
+      }
+
       renderOnboardingChips(
         document.getElementById("obProblemChips"),
         ONBOARDING_PROBLEMS,
         (option) => onboardingProblems.includes(option),
         (option) => {
+          const wasEmpty = !onboardingProblems.length;
           const idx = onboardingProblems.indexOf(option);
           if (idx === -1) onboardingProblems.push(option); else onboardingProblems.splice(idx, 1);
-          btn.disabled = !onboardingProblems.length;
+          if (wasEmpty && onboardingProblems.length) requestAnimationFrame(() => deeperGroup.classList.add("ob-in"));
+          if (onboardingProblems.length && !deeperManuallySet) {
+            const mapped = PROBLEM_TO_DEEPER_MAP[onboardingProblems[0]];
+            onboardingDeeperAnswer = mapped ? [mapped] : [];
+            renderDeeperChips();
+          }
+          btn.disabled = !(onboardingProblems.length && onboardingDeeperAnswer.length);
         }
       );
-      btn.addEventListener("click", () => { if (onboardingProblems.length) goToOnboardingStep(7); });
+      renderDeeperChips();
+      btn.addEventListener("click", () => { if (onboardingProblems.length && onboardingDeeperAnswer.length) goToOnboardingStep(6); });
 
-    } else if (step === 7) {
-      const firstProblem = onboardingProblems[0] ? onboardingProblems[0].charAt(0).toLowerCase() + onboardingProblems[0].slice(1) : "";
-      const headerText = firstProblem ? `You mentioned ${firstProblem} — what would actually help?` : "Thinking bigger — what would actually help?";
-      content.innerHTML = `
-        <div class="onboarding-container" style="padding-top:4rem;">
-          <div id="obDeeperHeader" style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;"></div>
-          <div id="obDeeperChips" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:2rem;"></div>
-          <button id="obContinue" class="start-focus-btn"${onboardingDeeperAnswer.length ? "" : " disabled"}>Continue</button>
-        </div>
-      `;
-      document.getElementById("obDeeperHeader").textContent = headerText;
-      const btn = document.getElementById("obContinue");
-      renderOnboardingChips(
-        document.getElementById("obDeeperChips"),
-        ONBOARDING_DEEPER_OPTIONS,
-        (option) => onboardingDeeperAnswer.includes(option),
-        (option) => {
-          const idx = onboardingDeeperAnswer.indexOf(option);
-          if (idx === -1) onboardingDeeperAnswer.push(option); else onboardingDeeperAnswer.splice(idx, 1);
-          btn.disabled = !onboardingDeeperAnswer.length;
-        }
-      );
-      btn.addEventListener("click", () => { if (onboardingDeeperAnswer.length) goToOnboardingStep(8); });
-
-    } else if (step === 8) {
+    } else if (step === 6) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:6rem;text-align:center;">
-          <div style="font-size:var(--text-xl);font-weight:600;letter-spacing:-0.02em;margin-bottom:2.5rem;">Just two minutes to close out your day — got that?</div>
+          <div style="font-size:var(--text-xl);font-weight:600;letter-spacing:-0.02em;margin-bottom:2.5rem;">Two minutes to close the day. A few more to plan tomorrow. That's the whole system.</div>
           <button id="obContinue" class="start-focus-btn">Continue</button>
         </div>
       `;
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(9));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(7));
 
-    } else if (step === 9) {
+    } else if (step === 7) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">What do you want to track?</div>
-          <div id="obCategoryChips" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:2rem;"></div>
+          <div id="obCategoryChips" class="ob-row-list"></div>
           <button id="obContinue" class="start-focus-btn" ${onboardingCategories.length ? "" : "disabled"}>Continue</button>
         </div>
       `;
@@ -2913,44 +2999,58 @@ function renderAnalysis() {
       const btn = document.getElementById("obContinue");
       ONBOARDING_CATEGORY_PRESETS.forEach(name => {
         const color = onboardingCategoryColor(name);
-        const chip = document.createElement("button");
-        chip.type = "button";
-        chip.className = "cat-pill";
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "ob-row";
+        const swatch = document.createElement("span");
+        swatch.className = "ob-row-swatch";
+        swatch.style.background = color;
+        const label = document.createElement("span");
+        label.className = "ob-row-name";
+        label.textContent = name;
+        const check = document.createElement("span");
+        check.className = "ob-row-check";
+        row.appendChild(swatch);
+        row.appendChild(label);
+        row.appendChild(check);
         const styleSelf = () => {
-          const selected = onboardingCategories.includes(name);
-          chip.style.background = selected ? color : "var(--bg-card)";
-          chip.style.color = selected ? "#1a1d26" : "var(--text-primary)";
+          row.classList.toggle("selected", onboardingCategories.includes(name));
         };
         styleSelf();
-        chip.innerHTML = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:0.4rem;"></span>${name}`;
-        chip.addEventListener("click", () => {
+        row.addEventListener("click", () => {
           const idx = onboardingCategories.indexOf(name);
           if (idx === -1) onboardingCategories.push(name); else onboardingCategories.splice(idx, 1);
           triggerHaptic("light");
-          chip.style.transform = "scale(1.12)";
-          setTimeout(() => { chip.style.transform = "scale(1)"; }, 200);
+          swatch.style.transform = "scale(1.15)";
+          setTimeout(() => { swatch.style.transform = "scale(1)"; }, 200);
           styleSelf();
           btn.disabled = !onboardingCategories.length;
         });
-        chipsWrap.appendChild(chip);
+        chipsWrap.appendChild(row);
       });
       btn.addEventListener("click", () => {
-        if (onboardingCategories.length) goToOnboardingStep(10);
+        if (onboardingCategories.length) goToOnboardingStep(8);
       });
 
-    } else if (step === 10) {
+    } else if (step === 8) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:3rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.5rem;">Let's seed a few tasks.</div>
           <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:1.5rem;">One per category — you can always add more later.</div>
           <div id="obSeedRows"></div>
-          <button id="obContinue" class="start-focus-btn" style="margin-top:0.5rem;">Continue</button>
-          <div style="text-align:center;margin-top:1rem;">
-            <button id="obSkipAll" style="background:none;border:none;color:var(--text-muted);font-size:var(--text-sm);text-decoration:underline;cursor:pointer;font-family:inherit;">Skip all, I'll add tasks myself</button>
-          </div>
+          <button id="obContinue" class="start-focus-btn" style="margin-top:0.5rem;">Skip for now</button>
         </div>
       `;
       const rowsWrap = document.getElementById("obSeedRows");
+      const continueBtn = document.getElementById("obContinue");
+      const updateSeedContinueLabel = () => {
+        const hasText = [...rowsWrap.querySelectorAll(".ob-seed-row")].some(row => {
+          const skipBtn = row.querySelector(".ob-skip-row");
+          const input = row.querySelector(".ob-seed-input");
+          return skipBtn.dataset.skipped !== "true" && input.value.trim();
+        });
+        continueBtn.textContent = hasText ? "Continue" : "Skip for now";
+      };
       onboardingCategories.forEach(catName => {
         const color = onboardingCategoryColor(catName);
         const row = document.createElement("div");
@@ -2973,10 +3073,12 @@ function renderAnalysis() {
           skipBtn.textContent = nowSkipped ? "skip this one" : "skipped";
           input.disabled = !nowSkipped;
           row.style.opacity = nowSkipped ? "1" : "0.5";
+          updateSeedContinueLabel();
         });
+        input.addEventListener("input", updateSeedContinueLabel);
       });
 
-      document.getElementById("obContinue").addEventListener("click", () => {
+      continueBtn.addEventListener("click", () => {
         onboardingSeedTasks = [];
         rowsWrap.querySelectorAll(".ob-seed-row").forEach(row => {
           const skipBtn = row.querySelector(".ob-skip-row");
@@ -2985,28 +3087,78 @@ function renderAnalysis() {
           const val = input.value.trim();
           if (val) onboardingSeedTasks.push({ category: row.dataset.cat, taskName: val });
         });
-        goToOnboardingStep(11);
-      });
-      document.getElementById("obSkipAll").addEventListener("click", () => {
-        onboardingSeedTasks = [];
-        goToOnboardingStep(11);
+        goToOnboardingStep(9);
       });
 
-    } else if (step === 11) {
+    } else if (step === 9) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:5rem;text-align:center;">
-          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.25rem;">Here's the mechanism.</div>
-          <div style="font-size:var(--text-md);color:var(--text-secondary);line-height:1.7;margin-bottom:2.5rem;text-align:left;">
-            Streaks make consistency visible.<br>
-            Deep Work protects one task at a time.<br>
-            The Reflection lock closes the day for real.
+          <div style="font-size:var(--text-xl);font-weight:600;line-height:1.8;margin-bottom:2.5rem;">
+            <div id="obSolvesHeader" style="margin-bottom:0.85rem;"></div>
+            <div id="obSolvesLine1" style="margin-bottom:0.85rem;"></div>
+            <div id="obSolvesLine2" style="margin-bottom:0.85rem;"></div>
+            <div id="obSolvesLine3"></div>
           </div>
           <button id="obContinue" class="start-focus-btn">Continue</button>
         </div>
       `;
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(12));
+      const genericLines = [
+        "The streak shows what actually happened — not what you meant to do.",
+        "Deep Work locks out everything but one task.",
+        "Reflection ends the day — no editing after."
+      ];
+      const firstSeedTask = onboardingSeedTasks.find(t => t.taskName && t.taskName.trim());
+      let headerText = "";
+      let lines = genericLines;
+      if (firstSeedTask) {
+        headerText = `You just added "${firstSeedTask.taskName}" under ${firstSeedTask.category}.`;
+        lines = [
+          "Complete it today, and it counts toward a streak.",
+          "Run a Deep Work session on it, and everything else disappears until it's done.",
+          "Reflect tonight, and today locks in — no editing after."
+        ];
+      } else if (onboardingCategories.length) {
+        headerText = `You set up ${onboardingCategories.join(", ")}. Here's what happens from here:`;
+      }
+      const CAUSE_LINE_OVERRIDES = {
+        "No clear plan": {
+          lineIndex: 0,
+          generic: "The streak shows what actually happened — real progress, not just a plan you meant to follow.",
+          taskSpecific: "Complete it today, and it counts toward a streak — real progress, not just a plan you meant to follow."
+        },
+        "Jumping between tasks": {
+          lineIndex: 1,
+          generic: "Deep Work locks out everything but one task — no more jumping between tasks.",
+          taskSpecific: "Run a Deep Work session on it, and everything else disappears until it's done — no more jumping between tasks."
+        },
+        "Phone / distractions": {
+          lineIndex: 1,
+          generic: "Deep Work locks out everything but one task — including your phone.",
+          taskSpecific: "Run a Deep Work session on it, and everything else disappears until it's done — including your phone."
+        },
+        "Procrastinating before starting": {
+          lineIndex: 2,
+          generic: "Reflection ends the day — no editing after. No more putting it off.",
+          taskSpecific: "Reflect tonight, and today locks in — no editing after. No more putting it off."
+        }
+      };
+      const causeOverride = CAUSE_LINE_OVERRIDES[onboardingTimeLostCause];
+      if (causeOverride) {
+        lines = [...lines];
+        lines[causeOverride.lineIndex] = firstSeedTask ? causeOverride.taskSpecific : causeOverride.generic;
+      }
+      const headerEl = document.getElementById("obSolvesHeader");
+      if (headerText) {
+        headerEl.textContent = headerText;
+      } else {
+        headerEl.style.display = "none";
+      }
+      document.getElementById("obSolvesLine1").textContent = lines[0];
+      document.getElementById("obSolvesLine2").textContent = lines[1];
+      document.getElementById("obSolvesLine3").textContent = lines[2];
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(10));
 
-    } else if (step === 12) {
+    } else if (step === 10) {
       const svgWidth = 320, svgHeight = 160, padding = 20;
       const totalDays = 365;
       const maxVal = Math.pow(1.01, totalDays);
@@ -3030,13 +3182,13 @@ function renderAnalysis() {
             <text x="${day90X}" y="${svgHeight - 4}" font-size="10" fill="var(--text-muted)" text-anchor="middle">Day 90</text>
             <text x="${svgWidth - padding}" y="${svgHeight - 4}" font-size="10" fill="var(--text-muted)" text-anchor="end">Day 365</text>
           </svg>
-          <div style="font-size:var(--text-sm);color:var(--text-muted);line-height:1.6;margin-bottom:2rem;">1% better each day compounds to roughly 38x over a year — this is just math, not a promise about you specifically.</div>
+          <div style="font-size:var(--text-sm);color:var(--text-muted);line-height:1.6;margin-bottom:2rem;">1% better each day compounds to roughly 38x over a year.</div>
           <button id="obContinue" class="start-focus-btn">Continue</button>
         </div>
       `;
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(13));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(11));
 
-    } else if (step === 13) {
+    } else if (step === 11) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:6rem;text-align:center;">
           <div id="obDemoLabel" style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1.5rem;transition:opacity 200ms ease;">Try it — this is what a streak looks like.</div>
@@ -3046,38 +3198,56 @@ function renderAnalysis() {
       `;
       const dotsWrap = document.getElementById("obDemoDots");
       const label = document.getElementById("obDemoLabel");
+      const demoDots = [];
+      let demoConfirmed = false;
       for (let i = 0; i < 7; i++) {
         const dot = document.createElement("div");
         dot.className = "goal-dot";
         dot.style.cursor = "pointer";
-        dot.addEventListener("click", () => {
-          if (dot.classList.contains("done")) return;
-          dot.classList.add("done");
-          dot.style.background = "var(--accent)";
-          dot.style.transform = "scale(1.2)";
-          setTimeout(() => { dot.style.transform = "scale(1)"; }, 200);
-          label.style.opacity = "0";
-          setTimeout(() => {
-            label.textContent = "That's a real streak, every time.";
-            label.style.opacity = "1";
-          }, 200);
-        });
+        demoDots.push(dot);
         dotsWrap.appendChild(dot);
       }
+      demoDots.forEach((dot, tappedIdx) => {
+        dot.addEventListener("click", () => {
+          if (dot.classList.contains("done")) return;
+          for (let i = 0; i <= tappedIdx; i++) {
+            const d = demoDots[i];
+            if (d.classList.contains("done")) continue;
+            setTimeout(() => {
+              d.classList.add("done");
+              d.style.background = "var(--accent)";
+              d.style.transform = "scale(1.2)";
+              setTimeout(() => { d.style.transform = "scale(1)"; }, 200);
+            }, i * 70);
+          }
+          if (!demoConfirmed) {
+            demoConfirmed = true;
+            label.style.opacity = "0";
+            setTimeout(() => {
+              label.textContent = "This is what a real streak looks like — once you're actually doing it.";
+              label.style.opacity = "1";
+            }, 200);
+          }
+        });
+      });
       setTimeout(() => {
         dotsWrap.style.opacity = "1";
         dotsWrap.style.pointerEvents = "auto";
       }, 450);
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(14));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(12));
 
-    } else if (step === 14) {
+    } else if (step === 12) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
           <div id="obSynthesisHeading" style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;"></div>
-          <div id="obSynthesisChips" style="display:flex;flex-wrap:wrap;gap:0.5rem;justify-content:center;margin-bottom:1.25rem;"></div>
-          <div id="obSynthesisDeeper" style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:0.75rem;"></div>
-          <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:2.5rem;">${onboardingSeedTasks.length} seed task${onboardingSeedTasks.length === 1 ? "" : "s"} created</div>
-          <button id="obContinue" class="start-focus-btn">Let's go</button>
+          <div id="obSynthesisDeeper" style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:1.5rem;"></div>
+          <div style="text-align:left;">
+            <div class="ob-section-label">Categories</div>
+            <div id="obSynthesisCategories"></div>
+            <div class="ob-section-label" id="obSynthesisTasksLabel" style="display:none;">Seed tasks</div>
+            <div id="obSynthesisTasks"></div>
+          </div>
+          <button id="obContinue" class="start-focus-btn" style="margin-top:2rem;">Let's go</button>
         </div>
       `;
       document.getElementById("obSynthesisHeading").textContent = `${onboardingName}, here's what we set up:`;
@@ -3087,26 +3257,47 @@ function renderAnalysis() {
       } else {
         deeperEl.style.display = "none";
       }
-      const chipsWrap = document.getElementById("obSynthesisChips");
+      const catsWrap = document.getElementById("obSynthesisCategories");
       onboardingCategories.forEach(catName => {
-        const chip = document.createElement("span");
-        chip.className = "cat-pill";
-        chip.style.background = onboardingCategoryColor(catName);
-        chip.style.color = "#1a1d26";
-        chip.style.cursor = "default";
-        chip.textContent = catName;
-        chipsWrap.appendChild(chip);
+        const row = document.createElement("div");
+        row.className = "ob-readonly-row";
+        const swatch = document.createElement("span");
+        swatch.className = "ob-readonly-swatch";
+        swatch.style.background = onboardingCategoryColor(catName);
+        const label = document.createElement("span");
+        label.className = "ob-readonly-name";
+        label.textContent = catName;
+        row.appendChild(swatch);
+        row.appendChild(label);
+        catsWrap.appendChild(row);
       });
+      if (onboardingSeedTasks.length) {
+        document.getElementById("obSynthesisTasksLabel").style.display = "";
+        const tasksWrap = document.getElementById("obSynthesisTasks");
+        onboardingSeedTasks.forEach(({ category, taskName }) => {
+          const row = document.createElement("div");
+          row.className = "ob-readonly-row";
+          const swatch = document.createElement("span");
+          swatch.className = "ob-readonly-swatch";
+          swatch.style.background = onboardingCategoryColor(category);
+          const label = document.createElement("span");
+          label.className = "ob-readonly-task";
+          label.textContent = taskName;
+          row.appendChild(swatch);
+          row.appendChild(label);
+          tasksWrap.appendChild(row);
+        });
+      }
       document.getElementById("obContinue").addEventListener("click", () => {
         finalizeOnboardingData();
-        goToOnboardingStep(15);
+        goToOnboardingStep(13);
       });
 
-    } else if (step === 15) {
+    } else if (step === 13) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:8rem;">
           <div style="background:var(--bg-card);border-radius:var(--radius-md);padding:1.5rem;box-shadow:var(--shadow-card);text-align:center;">
-            <div style="font-size:var(--text-md);font-weight:600;margin-bottom:1rem;">Premium unlocks Smart Insights and extra Deep Work presets — coming soon.</div>
+            <div style="font-size:var(--text-md);font-weight:600;margin-bottom:1rem;">A couple things are still on the way — deeper insights, more focus presets. Everything else is ready now.</div>
             <button id="obContinue" class="start-focus-btn">Continue</button>
           </div>
         </div>
@@ -3138,11 +3329,13 @@ function renderAnalysis() {
   function completeOnboarding() {
     localStorage.setItem("onboardingComplete", "true");
     document.getElementById("onboardingView").classList.remove("visible");
+    document.body.classList.remove("onboarding-active");
     renderAll();
     switchView("planner");
   }
 
   if (localStorage.getItem("onboardingComplete") !== "true" && categories.length === 0) {
+    document.body.classList.add("onboarding-active");
     document.getElementById("onboardingView").classList.add("visible");
     renderOnboardingStep();
   } else {
