@@ -2918,12 +2918,23 @@ function renderAnalysis() {
     }, 180);
   }
 
+  // Resolves a target onboarding step to its final destination, following any
+  // auto-skip rules (currently: step 7's fact screen for non-qualifying age
+  // brackets) so navigation only ever performs a single transition instead of
+  // landing on a step that immediately redirects again. `direction` controls
+  // which way a skip moves (+1 forward, -1 backward) and the loop lets skips
+  // chain if more are ever added.
+  function resolveOnboardingStep(n, direction = 1) {
+    let step = n;
+    while (step === 7 && !FACT_QUALIFYING_AGE_BRACKETS.includes(onboardingAgeBracket)) {
+      step += direction;
+    }
+    return step;
+  }
+
   document.getElementById("onboardingBackBtn").addEventListener("click", () => {
     if (currentOnboardingStep <= 1) return;
-    let prevStep = currentOnboardingStep - 1;
-    if (currentOnboardingStep === 8 && !FACT_QUALIFYING_AGE_BRACKETS.includes(onboardingAgeBracket)) {
-      prevStep = 6;
-    }
+    const prevStep = resolveOnboardingStep(currentOnboardingStep - 1, -1);
     goToOnboardingStep(prevStep);
   });
 
@@ -2952,10 +2963,10 @@ function renderAnalysis() {
       setTimeout(() => {
         document.getElementById("obHookLine2").classList.add("ob-in");
         document.getElementById("obHookLine2Caption").classList.add("ob-in");
-      }, 200);
+      }, 900);
       setTimeout(() => {
         document.getElementById("obHookPrompt").classList.add("ob-in");
-      }, 400);
+      }, 1800);
       document.getElementById("obHookYeah").addEventListener("click", () => {
         const prompt = document.getElementById("obHookPrompt");
         prompt.classList.remove("ob-in");
@@ -3063,13 +3074,20 @@ function renderAnalysis() {
     } else if (step === 5) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
-          <i data-lucide="clock" id="obTwoMinIcon" class="ob-anchor-icon"></i>
-          <div style="font-size:var(--text-xl);font-weight:600;letter-spacing:-0.02em;margin-bottom:2.5rem;">At the end of each day, you'll tap End Day and write a quick reflection — that locks today in, no more editing after. A couple minutes, then you're set for tomorrow.</div>
-          <button id="obContinue" class="start-focus-btn">Continue</button>
+          <div class="onboarding-reveal" id="obEndDayLeadIn" style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;">Quick thing before we go further.</div>
+          <div class="onboarding-reveal" id="obEndDayBody">
+            <i data-lucide="clock" id="obTwoMinIcon" class="ob-anchor-icon"></i>
+            <div style="font-size:var(--text-xl);font-weight:600;letter-spacing:-0.02em;margin-bottom:2.5rem;">At the end of each day, you'll tap End Day and write a quick reflection — that locks today in, no more editing after. A couple minutes, then you're set for tomorrow.</div>
+            <button id="obContinue" class="start-focus-btn">Continue</button>
+          </div>
         </div>
       `;
       lucide.createIcons();
-      requestAnimationFrame(() => { document.getElementById("obTwoMinIcon").classList.add("ob-in"); });
+      requestAnimationFrame(() => { document.getElementById("obEndDayLeadIn").classList.add("ob-in"); });
+      setTimeout(() => {
+        document.getElementById("obEndDayBody").classList.add("ob-in");
+        document.getElementById("obTwoMinIcon").classList.add("ob-in");
+      }, 300);
       document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(6));
 
     } else if (step === 6) {
@@ -3090,7 +3108,7 @@ function renderAnalysis() {
           ageBtn.disabled = !onboardingAgeBracket;
         }
       );
-      ageBtn.addEventListener("click", () => { if (onboardingAgeBracket) goToOnboardingStep(7); });
+      ageBtn.addEventListener("click", () => { if (onboardingAgeBracket) goToOnboardingStep(resolveOnboardingStep(7)); });
 
     } else if (step === 7) {
       if (!FACT_QUALIFYING_AGE_BRACKETS.includes(onboardingAgeBracket)) {
