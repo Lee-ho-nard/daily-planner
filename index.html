@@ -511,6 +511,7 @@
     <button type="button" class="onboarding-back-btn" id="onboardingBackBtn"><i data-lucide="chevron-left" class="icon"></i></button>
   </div>
   <div class="onboarding-progress-wrap" id="onboardingProgressWrap" style="display:none;">
+    <div id="onboardingStepIndicator" style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:0.35rem;"></div>
     <div class="progress-bar-track"><div class="progress-bar-fill" id="onboardingProgressFill" style="width:0%;"></div></div>
   </div>
   <div id="onboardingContent"></div>
@@ -2766,23 +2767,11 @@ function renderAnalysis() {
   });
 
   // --- Onboarding ---
-  const ONBOARDING_PROBLEMS = [
-    "Losing momentum after a few good days",
-    "No real system, just willpower",
-    "Hard to tell if I'm actually improving",
-    "Too many tabs open, nothing finished"
-  ];
   const ONBOARDING_TIME_LOST_OPTIONS = [
     "Less than 30 min",
     "30 min – 1 hour",
     "1–2 hours",
     "No idea, probably more than I think"
-  ];
-  const ONBOARDING_DEEPER_OPTIONS = [
-    "A visible daily record",
-    "Something that locks in once it's done",
-    "Actual progress, not guesses",
-    "A reason to stop scrolling and start"
   ];
   const ONBOARDING_CATEGORY_PRESETS = ["Fitness", "Building/Business", "School/Work", "Deep Work", "Personal"];
   const ONBOARDING_TIME_LOST_CAUSE_OPTIONS = [
@@ -2810,8 +2799,6 @@ function renderAnalysis() {
   let onboardingName = "";
   let onboardingTimeLost = "";
   let onboardingTimeLostCauses = [];
-  let onboardingProblems = [];
-  let onboardingDeeperAnswer = [];
   let onboardingCategories = [];
   let onboardingSeedTasks = [];
   let onboardingIdentity = "";
@@ -2850,14 +2837,6 @@ function renderAnalysis() {
     "Phone / distractions": "smartphone",
     "Procrastinating before starting": "pause",
     "I'm not sure.": "help-circle",
-    "Losing momentum after a few good days": "trending-down",
-    "No real system, just willpower": "list",
-    "Hard to tell if I'm actually improving": "bar-chart-3",
-    "Too many tabs open, nothing finished": "layers",
-    "A visible daily record": "calendar",
-    "Something that locks in once it's done": "lock",
-    "Actual progress, not guesses": "target",
-    "A reason to stop scrolling and start": "zap",
     "Under 16": "user",
     "16–18": "user",
     "19–24": "user",
@@ -2904,11 +2883,18 @@ function renderAnalysis() {
 
   function updateOnboardingProgress() {
     const wrap = document.getElementById("onboardingProgressWrap");
-    const showProgress = currentOnboardingStep >= 3 && currentOnboardingStep <= 16 && currentOnboardingStep !== 15;
+    const stepIndicator = document.getElementById("onboardingStepIndicator");
+    const PROGRESS_START = 3;    // first step the progress bar appears on (time-lost question)
+    const PROGRESS_END = 15;     // step where progress reaches 100% (synthesis)
+    const PROGRESS_EXCLUDE = 14; // step with no bar/indicator (streak preview)
+    const showProgress = currentOnboardingStep >= PROGRESS_START && currentOnboardingStep <= PROGRESS_END && currentOnboardingStep !== PROGRESS_EXCLUDE;
     wrap.style.display = showProgress ? "block" : "none";
     if (showProgress) {
-      const pct = Math.round(((currentOnboardingStep - 2) / 14) * 100);
+      const totalSteps = PROGRESS_END - (PROGRESS_START - 1);
+      const currentStepNum = currentOnboardingStep - (PROGRESS_START - 1);
+      const pct = Math.round((currentStepNum / totalSteps) * 100);
       document.getElementById("onboardingProgressFill").style.width = pct + "%";
+      stepIndicator.textContent = `Step ${currentStepNum} of ${totalSteps}`;
     }
   }
 
@@ -2936,7 +2922,7 @@ function renderAnalysis() {
   function renderOnboardingStep() {
     updateOnboardingProgress();
     updateOnboardingBackButton();
-    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1 || currentOnboardingStep === 15);
+    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1 || currentOnboardingStep === 14);
     const content = document.getElementById("onboardingContent");
     const step = currentOnboardingStep;
 
@@ -3067,55 +3053,6 @@ function renderAnalysis() {
       document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(5));
 
     } else if (step === 5) {
-      const PROBLEM_TO_DEEPER_MAP = {
-        "Losing momentum after a few good days": "A visible daily record",
-        "No real system, just willpower": "Something that locks in once it's done",
-        "Hard to tell if I'm actually improving": "Actual progress, not guesses",
-        "Too many tabs open, nothing finished": "A reason to stop scrolling and start"
-      };
-      content.innerHTML = `
-        <div class="onboarding-container" style="padding-top:4rem;">
-          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">And over time, what's the bigger pattern?</div>
-          <div id="obProblemChips" class="ob-row-list"></div>
-          <div id="obDeeperGroup" class="onboarding-reveal${onboardingProblems.length ? " ob-in" : ""}">
-            <div style="font-size:var(--text-lg);font-weight:600;margin-bottom:1.5rem;">What would actually help?</div>
-            <div id="obDeeperChips" class="ob-row-list"></div>
-          </div>
-          <button id="obContinue" class="start-focus-btn"${(onboardingProblems.length && onboardingDeeperAnswer.length) ? "" : " disabled"}>Continue</button>
-        </div>
-      `;
-      const btn = document.getElementById("obContinue");
-      const deeperGroup = document.getElementById("obDeeperGroup");
-      const deeperChipsEl = document.getElementById("obDeeperChips");
-
-      function renderDeeperChips() {
-        renderOnboardingChips(
-          deeperChipsEl,
-          ONBOARDING_DEEPER_OPTIONS,
-          (option) => onboardingDeeperAnswer.includes(option),
-          (option) => {
-            onboardingDeeperAnswer = [option];
-            btn.disabled = !(onboardingProblems.length && onboardingDeeperAnswer.length);
-          }
-        );
-      }
-
-      renderOnboardingChips(
-        document.getElementById("obProblemChips"),
-        ONBOARDING_PROBLEMS,
-        (option) => onboardingProblems.includes(option),
-        (option) => {
-          const wasEmpty = !onboardingProblems.length;
-          const idx = onboardingProblems.indexOf(option);
-          if (idx === -1) onboardingProblems.push(option); else onboardingProblems.splice(idx, 1);
-          if (wasEmpty && onboardingProblems.length) requestAnimationFrame(() => deeperGroup.classList.add("ob-in"));
-          btn.disabled = !(onboardingProblems.length && onboardingDeeperAnswer.length);
-        }
-      );
-      renderDeeperChips();
-      btn.addEventListener("click", () => { if (onboardingProblems.length && onboardingDeeperAnswer.length) goToOnboardingStep(6); });
-
-    } else if (step === 6) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <i data-lucide="clock" id="obTwoMinIcon" class="ob-anchor-icon"></i>
@@ -3125,9 +3062,9 @@ function renderAnalysis() {
       `;
       lucide.createIcons();
       requestAnimationFrame(() => { document.getElementById("obTwoMinIcon").classList.add("ob-in"); });
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(7));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(6));
 
-    } else if (step === 7) {
+    } else if (step === 6) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">How old are you?</div>
@@ -3145,12 +3082,12 @@ function renderAnalysis() {
           ageBtn.disabled = !onboardingAgeBracket;
         }
       );
-      ageBtn.addEventListener("click", () => { if (onboardingAgeBracket) goToOnboardingStep(8); });
+      ageBtn.addEventListener("click", () => { if (onboardingAgeBracket) goToOnboardingStep(7); });
 
-    } else if (step === 8) {
+    } else if (step === 7) {
       const FACT_QUALIFYING_BRACKETS = ["Under 16", "16–18", "19–24"];
       if (!FACT_QUALIFYING_BRACKETS.includes(onboardingAgeBracket)) {
-        goToOnboardingStep(9);
+        goToOnboardingStep(8);
         return;
       }
       content.innerHTML = `
@@ -3161,9 +3098,9 @@ function renderAnalysis() {
           <button id="obContinue" class="start-focus-btn">Continue</button>
         </div>
       `;
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(9));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(8));
 
-    } else if (step === 9) {
+    } else if (step === 8) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">What kind of person do you want to become?</div>
@@ -3181,9 +3118,9 @@ function renderAnalysis() {
           identityBtn2.disabled = !onboardingIdentity;
         }
       );
-      identityBtn2.addEventListener("click", () => { if (onboardingIdentity) goToOnboardingStep(10); });
+      identityBtn2.addEventListener("click", () => { if (onboardingIdentity) goToOnboardingStep(9); });
 
-    } else if (step === 10) {
+    } else if (step === 9) {
       const identityLower = onboardingIdentity ? (onboardingIdentity.charAt(0).toLowerCase() + onboardingIdentity.slice(1)) : "someone new";
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
@@ -3240,10 +3177,10 @@ function renderAnalysis() {
         onboardingGoalWhy = onboardingGoalName ? goalWhyInput.value.trim() : "";
         onboardingGoalPlan = onboardingGoalName ? goalPlanInput.value.trim() : "";
         if (!onboardingGoalName) onboardingGoalCategory = "";
-        goToOnboardingStep(11);
+        goToOnboardingStep(10);
       });
 
-    } else if (step === 11) {
+    } else if (step === 10) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div class="onboarding-reveal" id="obTrackLeadIn" style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:0.5rem;">Now let's set up a few tasks.</div>
@@ -3288,10 +3225,10 @@ function renderAnalysis() {
         chipsWrap.appendChild(row);
       });
       btn.addEventListener("click", () => {
-        if (onboardingCategories.length) goToOnboardingStep(12);
+        if (onboardingCategories.length) goToOnboardingStep(11);
       });
 
-    } else if (step === 12) {
+    } else if (step === 11) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.5rem;">Let's get specific.</div>
@@ -3348,10 +3285,10 @@ function renderAnalysis() {
           const val = input.value.trim();
           if (val) onboardingSeedTasks.push({ category: row.dataset.cat, taskName: val });
         });
-        goToOnboardingStep(13);
+        goToOnboardingStep(12);
       });
 
-    } else if (step === 13) {
+    } else if (step === 12) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;line-height:1.8;margin-bottom:2.5rem;">
@@ -3422,9 +3359,9 @@ function renderAnalysis() {
       document.getElementById("obSolvesLine1").textContent = lines[0];
       document.getElementById("obSolvesLine2").textContent = lines[1];
       document.getElementById("obSolvesLine3").textContent = lines[2];
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(14));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(13));
 
-    } else if (step === 14) {
+    } else if (step === 13) {
       const svgWidth = 320, svgHeight = 160, padding = 20;
       const totalDays = 365;
       const maxVal = Math.pow(1.01, totalDays);
@@ -3456,57 +3393,27 @@ function renderAnalysis() {
           <button id="obContinue" class="start-focus-btn">Continue</button>
         </div>
       `;
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(15));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(14));
 
-    } else if (step === 15) {
+    } else if (step === 14) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
-          <div id="obDemoLabel" style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1.5rem;transition:opacity 200ms ease;">Tap a dot to see what a streak feels like.</div>
-          <div id="obDemoDots" style="display:flex;gap:6px;justify-content:center;margin-bottom:2.5rem;opacity:0.4;transition:opacity 200ms ease;pointer-events:none;"></div>
+          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Your first streak starts tonight.</div>
+          <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1.5rem;">Complete one task and write one reflection to earn Day 1.</div>
+          <div id="obDemoDots" style="display:flex;gap:6px;justify-content:center;margin-bottom:0.75rem;"></div>
+          <div style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:2.5rem;">Day 1 unlocks after your first completed day.</div>
           <button id="obContinue" class="start-focus-btn">Continue</button>
         </div>
       `;
       const dotsWrap = document.getElementById("obDemoDots");
-      const label = document.getElementById("obDemoLabel");
-      const demoDots = [];
-      let demoConfirmed = false;
       for (let i = 0; i < 7; i++) {
         const dot = document.createElement("div");
-        dot.className = "goal-dot";
-        dot.style.cursor = "pointer";
-        demoDots.push(dot);
+        dot.className = "goal-dot future";
         dotsWrap.appendChild(dot);
       }
-      demoDots.forEach((dot, tappedIdx) => {
-        dot.addEventListener("click", () => {
-          if (dot.classList.contains("done")) return;
-          for (let i = 0; i <= tappedIdx; i++) {
-            const d = demoDots[i];
-            if (d.classList.contains("done")) continue;
-            setTimeout(() => {
-              d.classList.add("done");
-              d.style.background = "var(--accent)";
-              d.style.transform = "scale(1.2)";
-              setTimeout(() => { d.style.transform = "scale(1)"; }, 200);
-            }, i * 70);
-          }
-          if (!demoConfirmed) {
-            demoConfirmed = true;
-            label.style.opacity = "0";
-            setTimeout(() => {
-              label.textContent = "That's what showing up looks like.";
-              label.style.opacity = "1";
-            }, 200);
-          }
-        });
-      });
-      setTimeout(() => {
-        dotsWrap.style.opacity = "1";
-        dotsWrap.style.pointerEvents = "auto";
-      }, 450);
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(16));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(15));
 
-    } else if (step === 16) {
+    } else if (step === 15) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
           <div id="obSynthesisHeading" style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;"></div>
@@ -3553,10 +3460,10 @@ function renderAnalysis() {
       }
       document.getElementById("obContinue").addEventListener("click", () => {
         finalizeOnboardingData();
-        goToOnboardingStep(17);
+        goToOnboardingStep(16);
       });
 
-    } else if (step === 17) {
+    } else if (step === 16) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:8rem;">
           <div style="background:var(--bg-card);border-radius:var(--radius-md);padding:1.5rem;box-shadow:var(--shadow-card);">
