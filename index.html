@@ -321,7 +321,9 @@
   .ob-readonly-row { display: flex; align-items: center; gap: 1rem; padding: 0.5rem; border-bottom: 1px solid var(--border); }
   .ob-readonly-row:last-child { border-bottom: none; }
   .ob-readonly-swatch { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; }
-  .ob-readonly-name, .ob-readonly-task { font-size: var(--text-base); color: var(--text-primary); font-weight: 500; }
+  .ob-readonly-name { font-size: var(--text-base); color: var(--text-primary); font-weight: 500; }
+  .ob-readonly-info { display: flex; flex-direction: column; gap: 0.2rem; }
+  .ob-readonly-sub { font-size: var(--text-sm); color: var(--text-muted); font-weight: 400; }
 
   #lockedBanner { transition: opacity 300ms ease-out, transform 300ms ease-out; }
 
@@ -3423,10 +3425,8 @@ function renderAnalysis() {
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
           <div id="obSynthesisHeading" style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;"></div>
           <div style="text-align:left;">
-            <div class="ob-section-label">Categories</div>
+            <div class="ob-section-label">Your setup</div>
             <div id="obSynthesisCategories"></div>
-            <div class="ob-section-label" id="obSynthesisTasksLabel" style="display:none;">Seed tasks</div>
-            <div id="obSynthesisTasks"></div>
           </div>
           <button id="obContinue" class="start-focus-btn" style="margin-top:2rem;">Let's go</button>
         </div>
@@ -3434,35 +3434,26 @@ function renderAnalysis() {
       document.getElementById("obSynthesisHeading").textContent = `${onboardingName}, here's what we set up:`;
       const catsWrap = document.getElementById("obSynthesisCategories");
       onboardingCategories.forEach(catName => {
+        const seedTask = onboardingSeedTasks.find(t => t.category === catName);
         const row = document.createElement("div");
         row.className = "ob-readonly-row";
         const swatch = document.createElement("span");
         swatch.className = "ob-readonly-swatch";
         swatch.style.background = onboardingCategoryColor(catName);
+        const info = document.createElement("div");
+        info.className = "ob-readonly-info";
         const label = document.createElement("span");
         label.className = "ob-readonly-name";
         label.textContent = catName;
+        const sub = document.createElement("span");
+        sub.className = "ob-readonly-sub";
+        sub.textContent = seedTask ? seedTask.taskName : "No task added yet — add one in the Planner.";
+        info.appendChild(label);
+        info.appendChild(sub);
         row.appendChild(swatch);
-        row.appendChild(label);
+        row.appendChild(info);
         catsWrap.appendChild(row);
       });
-      if (onboardingSeedTasks.length) {
-        document.getElementById("obSynthesisTasksLabel").style.display = "";
-        const tasksWrap = document.getElementById("obSynthesisTasks");
-        onboardingSeedTasks.forEach(({ category, taskName }) => {
-          const row = document.createElement("div");
-          row.className = "ob-readonly-row";
-          const swatch = document.createElement("span");
-          swatch.className = "ob-readonly-swatch";
-          swatch.style.background = onboardingCategoryColor(category);
-          const label = document.createElement("span");
-          label.className = "ob-readonly-task";
-          label.textContent = taskName;
-          row.appendChild(swatch);
-          row.appendChild(label);
-          tasksWrap.appendChild(row);
-        });
-      }
       document.getElementById("obContinue").addEventListener("click", () => {
         finalizeOnboardingData();
         goToOnboardingStep(16);
