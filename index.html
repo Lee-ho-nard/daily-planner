@@ -38,18 +38,18 @@
   }
 
   :root[data-theme="dark"] {
-    --bg-page: #0C120D;
-    --bg-card: #141C15;
-    --border: #22301F;
-    --text-primary: #EDEFE8;
-    --text-secondary: #A9ADA0;
+    --bg-page: #1A211C;
+    --bg-card: #232B25;
+    --border: #323C34;
+    --text-primary: #E9EEE8;
+    --text-secondary: #A7B1A7;
     --text-muted: #6E7266;
-    --accent: #6FCF87;
-    --accent-hover: #8FE0A3;
-    --accent-bg: #1C2A1E;
+    --accent: #5FA06B;
+    --accent-hover: #87B890;
+    --accent-bg: #223428;
     --danger: #E2726A;
     --warning: #E0AC4E;
-    --on-accent: #0C120D;
+    --on-accent: #0F1411;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -290,6 +290,10 @@
   }
   .onboarding-container { max-width: 420px; margin: 0 auto; }
   .onboarding-progress-wrap { max-width: 420px; margin: 0 auto 2rem; }
+  .onboarding-back-wrap { max-width: 420px; margin: 0 auto 1rem; }
+  .onboarding-back-btn { background: var(--bg-card); border: none; box-shadow: var(--shadow-card); border-radius: 50%; width: 36px; height: 36px; cursor: pointer; color: var(--text-primary); display: flex; align-items: center; justify-content: center; transition: transform 0.15s; }
+  .onboarding-back-btn:active { transform: scale(0.92); }
+  .onboarding-back-btn .icon { color: inherit; }
   #onboardingContent { transition: opacity 180ms ease; }
   #onboardingView.ob-emphasis-bg { background: radial-gradient(circle at center, color-mix(in srgb, var(--accent) 12%, var(--bg-page)) 0%, var(--bg-page) 70%); }
   .onboarding-reveal { opacity: 0; transform: translateY(8px); transition: opacity 250ms ease, transform 250ms ease; pointer-events: none; }
@@ -503,6 +507,9 @@
 </div>
 
 <div id="onboardingView">
+  <div class="onboarding-back-wrap" id="onboardingBackWrap" style="display:none;">
+    <button type="button" class="onboarding-back-btn" id="onboardingBackBtn"><i data-lucide="chevron-left" class="icon"></i></button>
+  </div>
   <div class="onboarding-progress-wrap" id="onboardingProgressWrap" style="display:none;">
     <div class="progress-bar-track"><div class="progress-bar-fill" id="onboardingProgressFill" style="width:0%;"></div></div>
   </div>
@@ -552,6 +559,14 @@
       <div class="goal-checkbox-row">
         <input type="checkbox" id="modalIsGoal">
         <label for="modalIsGoal">Track as a goal</label>
+      </div>
+
+      <div class="repeat-extra" id="modalGoalFields">
+        <label>Why does this goal matter to you?</label>
+        <input type="text" id="modalGoalWhy" placeholder="Be specific">
+
+        <label>How do you plan on achieving it?</label>
+        <input type="text" id="modalGoalPlan" placeholder="Be specific">
       </div>
     </div>
 
@@ -1281,6 +1296,10 @@
     repeatExtra.classList.toggle("show", repeatSelect.value !== "none");
   });
 
+  document.getElementById("modalIsGoal").addEventListener("change", () => {
+    document.getElementById("modalGoalFields").classList.toggle("show", document.getElementById("modalIsGoal").checked);
+  });
+
   function openAddModal() {
     if (isDayLocked(toDateStr(currentDate))) { showToast("This day is locked. You can't add tasks to a day you've already reflected on.", "warning"); return; }
     if (categories.length === 0) { showToast("Add a category first using the + next to the category tabs.", "warning"); return; }
@@ -1296,6 +1315,9 @@
       document.getElementById("modalCategory").value = activeCategory;
     }
     document.getElementById("modalIsGoal").checked = false;
+    document.getElementById("modalGoalFields").classList.remove("show");
+    document.getElementById("modalGoalWhy").value = "";
+    document.getElementById("modalGoalPlan").value = "";
     repeatSelect.value = "none";
     repeatExtra.classList.remove("show");
     selectedWeekdays = [currentDate.getDay()];
@@ -1316,6 +1338,9 @@
     document.getElementById("modalDate").value = task.date;
     document.getElementById("modalEndDate").value = task.endDate || "";
     document.getElementById("modalIsGoal").checked = !!task.isGoal;
+    document.getElementById("modalGoalFields").classList.toggle("show", !!task.isGoal);
+    document.getElementById("modalGoalWhy").value = task.why || "";
+    document.getElementById("modalGoalPlan").value = task.plan || "";
 
     const rec = task.recurrence;
     if (rec && rec.type === "daily") {
@@ -1350,6 +1375,8 @@
     const endDate = document.getElementById("modalEndDate").value;
     const repeatType = repeatSelect.value;
     const isGoal = repeatType !== "none" && document.getElementById("modalIsGoal").checked;
+    const why = isGoal ? document.getElementById("modalGoalWhy").value.trim() : "";
+    const plan = isGoal ? document.getElementById("modalGoalPlan").value.trim() : "";
 
     if (!name || !category) return;
 
@@ -1364,6 +1391,7 @@
       const task = tasks.find(t => t.id === editingTaskId);
       task.name = name; task.category = category; task.time = time; task.duration = duration;
       task.date = date; task.endDate = endDate; task.recurrence = recurrence; task.isGoal = isGoal;
+      task.why = why; task.plan = plan;
       if (!task.completedDates) task.completedDates = [];
     } else {
       const dateTasks = tasks.filter(t => t.date === date);
@@ -1371,7 +1399,7 @@
       const newId = Date.now().toString();
       tasks.push({
         id: newId, name, category, time, duration, date, endDate,
-        done: false, order: maxOrder + 1, recurrence, completedDates: [], isGoal
+        done: false, order: maxOrder + 1, recurrence, completedDates: [], isGoal, why, plan
       });
       lastAddedTaskId = newId;
     }
@@ -1596,6 +1624,9 @@
     document.getElementById("modalDuration").value = parsedDuration;
     document.getElementById("modalEndDate").value = "";
     document.getElementById("modalIsGoal").checked = false;
+    document.getElementById("modalGoalFields").classList.remove("show");
+    document.getElementById("modalGoalWhy").value = "";
+    document.getElementById("modalGoalPlan").value = "";
     repeatSelect.value = parsedRepeatType;
     if (parsedRepeatType !== "none") {
       repeatExtra.classList.add("show");
@@ -2063,6 +2094,20 @@ function renderAnalysis() {
     return { icon: "alert-circle", text: `You've missed ${worst.catName} tasks ${worst.count} time${worst.count === 1 ? "" : "s"} this week` };
   }
 
+  function identityInsight() {
+    const identity = localStorage.getItem("userIdentity");
+    if (!identity) return null;
+    const goalTasks = tasks.filter(t => t.isGoal);
+    let bestStreak = 0;
+    goalTasks.forEach(g => {
+      const streak = computeStreak(g);
+      if (streak > bestStreak) bestStreak = streak;
+    });
+    if (bestStreak < 3) return null;
+    const identityLower = identity.charAt(0).toLowerCase() + identity.slice(1);
+    return { icon: "sparkles", text: `You said you're becoming ${identityLower}. That's showing up as a ${bestStreak}-day streak.` };
+  }
+
   const INSIGHT_GENERATORS = [
     weeklyTrendInsight,
     weakestCategoryInsight,
@@ -2072,7 +2117,8 @@ function renderAnalysis() {
     timeOfDaySplitInsight,
     bestWeekdayInsight,
     weekendCategorySkewInsight,
-    missedCategoryThisWeekInsight
+    missedCategoryThisWeekInsight,
+    identityInsight
   ];
 
   function getActiveInsights() {
@@ -2743,7 +2789,8 @@ function renderAnalysis() {
     "No clear plan",
     "Jumping between tasks",
     "Phone / distractions",
-    "Procrastinating before starting"
+    "Procrastinating before starting",
+    "I'm not sure."
   ];
   const ONBOARDING_TIME_LOST_HOURS = {
     "Less than 30 min": 0.4,
@@ -2751,15 +2798,28 @@ function renderAnalysis() {
     "1–2 hours": 1.5,
     "No idea, probably more than I think": 1.5
   };
+  const ONBOARDING_AGE_OPTIONS = ["Under 16", "16–18", "19–24", "25+"];
+  const ONBOARDING_IDENTITY_OPTIONS = [
+    "Someone who shows up, even on the bad days",
+    "Someone who finishes what they start",
+    "Someone who can actually sit with one thing",
+    "Someone who trusts their own systems, not their mood"
+  ];
 
   let currentOnboardingStep = 1;
   let onboardingName = "";
   let onboardingTimeLost = "";
-  let onboardingTimeLostCause = "";
+  let onboardingTimeLostCauses = [];
   let onboardingProblems = [];
   let onboardingDeeperAnswer = [];
   let onboardingCategories = [];
   let onboardingSeedTasks = [];
+  let onboardingIdentity = "";
+  let onboardingAgeBracket = "";
+  let onboardingGoalName = "";
+  let onboardingGoalCategory = "";
+  let onboardingGoalWhy = "";
+  let onboardingGoalPlan = "";
 
   function setMainAppVisible(visible) {
     document.querySelector(".container").style.display = visible ? "" : "none";
@@ -2789,6 +2849,7 @@ function renderAnalysis() {
     "Jumping between tasks": "shuffle",
     "Phone / distractions": "smartphone",
     "Procrastinating before starting": "pause",
+    "I'm not sure.": "help-circle",
     "Losing momentum after a few good days": "trending-down",
     "No real system, just willpower": "list",
     "Hard to tell if I'm actually improving": "bar-chart-3",
@@ -2796,7 +2857,15 @@ function renderAnalysis() {
     "A visible daily record": "calendar",
     "Something that locks in once it's done": "lock",
     "Actual progress, not guesses": "target",
-    "A reason to stop scrolling and start": "zap"
+    "A reason to stop scrolling and start": "zap",
+    "Under 16": "user",
+    "16–18": "user",
+    "19–24": "user",
+    "25+": "user",
+    "Someone who shows up, even on the bad days": "sunrise",
+    "Someone who finishes what they start": "flag",
+    "Someone who can actually sit with one thing": "anchor",
+    "Someone who trusts their own systems, not their mood": "settings"
   };
 
   function styleOnboardingChip(row, selected) {
@@ -2835,12 +2904,18 @@ function renderAnalysis() {
 
   function updateOnboardingProgress() {
     const wrap = document.getElementById("onboardingProgressWrap");
-    const showProgress = currentOnboardingStep >= 3 && currentOnboardingStep <= 12 && currentOnboardingStep !== 11;
+    const showProgress = currentOnboardingStep >= 3 && currentOnboardingStep <= 16 && currentOnboardingStep !== 15;
     wrap.style.display = showProgress ? "block" : "none";
     if (showProgress) {
-      const pct = Math.round(((currentOnboardingStep - 2) / 10) * 100);
+      const pct = Math.round(((currentOnboardingStep - 2) / 14) * 100);
       document.getElementById("onboardingProgressFill").style.width = pct + "%";
     }
+  }
+
+  function updateOnboardingBackButton() {
+    const wrap = document.getElementById("onboardingBackWrap");
+    const showBack = currentOnboardingStep > 1;
+    wrap.style.display = showBack ? "block" : "none";
   }
 
   function goToOnboardingStep(n) {
@@ -2854,9 +2929,14 @@ function renderAnalysis() {
     }, 180);
   }
 
+  document.getElementById("onboardingBackBtn").addEventListener("click", () => {
+    if (currentOnboardingStep > 1) goToOnboardingStep(currentOnboardingStep - 1);
+  });
+
   function renderOnboardingStep() {
     updateOnboardingProgress();
-    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1 || currentOnboardingStep === 11);
+    updateOnboardingBackButton();
+    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1 || currentOnboardingStep === 15);
     const content = document.getElementById("onboardingContent");
     const step = currentOnboardingStep;
 
@@ -2865,9 +2945,13 @@ function renderAnalysis() {
         <div class="onboarding-container" style="padding-top:5rem;text-align:center;">
           <div class="onboarding-hook-headline" id="obHookLine1">Hey.</div>
           <div class="onboarding-reveal" id="obHookLine2" style="font-size:var(--text-xl);font-weight:600;line-height:1.5;margin-bottom:0.5rem;">Most people don't have a real system for managing their time.</div>
-          <div class="onboarding-reveal" id="obHookLine2Caption" style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:2.5rem;">— Acuity Training, 2024 survey of 500 working adults</div>
-          <div class="onboarding-hook-subtext" id="obHookLine3">You're building something. Most days, nothing's tracking it.</div>
-          <button id="obContinue" class="start-focus-btn onboarding-reveal">Continue</button>
+          <div class="onboarding-reveal" id="obHookLine2Caption" style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:2.5rem;">A finding repeated across multiple independent workplace studies (Acuity Training and others).</div>
+          <div class="onboarding-reveal" id="obHookPrompt">
+            <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;">Feel like that's you?</div>
+            <button type="button" id="obHookYeah" class="cat-pill">Come with us.</button>
+          </div>
+          <div class="onboarding-hook-subtext" id="obHookLine3">You're building something real. Most days, there's no system keeping track of it.</div>
+          <button id="obContinue" class="start-focus-btn onboarding-reveal">Continue.</button>
         </div>
       `;
       requestAnimationFrame(() => { document.getElementById("obHookLine1").classList.add("ob-in"); });
@@ -2876,17 +2960,25 @@ function renderAnalysis() {
         document.getElementById("obHookLine2Caption").classList.add("ob-in");
       }, 200);
       setTimeout(() => {
-        document.getElementById("obHookLine3").classList.add("ob-in");
-        document.getElementById("obContinue").classList.add("ob-in");
+        document.getElementById("obHookPrompt").classList.add("ob-in");
       }, 400);
+      document.getElementById("obHookYeah").addEventListener("click", () => {
+        const prompt = document.getElementById("obHookPrompt");
+        prompt.classList.remove("ob-in");
+        setTimeout(() => {
+          prompt.style.display = "none";
+          document.getElementById("obHookLine3").classList.add("ob-in");
+          document.getElementById("obContinue").classList.add("ob-in");
+        }, 250);
+      });
       document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(2));
 
     } else if (step === 2) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <label style="display:block;font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:0.5rem;font-weight:500;">What should we call you?</label>
-          <input type="text" id="obName" placeholder="Your name" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:2rem;">
-          <button id="obContinue" class="start-focus-btn" disabled>Continue</button>
+          <input type="text" id="obName" placeholder="Your name" value="${onboardingName}" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:2rem;">
+          <button id="obContinue" class="start-focus-btn"${onboardingName ? "" : " disabled"}>Continue</button>
         </div>
       `;
       const input = document.getElementById("obName");
@@ -2903,23 +2995,25 @@ function renderAnalysis() {
     } else if (step === 3) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
-          <div class="onboarding-reveal" id="obConsiderHeader" style="font-size:var(--text-xl);font-weight:600;letter-spacing:-0.02em;margin-bottom:1.5rem;">Alright ${onboardingName}, here's something worth noticing—</div>
+          <div class="onboarding-reveal" id="obConsiderGreeting" style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;">Alright, ${onboardingName}.</div>
+          <div class="onboarding-reveal" id="obConsiderLine1" style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;">Most days slip by without anyone tracking where the time went.</div>
           <div class="onboarding-reveal" id="obConsiderBody">
-            <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;">Most days slip by without anyone tracking where the time went.</div>
             <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;">How much time do you think you lose most days?</div>
             <div id="obTimeLostChips" class="ob-row-list"></div>
             <div id="obTimeLostCauseGroup" class="onboarding-reveal${onboardingTimeLost ? " ob-in" : ""}">
-              <div style="font-size:var(--text-lg);font-weight:600;margin-bottom:1.5rem;">Mostly because of—</div>
+              <div style="font-size:var(--text-lg);font-weight:600;margin-bottom:1.5rem;">What's the biggest reason, day to day?</div>
               <div id="obTimeLostCauseChips" class="ob-row-list"></div>
             </div>
-            <button id="obContinue" class="start-focus-btn"${(onboardingTimeLost && onboardingTimeLostCause) ? "" : " disabled"}>Continue</button>
+            <button id="obContinue" class="start-focus-btn"${(onboardingTimeLost && onboardingTimeLostCauses.length) ? "" : " disabled"}>Continue</button>
           </div>
         </div>
       `;
-      requestAnimationFrame(() => { document.getElementById("obConsiderHeader").classList.add("ob-in"); });
-      setTimeout(() => { document.getElementById("obConsiderBody").classList.add("ob-in"); }, 200);
+      requestAnimationFrame(() => { document.getElementById("obConsiderGreeting").classList.add("ob-in"); });
+      setTimeout(() => { document.getElementById("obConsiderLine1").classList.add("ob-in"); }, 200);
+      setTimeout(() => { document.getElementById("obConsiderBody").classList.add("ob-in"); }, 400);
       const btn = document.getElementById("obContinue");
       const causeGroup = document.getElementById("obTimeLostCauseGroup");
+      const causeChipsEl = document.getElementById("obTimeLostCauseChips");
       renderOnboardingChips(
         document.getElementById("obTimeLostChips"),
         ONBOARDING_TIME_LOST_OPTIONS,
@@ -2927,20 +3021,35 @@ function renderAnalysis() {
         (option) => {
           const wasEmpty = !onboardingTimeLost;
           onboardingTimeLost = option;
-          btn.disabled = !(onboardingTimeLost && onboardingTimeLostCause);
+          btn.disabled = !(onboardingTimeLost && onboardingTimeLostCauses.length);
           if (wasEmpty) requestAnimationFrame(() => causeGroup.classList.add("ob-in"));
         }
       );
-      renderOnboardingChips(
-        document.getElementById("obTimeLostCauseChips"),
-        ONBOARDING_TIME_LOST_CAUSE_OPTIONS,
-        (option) => onboardingTimeLostCause === option,
-        (option) => {
-          onboardingTimeLostCause = option;
-          btn.disabled = !(onboardingTimeLost && onboardingTimeLostCause);
-        }
-      );
-      btn.addEventListener("click", () => { if (onboardingTimeLost && onboardingTimeLostCause) goToOnboardingStep(4); });
+      const NOT_SURE_CAUSE = "I'm not sure.";
+      function renderCauseChips() {
+        renderOnboardingChips(
+          causeChipsEl,
+          ONBOARDING_TIME_LOST_CAUSE_OPTIONS,
+          (option) => onboardingTimeLostCauses.includes(option),
+          (option) => {
+            if (option === NOT_SURE_CAUSE) {
+              onboardingTimeLostCauses = onboardingTimeLostCauses.includes(NOT_SURE_CAUSE) ? [] : [NOT_SURE_CAUSE];
+            } else {
+              const idx = onboardingTimeLostCauses.indexOf(option);
+              if (idx === -1) {
+                onboardingTimeLostCauses = onboardingTimeLostCauses.filter(c => c !== NOT_SURE_CAUSE);
+                onboardingTimeLostCauses.push(option);
+              } else {
+                onboardingTimeLostCauses.splice(idx, 1);
+              }
+            }
+            btn.disabled = !(onboardingTimeLost && onboardingTimeLostCauses.length);
+            renderCauseChips();
+          }
+        );
+      }
+      renderCauseChips();
+      btn.addEventListener("click", () => { if (onboardingTimeLost && onboardingTimeLostCauses.length) goToOnboardingStep(4); });
 
     } else if (step === 4) {
       const dailyHours = ONBOARDING_TIME_LOST_HOURS[onboardingTimeLost] || 1;
@@ -2966,10 +3075,10 @@ function renderAnalysis() {
       };
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
-          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">What's been getting in the way?</div>
+          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">And over time, what's the bigger pattern?</div>
           <div id="obProblemChips" class="ob-row-list"></div>
           <div id="obDeeperGroup" class="onboarding-reveal${onboardingProblems.length ? " ob-in" : ""}">
-            <div style="font-size:var(--text-lg);font-weight:600;margin-bottom:1.5rem;">So what you need is—</div>
+            <div style="font-size:var(--text-lg);font-weight:600;margin-bottom:1.5rem;">What would actually help?</div>
             <div id="obDeeperChips" class="ob-row-list"></div>
           </div>
           <button id="obContinue" class="start-focus-btn"${(onboardingProblems.length && onboardingDeeperAnswer.length) ? "" : " disabled"}>Continue</button>
@@ -3010,7 +3119,7 @@ function renderAnalysis() {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <i data-lucide="clock" id="obTwoMinIcon" class="ob-anchor-icon"></i>
-          <div style="font-size:var(--text-xl);font-weight:600;letter-spacing:-0.02em;margin-bottom:2.5rem;">Two minutes to close the day. A few more to plan tomorrow. That's the whole system.</div>
+          <div style="font-size:var(--text-xl);font-weight:600;letter-spacing:-0.02em;margin-bottom:2.5rem;">At the end of each day, you'll tap End Day and write a quick reflection — that locks today in, no more editing after. A couple minutes, then you're set for tomorrow.</div>
           <button id="obContinue" class="start-focus-btn">Continue</button>
         </div>
       `;
@@ -3021,11 +3130,130 @@ function renderAnalysis() {
     } else if (step === 7) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
-          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">What do you want to track?</div>
+          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">How old are you?</div>
+          <div id="obAgeChips" class="ob-row-list"></div>
+          <button id="obContinue" class="start-focus-btn"${onboardingAgeBracket ? "" : " disabled"}>Continue</button>
+        </div>
+      `;
+      const ageBtn = document.getElementById("obContinue");
+      renderOnboardingChips(
+        document.getElementById("obAgeChips"),
+        ONBOARDING_AGE_OPTIONS,
+        (option) => onboardingAgeBracket === option,
+        (option) => {
+          onboardingAgeBracket = option;
+          ageBtn.disabled = !onboardingAgeBracket;
+        }
+      );
+      ageBtn.addEventListener("click", () => { if (onboardingAgeBracket) goToOnboardingStep(8); });
+
+    } else if (step === 8) {
+      const FACT_QUALIFYING_BRACKETS = ["Under 16", "16–18", "19–24"];
+      if (!FACT_QUALIFYING_BRACKETS.includes(onboardingAgeBracket)) {
+        goToOnboardingStep(9);
+        return;
+      }
+      content.innerHTML = `
+        <div class="onboarding-container" style="padding-top:4rem;">
+          <div style="font-size:var(--text-xl);font-weight:600;letter-spacing:-0.02em;margin-bottom:0.5rem;">People your age procrastinate more than any other age group — it's not just you.</div>
+          <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:1.5rem;">Based on research by Piers Steel, University of Calgary (2007 meta-analysis).</div>
+          <div style="font-size:var(--text-md);color:var(--text-secondary);line-height:1.6;margin-bottom:2.5rem;">You're ambitious, you've got real goals, and you're willing to put in the work — but almost everyone your age hits the same wall: no clear system, endless scrolling instead of starting, and then stress when the progress isn't showing up. That's what we're here for.</div>
+          <button id="obContinue" class="start-focus-btn">Continue</button>
+        </div>
+      `;
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(9));
+
+    } else if (step === 9) {
+      content.innerHTML = `
+        <div class="onboarding-container" style="padding-top:4rem;">
+          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">What kind of person do you want to become?</div>
+          <div id="obIdentityChips" class="ob-row-list"></div>
+          <button id="obContinue" class="start-focus-btn"${onboardingIdentity ? "" : " disabled"}>Continue</button>
+        </div>
+      `;
+      const identityBtn2 = document.getElementById("obContinue");
+      renderOnboardingChips(
+        document.getElementById("obIdentityChips"),
+        ONBOARDING_IDENTITY_OPTIONS,
+        (option) => onboardingIdentity === option,
+        (option) => {
+          onboardingIdentity = option;
+          identityBtn2.disabled = !onboardingIdentity;
+        }
+      );
+      identityBtn2.addEventListener("click", () => { if (onboardingIdentity) goToOnboardingStep(10); });
+
+    } else if (step === 10) {
+      const identityLower = onboardingIdentity ? (onboardingIdentity.charAt(0).toLowerCase() + onboardingIdentity.slice(1)) : "someone new";
+      content.innerHTML = `
+        <div class="onboarding-container" style="padding-top:4rem;">
+          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">You said you're becoming ${identityLower}. Time to make it real — one goal.</div>
+          <input type="text" id="obGoalName" placeholder="What's one goal that would prove it?" value="${onboardingGoalName}" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:1.5rem;">
+          <div id="obGoalCategoryChips" class="ob-row-list"></div>
+          <label style="display:block;font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:0.5rem;font-weight:500;">Why does this goal matter to you?</label>
+          <input type="text" id="obGoalWhy" placeholder="Be specific" value="${onboardingGoalWhy}" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:1.5rem;">
+          <label style="display:block;font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:0.5rem;font-weight:500;">How do you plan on achieving it?</label>
+          <input type="text" id="obGoalPlan" placeholder="Be specific" value="${onboardingGoalPlan}" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:1.5rem;">
+          <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:1.5rem;">This becomes your first tracked goal — a daily repeat you can adjust anytime in the Goals tab.</div>
+          <button id="obContinue" class="start-focus-btn">${onboardingGoalName ? "Continue" : "Skip for now"}</button>
+        </div>
+      `;
+      const goalNameInput = document.getElementById("obGoalName");
+      const goalWhyInput = document.getElementById("obGoalWhy");
+      const goalPlanInput = document.getElementById("obGoalPlan");
+      const catChipsWrap = document.getElementById("obGoalCategoryChips");
+      const goalContinueBtn = document.getElementById("obContinue");
+      goalNameInput.addEventListener("input", () => {
+        goalContinueBtn.textContent = goalNameInput.value.trim() ? "Continue" : "Skip for now";
+      });
+      ONBOARDING_CATEGORY_PRESETS.forEach(name => {
+        const color = onboardingCategoryColor(name);
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "ob-row";
+        const swatch = document.createElement("span");
+        swatch.className = "ob-row-swatch";
+        swatch.style.background = color;
+        const label = document.createElement("span");
+        label.className = "ob-row-name";
+        label.textContent = name;
+        const check = document.createElement("span");
+        check.className = "ob-row-check";
+        row.appendChild(swatch);
+        row.appendChild(label);
+        row.appendChild(check);
+        const styleSelf = () => {
+          row.classList.toggle("selected", onboardingGoalCategory === name);
+        };
+        styleSelf();
+        row.addEventListener("click", () => {
+          onboardingGoalCategory = name;
+          triggerHaptic("light");
+          swatch.style.transform = "scale(1.15)";
+          setTimeout(() => { swatch.style.transform = "scale(1)"; }, 200);
+          [...catChipsWrap.children].forEach(r => r.classList.toggle("selected", r === row));
+        });
+        catChipsWrap.appendChild(row);
+      });
+      goalContinueBtn.addEventListener("click", () => {
+        onboardingGoalName = goalNameInput.value.trim();
+        onboardingGoalWhy = onboardingGoalName ? goalWhyInput.value.trim() : "";
+        onboardingGoalPlan = onboardingGoalName ? goalPlanInput.value.trim() : "";
+        if (!onboardingGoalName) onboardingGoalCategory = "";
+        goToOnboardingStep(11);
+      });
+
+    } else if (step === 11) {
+      content.innerHTML = `
+        <div class="onboarding-container" style="padding-top:4rem;">
+          <div class="onboarding-reveal" id="obTrackLeadIn" style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:0.5rem;">Now let's set up a few tasks.</div>
+          <div class="onboarding-reveal" id="obTrackHeadline" style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">What do you want to track?</div>
           <div id="obCategoryChips" class="ob-row-list"></div>
           <button id="obContinue" class="start-focus-btn" ${onboardingCategories.length ? "" : "disabled"}>Continue</button>
         </div>
       `;
+      requestAnimationFrame(() => { document.getElementById("obTrackLeadIn").classList.add("ob-in"); });
+      setTimeout(() => { document.getElementById("obTrackHeadline").classList.add("ob-in"); }, 200);
       const chipsWrap = document.getElementById("obCategoryChips");
       const btn = document.getElementById("obContinue");
       ONBOARDING_CATEGORY_PRESETS.forEach(name => {
@@ -3060,13 +3288,13 @@ function renderAnalysis() {
         chipsWrap.appendChild(row);
       });
       btn.addEventListener("click", () => {
-        if (onboardingCategories.length) goToOnboardingStep(8);
+        if (onboardingCategories.length) goToOnboardingStep(12);
       });
 
-    } else if (step === 8) {
+    } else if (step === 12) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
-          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.5rem;">Let's seed a few tasks.</div>
+          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.5rem;">Let's get specific.</div>
           <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:1.5rem;">One per category — you can always add more later.</div>
           <div id="obSeedRows"></div>
           <button id="obContinue" class="start-focus-btn" style="margin-top:1rem;">Skip for now</button>
@@ -3084,13 +3312,14 @@ function renderAnalysis() {
       };
       onboardingCategories.forEach(catName => {
         const color = onboardingCategoryColor(catName);
+        const existing = onboardingSeedTasks.find(t => t.category === catName);
         const row = document.createElement("div");
         row.className = "ob-seed-row";
         row.dataset.cat = catName;
         row.style.cssText = "display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;transition:opacity 0.15s ease;";
         row.innerHTML = `
           <span style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0;"></span>
-          <input type="text" class="ob-seed-input" placeholder="something you'd do for ${catName}" style="flex:1;padding:0.55rem 0.7rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;">
+          <input type="text" class="ob-seed-input" placeholder="something you'd do for ${catName}" value="${existing ? existing.taskName : ""}" style="flex:1;padding:0.55rem 0.7rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;">
           <button type="button" class="ob-skip-row" style="background:none;border:none;color:var(--text-muted);font-size:var(--text-xs);text-decoration:underline;cursor:pointer;font-family:inherit;white-space:nowrap;">skip this one</button>
         `;
         rowsWrap.appendChild(row);
@@ -3108,6 +3337,7 @@ function renderAnalysis() {
         });
         input.addEventListener("input", updateSeedContinueLabel);
       });
+      updateSeedContinueLabel();
 
       continueBtn.addEventListener("click", () => {
         onboardingSeedTasks = [];
@@ -3118,10 +3348,10 @@ function renderAnalysis() {
           const val = input.value.trim();
           if (val) onboardingSeedTasks.push({ category: row.dataset.cat, taskName: val });
         });
-        goToOnboardingStep(9);
+        goToOnboardingStep(13);
       });
 
-    } else if (step === 9) {
+    } else if (step === 13) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;line-height:1.8;margin-bottom:2.5rem;">
@@ -3177,7 +3407,8 @@ function renderAnalysis() {
           taskSpecific: "Reflect tonight, and today locks in — no editing after. No more putting it off."
         }
       };
-      const causeOverride = CAUSE_LINE_OVERRIDES[onboardingTimeLostCause];
+      const primaryCause = onboardingTimeLostCauses[0];
+      const causeOverride = (primaryCause && primaryCause !== "I'm not sure.") ? CAUSE_LINE_OVERRIDES[primaryCause] : null;
       if (causeOverride) {
         lines = [...lines];
         lines[causeOverride.lineIndex] = firstSeedTask ? causeOverride.taskSpecific : causeOverride.generic;
@@ -3191,9 +3422,9 @@ function renderAnalysis() {
       document.getElementById("obSolvesLine1").textContent = lines[0];
       document.getElementById("obSolvesLine2").textContent = lines[1];
       document.getElementById("obSolvesLine3").textContent = lines[2];
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(10));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(14));
 
-    } else if (step === 10) {
+    } else if (step === 14) {
       const svgWidth = 320, svgHeight = 160, padding = 20;
       const totalDays = 365;
       const maxVal = Math.pow(1.01, totalDays);
@@ -3207,26 +3438,30 @@ function renderAnalysis() {
       const pathD = "M" + points.join(" L");
       const day90X = padding + (90 / totalDays) * (svgWidth - padding * 2);
       const baseY = svgHeight - padding;
+      const groundingLine = onboardingIdentity
+        ? `One task done. One Deep Work session. One night of reflection. That's the 1% that compounds into ${onboardingIdentity.charAt(0).toLowerCase() + onboardingIdentity.slice(1)}.`
+        : "One task done. One Deep Work session. One night of reflection. That's the 1%.";
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">Small, consistent gains compound.</div>
-          <svg viewBox="0 0 ${svgWidth} ${svgHeight}" width="100%" style="max-width:320px;margin:0 auto 1rem;display:block;">
+          <svg viewBox="0 0 ${svgWidth} ${svgHeight}" width="100%" style="margin-bottom:1rem;display:block;">
             <line x1="${padding}" y1="${baseY}" x2="${svgWidth - padding}" y2="${baseY}" stroke="var(--border)" stroke-width="1"></line>
             <path d="${pathD}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
             <text x="${padding}" y="${svgHeight - 4}" font-size="10" fill="var(--text-muted)" text-anchor="start">Day 1</text>
             <text x="${day90X}" y="${svgHeight - 4}" font-size="10" fill="var(--text-muted)" text-anchor="middle">Day 90</text>
             <text x="${svgWidth - padding}" y="${svgHeight - 4}" font-size="10" fill="var(--text-muted)" text-anchor="end">Day 365</text>
           </svg>
-          <div style="font-size:var(--text-sm);color:var(--text-muted);line-height:1.6;margin-bottom:2rem;">1% better each day compounds to roughly 38x over a year.</div>
+          <div style="font-size:var(--text-sm);color:var(--text-muted);line-height:1.6;margin-bottom:0.5rem;">1% better each day compounds to roughly 38x over a year.</div>
+          <div style="font-size:var(--text-sm);color:var(--text-muted);line-height:1.6;margin-bottom:2rem;">${groundingLine}</div>
           <button id="obContinue" class="start-focus-btn">Continue</button>
         </div>
       `;
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(11));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(15));
 
-    } else if (step === 11) {
+    } else if (step === 15) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
-          <div id="obDemoLabel" style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1.5rem;transition:opacity 200ms ease;">Try it.</div>
+          <div id="obDemoLabel" style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1.5rem;transition:opacity 200ms ease;">Tap a dot to see what a streak feels like.</div>
           <div id="obDemoDots" style="display:flex;gap:6px;justify-content:center;margin-bottom:2.5rem;opacity:0.4;transition:opacity 200ms ease;pointer-events:none;"></div>
           <button id="obContinue" class="start-focus-btn">Continue</button>
         </div>
@@ -3269,13 +3504,12 @@ function renderAnalysis() {
         dotsWrap.style.opacity = "1";
         dotsWrap.style.pointerEvents = "auto";
       }, 450);
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(12));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(16));
 
-    } else if (step === 12) {
+    } else if (step === 16) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
           <div id="obSynthesisHeading" style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;"></div>
-          <div id="obSynthesisDeeper" style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:1.5rem;"></div>
           <div style="text-align:left;">
             <div class="ob-section-label">Categories</div>
             <div id="obSynthesisCategories"></div>
@@ -3286,12 +3520,6 @@ function renderAnalysis() {
         </div>
       `;
       document.getElementById("obSynthesisHeading").textContent = `${onboardingName}, here's what we set up:`;
-      const deeperEl = document.getElementById("obSynthesisDeeper");
-      if (onboardingDeeperAnswer.length) {
-        deeperEl.textContent = `Focused on: ${onboardingDeeperAnswer[0].toLowerCase()}`;
-      } else {
-        deeperEl.style.display = "none";
-      }
       const catsWrap = document.getElementById("obSynthesisCategories");
       onboardingCategories.forEach(catName => {
         const row = document.createElement("div");
@@ -3325,10 +3553,10 @@ function renderAnalysis() {
       }
       document.getElementById("obContinue").addEventListener("click", () => {
         finalizeOnboardingData();
-        goToOnboardingStep(13);
+        goToOnboardingStep(17);
       });
 
-    } else if (step === 13) {
+    } else if (step === 17) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:8rem;">
           <div style="background:var(--bg-card);border-radius:var(--radius-md);padding:1.5rem;box-shadow:var(--shadow-card);">
@@ -3357,6 +3585,26 @@ function renderAnalysis() {
         done: false, order: maxOrder + 1, recurrence: { type: "none" }, completedDates: [], isGoal: false
       });
     });
+
+    if (onboardingGoalName) {
+      if (onboardingGoalCategory && !categories.some(c => c.name === onboardingGoalCategory)) {
+        categories.push({ name: onboardingGoalCategory, color: onboardingCategoryColor(onboardingGoalCategory) });
+      }
+      const goalCategory = onboardingGoalCategory || (categories[0] ? categories[0].name : "");
+      const dateTasks = tasks.filter(t => t.date === today);
+      const maxOrder = dateTasks.length ? Math.max(...dateTasks.map(t => t.order ?? 0)) : -1;
+      const endD = new Date(today + "T00:00:00");
+      endD.setDate(endD.getDate() + 30);
+      tasks.push({
+        id: Date.now().toString() + Math.random().toString(36).slice(2, 7),
+        name: onboardingGoalName, category: goalCategory, time: "", duration: "",
+        date: today, endDate: toDateStr(endD),
+        done: false, order: maxOrder + 1, recurrence: { type: "daily" }, completedDates: [],
+        isGoal: true, checkoffLabel: onboardingGoalName, why: onboardingGoalWhy, plan: onboardingGoalPlan
+      });
+    }
+
+    localStorage.setItem("userIdentity", onboardingIdentity);
 
     save();
   }
