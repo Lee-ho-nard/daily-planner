@@ -2788,6 +2788,7 @@ function renderAnalysis() {
     "No idea, probably more than I think": 1.5
   };
   const ONBOARDING_AGE_OPTIONS = ["Under 16", "16–18", "19–24", "25+"];
+  const FACT_QUALIFYING_AGE_BRACKETS = ["Under 16", "16–18", "19–24"];
   const ONBOARDING_IDENTITY_OPTIONS = [
     "Someone who shows up, even on the bad days",
     "Someone who finishes what they start",
@@ -2916,7 +2917,12 @@ function renderAnalysis() {
   }
 
   document.getElementById("onboardingBackBtn").addEventListener("click", () => {
-    if (currentOnboardingStep > 1) goToOnboardingStep(currentOnboardingStep - 1);
+    if (currentOnboardingStep <= 1) return;
+    let prevStep = currentOnboardingStep - 1;
+    if (currentOnboardingStep === 8 && !FACT_QUALIFYING_AGE_BRACKETS.includes(onboardingAgeBracket)) {
+      prevStep = 6;
+    }
+    goToOnboardingStep(prevStep);
   });
 
   function renderOnboardingStep() {
@@ -2937,7 +2943,7 @@ function renderAnalysis() {
             <button type="button" id="obHookYeah" class="cat-pill">Come with us.</button>
           </div>
           <div class="onboarding-hook-subtext" id="obHookLine3">You're building something real. Most days, there's no system keeping track of it.</div>
-          <button id="obContinue" class="start-focus-btn onboarding-reveal">Continue.</button>
+          <button id="obContinue" class="start-focus-btn onboarding-reveal">Continue</button>
         </div>
       `;
       requestAnimationFrame(() => { document.getElementById("obHookLine1").classList.add("ob-in"); });
@@ -3085,8 +3091,7 @@ function renderAnalysis() {
       ageBtn.addEventListener("click", () => { if (onboardingAgeBracket) goToOnboardingStep(7); });
 
     } else if (step === 7) {
-      const FACT_QUALIFYING_BRACKETS = ["Under 16", "16–18", "19–24"];
-      if (!FACT_QUALIFYING_BRACKETS.includes(onboardingAgeBracket)) {
+      if (!FACT_QUALIFYING_AGE_BRACKETS.includes(onboardingAgeBracket)) {
         goToOnboardingStep(8);
         return;
       }
