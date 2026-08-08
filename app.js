@@ -242,10 +242,31 @@
   document.getElementById("tabFocus").addEventListener("click", () => switchView("focus"));
 
   // --- Goals ---
+  function renderGoalsIdentityCard(goalTasks) {
+    const card = document.getElementById("goalsIdentityCard");
+    const identity = localStorage.getItem("userIdentity");
+    if (!identity) { card.innerHTML = ""; return; }
+    let bestStreak = 0;
+    let bestGoalName = "";
+    goalTasks.forEach(g => {
+      const streak = computeStreak(g);
+      if (streak > bestStreak) { bestStreak = streak; bestGoalName = g.name; }
+    });
+    if (bestStreak < 3) { card.innerHTML = ""; return; }
+    card.innerHTML = `
+      <div style="background:var(--bg-card);border-radius:var(--radius-md);padding:1.1rem;margin-bottom:0.7rem;box-shadow:var(--shadow-card);">
+        <div style="font-size:var(--text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:0.4rem;">Becoming</div>
+        <div style="font-size:var(--text-lg);font-weight:600;margin-bottom:0.35rem;">${identity}</div>
+        <div style="font-size:var(--text-sm);color:var(--text-muted);">${bestStreak}-day streak on ${bestGoalName}</div>
+      </div>
+    `;
+  }
+
   function renderGoals() {
     const listEl = document.getElementById("goalsList");
     listEl.innerHTML = "";
     const goalTasks = tasks.filter(t => t.isGoal);
+    renderGoalsIdentityCard(goalTasks);
 
     if (goalTasks.length === 0) {
       const msg = document.createElement("div");
@@ -1760,9 +1781,62 @@ function renderAnalysis() {
   ];
   let selectedSession = 0;
 
+  function isPremiumUser() {
+    return localStorage.getItem("isPremium") === "true";
+  }
+
+  function logDeepWorkSession(session, workMinutes) {
+    const sessions = JSON.parse(localStorage.getItem("deepWorkSessions")) || [];
+    sessions.push({ date: toDateStr(new Date()), sessionName: session.name, durationMinutes: workMinutes, note: "" });
+    localStorage.setItem("deepWorkSessions", JSON.stringify(sessions));
+    return sessions.length - 1;
+  }
+
+  function saveDeepWorkSessionNote(sessionIndex, note) {
+    const sessions = JSON.parse(localStorage.getItem("deepWorkSessions")) || [];
+    if (sessions[sessionIndex]) {
+      sessions[sessionIndex].note = note;
+      localStorage.setItem("deepWorkSessions", JSON.stringify(sessions));
+    }
+  }
+
+  function renderDeepWorkStats() {
+    const el = document.getElementById("deepWorkStats");
+    if (!isPremiumUser()) {
+      el.innerHTML = `<div class="deep-work-stats-teaser">Unlock session history and stats with Premium</div>`;
+      return;
+    }
+    const sessions = JSON.parse(localStorage.getItem("deepWorkSessions")) || [];
+    const today = new Date();
+    const weekStart = new Date(today);
+    weekStart.setDate(weekStart.getDate() - 6);
+    const weekStartStr = toDateStr(weekStart);
+    const weekMinutes = sessions.filter(s => s.date >= weekStartStr).reduce((sum, s) => sum + s.durationMinutes, 0);
+    const weekHours = (weekMinutes / 60).toFixed(1);
+
+    const sessionDates = new Set(sessions.map(s => s.date));
+    let streak = 0;
+    const cursor = new Date(today);
+    while (sessionDates.has(toDateStr(cursor))) {
+      streak++;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+
+    const longestSession = sessions.length ? Math.max(...sessions.map(s => s.durationMinutes)) : 0;
+
+    el.innerHTML = `
+      <div class="deep-work-stats-row">
+        <div class="deep-work-stat"><div class="deep-work-stat-value">${weekHours}h</div><div class="deep-work-stat-label">This week</div></div>
+        <div class="deep-work-stat"><div class="deep-work-stat-value">${streak}</div><div class="deep-work-stat-label">Day streak</div></div>
+        <div class="deep-work-stat"><div class="deep-work-stat-value">${longestSession}m</div><div class="deep-work-stat-label">Longest session</div></div>
+      </div>
+    `;
+  }
+
   function renderFocus() {
     document.getElementById("focusSetup").style.display = "block";
     document.getElementById("focusTimerScreen").style.display = "none";
+    renderDeepWorkStats();
 
     const grid = document.getElementById("focusSessionGrid");
     grid.innerHTML = "";
@@ -1847,14 +1921,34 @@ function renderAnalysis() {
     }, 150);
   }
 
-  function showSessionCompleteScreen(session, workMinutes, onDone) {
+  function showSessionCompleteScreen(session, workMinutes, sessionIndex, onDone) {
     const screen = document.getElementById("sessionCompleteScreen");
     document.getElementById("sessionCompleteInfo").textContent = `${session.name} session — ${workMinutes} minutes`;
     screen.classList.add("visible");
     setTimeout(() => {
       screen.classList.remove("visible");
-      onDone();
+      if (isPremiumUser()) {
+        showSessionNoteScreen(sessionIndex, onDone);
+      } else {
+        onDone();
+      }
     }, 1200);
+  }
+
+  function showSessionNoteScreen(sessionIndex, onDone) {
+    const overlay = document.getElementById("sessionNoteOverlay");
+    const input = document.getElementById("sessionNoteInput");
+    input.value = "";
+    openModal(overlay);
+    setTimeout(() => input.focus(), 50);
+
+    function finish(note) {
+      if (note !== null) saveDeepWorkSessionNote(sessionIndex, note);
+      closeModal(overlay);
+      onDone();
+    }
+    document.getElementById("sessionNoteSaveBtn").addEventListener("click", () => finish(input.value.trim()), { once: true });
+    document.getElementById("sessionNoteSkipBtn").addEventListener("click", () => finish(null), { once: true });
   }
 
   function tick() {
@@ -1865,7 +1959,8 @@ function renderAnalysis() {
       updateTimerDisplay();
       const session = SESSIONS[selectedSession];
       const workMinutes = Math.round(totalSeconds / 60);
-      showSessionCompleteScreen(session, workMinutes, () => {
+      const sessionIndex = logDeepWorkSession(session, workMinutes);
+      showSessionCompleteScreen(session, workMinutes, sessionIndex, () => {
         endTimer();
       });
       return;
@@ -1906,6 +2001,7 @@ function renderAnalysis() {
     clearInterval(timerInterval);
     timerRunning = false;
     document.body.classList.remove("timer-active");
+    renderDeepWorkStats();
     crossfadeFocusScreens(document.getElementById("focusTimerScreen"), document.getElementById("focusSetup"));
   }
 
@@ -2227,8 +2323,8 @@ function renderAnalysis() {
     const wrap = document.getElementById("onboardingProgressWrap");
     const stepIndicator = document.getElementById("onboardingStepIndicator");
     const PROGRESS_START = 3;    // first step the progress bar appears on (time-lost question)
-    const PROGRESS_END = 15;     // step where progress reaches 100% (synthesis)
-    const PROGRESS_EXCLUDE = 14; // step with no bar/indicator (streak preview)
+    const PROGRESS_END = 14;     // step where progress reaches 100% (synthesis)
+    const PROGRESS_EXCLUDE = 13; // step with no bar/indicator (streak preview)
     const showProgress = currentOnboardingStep >= PROGRESS_START && currentOnboardingStep <= PROGRESS_END && currentOnboardingStep !== PROGRESS_EXCLUDE;
     wrap.style.display = showProgress ? "block" : "none";
     if (showProgress) {
@@ -2257,30 +2353,15 @@ function renderAnalysis() {
     }, 180);
   }
 
-  // Resolves a target onboarding step to its final destination, following any
-  // auto-skip rules (currently: step 7's fact screen for non-qualifying age
-  // brackets) so navigation only ever performs a single transition instead of
-  // landing on a step that immediately redirects again. `direction` controls
-  // which way a skip moves (+1 forward, -1 backward) and the loop lets skips
-  // chain if more are ever added.
-  function resolveOnboardingStep(n, direction = 1) {
-    let step = n;
-    while (step === 7 && !FACT_QUALIFYING_AGE_BRACKETS.includes(onboardingAgeBracket)) {
-      step += direction;
-    }
-    return step;
-  }
-
   document.getElementById("onboardingBackBtn").addEventListener("click", () => {
     if (currentOnboardingStep <= 1) return;
-    const prevStep = resolveOnboardingStep(currentOnboardingStep - 1, -1);
-    goToOnboardingStep(prevStep);
+    goToOnboardingStep(currentOnboardingStep - 1);
   });
 
   function renderOnboardingStep() {
     updateOnboardingProgress();
     updateOnboardingBackButton();
-    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1 || currentOnboardingStep === 14);
+    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1 || currentOnboardingStep === 13);
     const content = document.getElementById("onboardingContent");
     const step = currentOnboardingStep;
 
@@ -2305,7 +2386,7 @@ function renderAnalysis() {
       }, 900);
       setTimeout(() => {
         document.getElementById("obHookPrompt").classList.add("ob-in");
-      }, 1800);
+      }, 3000);
       document.getElementById("obHookYeah").addEventListener("click", () => {
         const prompt = document.getElementById("obHookPrompt");
         prompt.classList.remove("ob-in");
@@ -2339,7 +2420,7 @@ function renderAnalysis() {
     } else if (step === 3) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
-          <div class="onboarding-reveal" id="obConsiderGreeting" style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;">Alright, ${onboardingName}.</div>
+          <div class="onboarding-reveal" id="obConsiderGreeting" style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;">${onboardingName}.</div>
           <div class="onboarding-reveal" id="obConsiderLine1" style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;">Most days slip by without anyone tracking where the time went.</div>
           <div class="onboarding-reveal" id="obConsiderBody">
             <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;">How much time do you think you lose most days?</div>
@@ -2402,7 +2483,7 @@ function renderAnalysis() {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;line-height:1.6;margin-bottom:2.5rem;">
-            <div>If you get even some of that back, that's <span style="color:var(--accent);">roughly ${weekly} hours a week</span> —</div>
+            <div>If you get even some of that back, that's <span style="color:var(--accent);">roughly ${weekly} hours a week</span>,</div>
             <div style="font-size:var(--text-md);color:var(--text-secondary);margin-top:0.5rem;">about ${yearly} hours a year.</div>
           </div>
           <button id="obContinue" class="start-focus-btn">Continue</button>
@@ -2411,25 +2492,6 @@ function renderAnalysis() {
       document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(5));
 
     } else if (step === 5) {
-      content.innerHTML = `
-        <div class="onboarding-container" style="padding-top:4rem;">
-          <div class="onboarding-reveal" id="obEndDayLeadIn" style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;">Quick thing before we go further.</div>
-          <div class="onboarding-reveal" id="obEndDayBody">
-            <i data-lucide="clock" id="obTwoMinIcon" class="ob-anchor-icon"></i>
-            <div style="font-size:var(--text-xl);font-weight:600;letter-spacing:-0.02em;margin-bottom:2.5rem;">At the end of each day, you'll tap End Day and write a quick reflection — that locks today in, no more editing after. A couple minutes, then you're set for tomorrow.</div>
-            <button id="obContinue" class="start-focus-btn">Continue</button>
-          </div>
-        </div>
-      `;
-      lucide.createIcons();
-      requestAnimationFrame(() => { document.getElementById("obEndDayLeadIn").classList.add("ob-in"); });
-      setTimeout(() => {
-        document.getElementById("obEndDayBody").classList.add("ob-in");
-        document.getElementById("obTwoMinIcon").classList.add("ob-in");
-      }, 300);
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(6));
-
-    } else if (step === 6) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">How old are you?</div>
@@ -2447,24 +2509,30 @@ function renderAnalysis() {
           ageBtn.disabled = !onboardingAgeBracket;
         }
       );
-      ageBtn.addEventListener("click", () => { if (onboardingAgeBracket) goToOnboardingStep(resolveOnboardingStep(7)); });
+      ageBtn.addEventListener("click", () => { if (onboardingAgeBracket) goToOnboardingStep(6); });
 
-    } else if (step === 7) {
-      if (!FACT_QUALIFYING_AGE_BRACKETS.includes(onboardingAgeBracket)) {
-        goToOnboardingStep(8);
-        return;
-      }
+    } else if (step === 6) {
+      const isQualifyingAge = FACT_QUALIFYING_AGE_BRACKETS.includes(onboardingAgeBracket);
+      const factHeadline = isQualifyingAge
+        ? "People your age procrastinate more than any other age group. It's not just you."
+        : "About 1 in 5 people are chronic procrastinators. It's more common than people admit.";
+      const factCaption = isQualifyingAge
+        ? "Based on research by Piers Steel, University of Calgary (2007 meta-analysis)."
+        : "Based on research by Piers Steel, University of Calgary.";
+      const factBody = isQualifyingAge
+        ? "You're ambitious, you've got real goals, and you're willing to put in the work, but almost everyone your age hits the same wall: no clear system, endless scrolling instead of starting, and then stress when the progress isn't showing up. That's what we're here for."
+        : "You've got real goals and the drive to hit them, but almost everyone hits the same wall: no clear system, constant small distractions, and stress when progress isn't visible day to day. That's what we're here for.";
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
-          <div style="font-size:var(--text-xl);font-weight:600;letter-spacing:-0.02em;margin-bottom:0.5rem;">People your age procrastinate more than any other age group — it's not just you.</div>
-          <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:1.5rem;">Based on research by Piers Steel, University of Calgary (2007 meta-analysis).</div>
-          <div style="font-size:var(--text-md);color:var(--text-secondary);line-height:1.6;margin-bottom:2.5rem;">You're ambitious, you've got real goals, and you're willing to put in the work — but almost everyone your age hits the same wall: no clear system, endless scrolling instead of starting, and then stress when the progress isn't showing up. That's what we're here for.</div>
+          <div style="font-size:var(--text-xl);font-weight:600;letter-spacing:-0.02em;margin-bottom:0.5rem;">${factHeadline}</div>
+          <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:1.5rem;">${factCaption}</div>
+          <div style="font-size:var(--text-md);color:var(--text-secondary);line-height:1.6;margin-bottom:2.5rem;">${factBody}</div>
           <button id="obContinue" class="start-focus-btn">Continue</button>
         </div>
       `;
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(8));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(7));
 
-    } else if (step === 8) {
+    } else if (step === 7) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">What kind of person do you want to become?</div>
@@ -2482,20 +2550,20 @@ function renderAnalysis() {
           identityBtn2.disabled = !onboardingIdentity;
         }
       );
-      identityBtn2.addEventListener("click", () => { if (onboardingIdentity) goToOnboardingStep(9); });
+      identityBtn2.addEventListener("click", () => { if (onboardingIdentity) goToOnboardingStep(8); });
 
-    } else if (step === 9) {
+    } else if (step === 8) {
       const identityLower = onboardingIdentity ? (onboardingIdentity.charAt(0).toLowerCase() + onboardingIdentity.slice(1)) : "someone new";
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
-          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">You said you're becoming ${identityLower}. Time to make it real — one goal.</div>
+          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">You said you're becoming ${identityLower}. Time to make it real: one goal.</div>
           <input type="text" id="obGoalName" placeholder="What's one goal that would prove it?" value="${onboardingGoalName}" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:1.5rem;">
           <div id="obGoalCategoryChips" class="ob-row-list"></div>
           <label style="display:block;font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:0.5rem;font-weight:500;">Why does this goal matter to you?</label>
           <input type="text" id="obGoalWhy" placeholder="Be specific" value="${onboardingGoalWhy}" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:1.5rem;">
           <label style="display:block;font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:0.5rem;font-weight:500;">How do you plan on achieving it?</label>
           <input type="text" id="obGoalPlan" placeholder="Be specific" value="${onboardingGoalPlan}" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:1.5rem;">
-          <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:1.5rem;">This becomes your first tracked goal — a daily repeat you can adjust anytime in the Goals tab.</div>
+          <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:1.5rem;">This becomes your first tracked goal, a daily repeat you can adjust anytime in the Goals tab.</div>
           <button id="obContinue" class="start-focus-btn">${onboardingGoalName ? "Continue" : "Skip for now"}</button>
         </div>
       `;
@@ -2541,10 +2609,10 @@ function renderAnalysis() {
         onboardingGoalWhy = onboardingGoalName ? goalWhyInput.value.trim() : "";
         onboardingGoalPlan = onboardingGoalName ? goalPlanInput.value.trim() : "";
         if (!onboardingGoalName) onboardingGoalCategory = "";
-        goToOnboardingStep(10);
+        goToOnboardingStep(9);
       });
 
-    } else if (step === 10) {
+    } else if (step === 9) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div class="onboarding-reveal" id="obTrackLeadIn" style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:0.5rem;">Now let's set up a few tasks.</div>
@@ -2589,14 +2657,14 @@ function renderAnalysis() {
         chipsWrap.appendChild(row);
       });
       btn.addEventListener("click", () => {
-        if (onboardingCategories.length) goToOnboardingStep(11);
+        if (onboardingCategories.length) goToOnboardingStep(10);
       });
 
-    } else if (step === 11) {
+    } else if (step === 10) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.5rem;">Let's get specific.</div>
-          <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:1.5rem;">One per category — you can always add more later.</div>
+          <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:1.5rem;">One per category. You can always add more later.</div>
           <div id="obSeedRows"></div>
           <button id="obContinue" class="start-focus-btn" style="margin-top:1rem;">Skip for now</button>
         </div>
@@ -2649,10 +2717,10 @@ function renderAnalysis() {
           const val = input.value.trim();
           if (val) onboardingSeedTasks.push({ category: row.dataset.cat, taskName: val });
         });
-        goToOnboardingStep(12);
+        goToOnboardingStep(11);
       });
 
-    } else if (step === 12) {
+    } else if (step === 11) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;line-height:1.8;margin-bottom:2.5rem;">
@@ -2669,9 +2737,9 @@ function renderAnalysis() {
       requestAnimationFrame(() => { document.getElementById("obSolvesHeader").classList.add("ob-in"); });
       setTimeout(() => { document.getElementById("obSolvesLines").classList.add("ob-in"); }, 200);
       const genericLines = [
-        "The streak shows what actually happened — not what you meant to do.",
+        "The streak shows what actually happened. Not what you meant to do.",
         "Deep Work locks out everything but one task.",
-        "Reflection ends the day — no editing after."
+        "Reflection ends the day. No editing after."
       ];
       const firstSeedTask = onboardingSeedTasks.find(t => t.taskName && t.taskName.trim());
       let headerText = "";
@@ -2681,7 +2749,7 @@ function renderAnalysis() {
         lines = [
           "Complete it today, and it counts toward a streak.",
           "Run a Deep Work session on it, and everything else disappears until it's done.",
-          "Reflect tonight, and today locks in — no editing after."
+          "Reflect tonight, and today locks in. No editing after."
         ];
       } else if (onboardingCategories.length) {
         headerText = `You set up ${onboardingCategories.join(", ")}. Here's what happens from here:`;
@@ -2689,23 +2757,23 @@ function renderAnalysis() {
       const CAUSE_LINE_OVERRIDES = {
         "No clear plan": {
           lineIndex: 0,
-          generic: "The streak shows what actually happened — real progress, not just a plan you meant to follow.",
-          taskSpecific: "Complete it today, and it counts toward a streak — real progress, not just a plan you meant to follow."
+          generic: "The streak shows what actually happened. Real progress, not just a plan you meant to follow.",
+          taskSpecific: "Complete it today, and it counts toward a streak. Real progress, not just a plan you meant to follow."
         },
         "Jumping between tasks": {
           lineIndex: 1,
-          generic: "Deep Work locks out everything but one task — no more jumping between tasks.",
-          taskSpecific: "Run a Deep Work session on it, and everything else disappears until it's done — no more jumping between tasks."
+          generic: "Deep Work locks out everything but one task. No more jumping between tasks.",
+          taskSpecific: "Run a Deep Work session on it, and everything else disappears until it's done. No more jumping between tasks."
         },
         "Phone / distractions": {
           lineIndex: 1,
-          generic: "Deep Work locks out everything but one task — no other tasks pulling at you, nothing to switch to.",
-          taskSpecific: "Run a Deep Work session on it, and everything else disappears until it's done — no other tasks pulling at you, nothing to switch to."
+          generic: "Deep Work locks out everything but one task. No other tasks pulling at you, nothing to switch to.",
+          taskSpecific: "Run a Deep Work session on it, and everything else disappears until it's done. No other tasks pulling at you, nothing to switch to."
         },
         "Procrastinating before starting": {
           lineIndex: 2,
-          generic: "Reflection ends the day — no editing after. No more putting it off.",
-          taskSpecific: "Reflect tonight, and today locks in — no editing after. No more putting it off."
+          generic: "Reflection ends the day. No editing after. No more putting it off.",
+          taskSpecific: "Reflect tonight, and today locks in. No editing after. No more putting it off."
         }
       };
       const primaryCause = onboardingTimeLostCauses[0];
@@ -2723,9 +2791,9 @@ function renderAnalysis() {
       document.getElementById("obSolvesLine1").textContent = lines[0];
       document.getElementById("obSolvesLine2").textContent = lines[1];
       document.getElementById("obSolvesLine3").textContent = lines[2];
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(13));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(12));
 
-    } else if (step === 13) {
+    } else if (step === 12) {
       const svgWidth = 320, svgHeight = 160, padding = 20;
       const totalDays = 365;
       const maxVal = Math.pow(1.01, totalDays);
@@ -2757,9 +2825,9 @@ function renderAnalysis() {
           <button id="obContinue" class="start-focus-btn">Continue</button>
         </div>
       `;
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(14));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(13));
 
-    } else if (step === 14) {
+    } else if (step === 13) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Your first streak starts tonight.</div>
@@ -2775,9 +2843,9 @@ function renderAnalysis() {
         dot.className = "goal-dot future";
         dotsWrap.appendChild(dot);
       }
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(15));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(14));
 
-    } else if (step === 15) {
+    } else if (step === 14) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
           <div id="obSynthesisHeading" style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;"></div>
@@ -2804,7 +2872,7 @@ function renderAnalysis() {
         label.textContent = catName;
         const sub = document.createElement("span");
         sub.className = "ob-readonly-sub";
-        sub.textContent = seedTask ? seedTask.taskName : "No task added yet — add one in the Planner.";
+        sub.textContent = seedTask ? seedTask.taskName : "No task added yet. Add one in the Planner.";
         info.appendChild(label);
         info.appendChild(sub);
         row.appendChild(swatch);
@@ -2813,14 +2881,14 @@ function renderAnalysis() {
       });
       document.getElementById("obContinue").addEventListener("click", () => {
         finalizeOnboardingData();
-        goToOnboardingStep(16);
+        goToOnboardingStep(15);
       });
 
-    } else if (step === 16) {
+    } else if (step === 15) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:8rem;">
           <div style="background:var(--bg-card);border-radius:var(--radius-md);padding:1.5rem;box-shadow:var(--shadow-card);">
-            <div style="font-size:var(--text-md);font-weight:600;margin-bottom:1rem;">A couple things are still on the way — deeper insights, more focus presets. Everything else is ready now.</div>
+            <div style="font-size:var(--text-md);font-weight:600;margin-bottom:1rem;">A couple things are still on the way: deeper insights, more focus presets. Everything else is ready now.</div>
             <button id="obContinue" class="start-focus-btn">Continue</button>
           </div>
         </div>

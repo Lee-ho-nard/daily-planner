@@ -49,6 +49,7 @@
   </div>
 
   <div id="goalsView" style="display:none;">
+    <div id="goalsIdentityCard"></div>
     <ul id="goalsList"></ul>
   </div>
 
@@ -95,32 +96,34 @@
     <button id="reflBackBtn" class="start-focus-btn" style="background:var(--border);color:var(--text-primary);display:none;">Back</button>
   </div>
   <div id="focusView">
+    <div class="timer-icon-controls">
+      <button id="pauseResumeBtn" class="timer-icon-btn" title="Pause"><i data-lucide="pause" class="icon"></i></button>
+      <button id="stopSessionBtn" class="timer-icon-btn" title="End session"><i data-lucide="x" class="icon"></i></button>
+    </div>
     <div class="focus-container">
       <div id="focusSetup">
         <div class="focus-title">Deep Work</div>
         <div class="focus-subtitle">One task. No distractions.</div>
-  
+
+        <div id="deepWorkStats"></div>
+
         <div class="focus-session-grid" id="focusSessionGrid"></div>
-  
+
         <div class="custom-minutes-row" id="customMinutesRow" style="display:none;">
           <label>Custom minutes</label>
           <input type="number" id="customMinutesInput" min="1" placeholder="e.g. 40">
           <div class="field-error" id="customMinutesError"></div>
         </div>
-  
+
         <div class="focus-top3">
           <div class="focus-heading">Today's Top 3</div>
           <div id="focusTopTasks"></div>
         </div>
-  
+
         <button id="startFocusBtn" class="start-focus-btn">Start Session</button>
       </div>
-  
+
       <div id="focusTimerScreen">
-        <div class="timer-icon-controls">
-          <button id="pauseResumeBtn" class="timer-icon-btn" title="Pause"><i data-lucide="pause" class="icon"></i></button>
-          <button id="stopSessionBtn" class="timer-icon-btn" title="End session"><i data-lucide="x" class="icon"></i></button>
-        </div>
         <div class="timer-ring-wrap">
           <svg id="timerRing" viewBox="0 0 200 200" width="240" height="240"></svg>
           <div class="timer-time" id="timerTime">25:00</div>
@@ -148,6 +151,17 @@
     <i data-lucide="check-circle-2" class="session-complete-icon"></i>
     <div class="session-complete-info" id="sessionCompleteInfo"></div>
     <div class="session-complete-text">Session complete.</div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="sessionNoteOverlay">
+  <div class="modal">
+    <h3>What did you get done? (optional)</h3>
+    <input type="text" id="sessionNoteInput" placeholder="e.g. Finished the first draft" maxlength="140">
+    <div class="modal-actions">
+      <button class="btn-cancel" id="sessionNoteSkipBtn">Skip</button>
+      <button class="btn-save" id="sessionNoteSaveBtn">Save</button>
+    </div>
   </div>
 </div>
 
