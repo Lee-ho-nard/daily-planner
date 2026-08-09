@@ -976,6 +976,19 @@
     });
   }
 
+  // Lets normal vertical wheel/trackpad input scroll the horizontally-
+  // scrolling swatch row, instead of requiring a manual horizontal drag.
+  // Attached once to the static row elements (buildColorSwatches only
+  // rebuilds their contents), and left alone for touch so native swipe
+  // still works untouched.
+  document.querySelectorAll(".color-swatches").forEach(wrap => {
+    wrap.addEventListener("wheel", (e) => {
+      if (e.deltaY === 0) return;
+      wrap.scrollLeft += e.deltaY;
+      e.preventDefault();
+    }, { passive: false });
+  });
+
   function openCategoryModal() {
     document.getElementById("catName").value = "";
     selectedColor = PALETTE[0];
@@ -1082,9 +1095,14 @@
       row.appendChild(label);
       row.appendChild(check);
       row.addEventListener("click", () => {
+        triggerHaptic("light");
+        swatch.style.transform = "scale(1.15)";
         localStorage.setItem("selectedTheme", key);
         applySelectedTheme();
-        renderThemeOptions();
+        setTimeout(() => {
+          swatch.style.transform = "scale(1)";
+          renderThemeOptions();
+        }, 200);
       });
       wrap.appendChild(row);
     });
@@ -1129,6 +1147,7 @@
       lockedDays: JSON.parse(localStorage.getItem("lockedDays")) || []
     };
     downloadFile(`planner-export-${toDateStr(new Date())}.json`, JSON.stringify(data, null, 2), "application/json");
+    showToast("Exported — check your downloads.", "success");
   }
 
   function exportDataAsCsv() {
@@ -1155,6 +1174,7 @@
       reflLines.push([csvEscape(date), csvEscape(entry.wentWell), csvEscape(entry.improve)].join(","));
     });
     downloadFile(`planner-export-reflections-${dateStr}.csv`, reflLines.join("\n"), "text/csv");
+    showToast("Exported — check your downloads.", "success");
   }
 
   const exportOverlay = document.getElementById("exportModalOverlay");
@@ -1170,6 +1190,7 @@
   applySelectedTheme();
   updateThemesBtnVisibility();
   updateExportBtnVisibility();
+  updateSearchReflectionsBtnVisibility();
 
   const micBtn = document.getElementById("micBtn");
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -2170,9 +2191,28 @@ let currentRange = "week";
     { name: "Sprint", icon: "zap", time: "25 / 5", work: 25 },
     { name: "Flow", icon: "waves", time: "50 / 10", work: 50 },
     { name: "Ultra", icon: "flame", time: "90 / 20", work: 90 },
+    { name: "Micro", icon: "zap-off", time: "10 / 2", work: 10 },
+    { name: "Marathon", icon: "mountain", time: "120 / 30", work: 120 },
     { name: "Custom", icon: "settings", time: "Choose", work: null }
   ];
   let selectedSession = 0;
+  let customPresets = JSON.parse(localStorage.getItem("customPresets")) || [];
+
+  function saveCustomPresets() {
+    localStorage.setItem("customPresets", JSON.stringify(customPresets));
+  }
+
+  // Built-in sessions plus any saved custom presets, in one combined list so
+  // the grid, selection index, and timer logic all treat them uniformly.
+  // The built-in "Custom" slot is identified by work === null (not by a
+  // fixed array index), so it stays correct regardless of how many presets
+  // come before or after it.
+  function getSessionOptions() {
+    return SESSIONS.concat(customPresets.map(p => ({
+      name: p.name, icon: "star", time: p.workMinutes + " min", work: p.workMinutes,
+      isCustomPreset: true, id: p.id
+    })));
+  }
 
   function isPremiumUser() {
     return localStorage.getItem("isPremium") === "true";
@@ -2231,19 +2271,41 @@ let currentRange = "week";
     document.getElementById("focusTimerScreen").style.display = "none";
     renderDeepWorkStats();
 
+    const options = getSessionOptions();
+    if (selectedSession >= options.length) selectedSession = 0;
+
     const grid = document.getElementById("focusSessionGrid");
     grid.innerHTML = "";
-    SESSIONS.forEach((s, i) => {
+    options.forEach((s, i) => {
       const card = document.createElement("button");
+      card.type = "button";
       card.className = "focus-session" + (i === selectedSession ? " selected" : "");
       card.innerHTML = `<div class="session-name"><i data-lucide="${s.icon}" class="icon"></i> ${s.name}</div><div class="session-time">${s.time}</div>`;
       card.addEventListener("click", () => { selectedSession = i; renderFocus(); });
+      if (s.isCustomPreset) {
+        const del = document.createElement("span");
+        del.className = "focus-session-delete";
+        del.title = "Remove preset";
+        del.innerHTML = '<i data-lucide="x" class="icon"></i>';
+        del.addEventListener("click", (e) => {
+          e.stopPropagation();
+          customPresets = customPresets.filter(p => p.id !== s.id);
+          saveCustomPresets();
+          selectedSession = 0;
+          renderFocus();
+        });
+        card.appendChild(del);
+      }
       grid.appendChild(card);
     });
     lucide.createIcons();
 
-    document.getElementById("customMinutesRow").style.display = selectedSession === 3 ? "block" : "none";
+    const isCustomSlot = options[selectedSession] && options[selectedSession].work === null;
+    document.getElementById("customMinutesRow").style.display = isCustomSlot ? "block" : "none";
     document.getElementById("customMinutesInput").value = "";
+    document.getElementById("customMinutesError").classList.remove("show");
+    document.getElementById("savePresetLink").style.display = (isCustomSlot && isPremiumUser()) ? "block" : "none";
+    document.getElementById("savePresetForm").style.display = "none";
 
     const container = document.getElementById("focusTopTasks");
     container.innerHTML = "";
@@ -2350,7 +2412,7 @@ let currentRange = "week";
     if (remainingSeconds <= 0) {
       clearInterval(timerInterval);
       updateTimerDisplay();
-      const session = SESSIONS[selectedSession];
+      const session = getSessionOptions()[selectedSession];
       const workMinutes = Math.round(totalSeconds / 60);
       const sessionIndex = logDeepWorkSession(session, workMinutes);
       showSessionCompleteScreen(session, workMinutes, sessionIndex, () => {
@@ -2362,9 +2424,9 @@ let currentRange = "week";
   }
 
   function startTimer() {
-    const session = SESSIONS[selectedSession];
+    const session = getSessionOptions()[selectedSession];
     let workMinutes = session.work;
-    if (selectedSession === 3) {
+    if (session.work === null) {
       const customInput = document.getElementById("customMinutesInput");
       workMinutes = parseInt(customInput.value);
       if (!workMinutes || workMinutes < 1) {
@@ -2400,6 +2462,34 @@ let currentRange = "week";
 
   document.getElementById("customMinutesInput").addEventListener("input", () => {
     document.getElementById("customMinutesError").classList.remove("show");
+  });
+
+  document.getElementById("savePresetLink").addEventListener("click", () => {
+    document.getElementById("savePresetLink").style.display = "none";
+    document.getElementById("savePresetForm").style.display = "flex";
+    document.getElementById("savePresetNameInput").value = "";
+    setTimeout(() => document.getElementById("savePresetNameInput").focus(), 50);
+  });
+
+  document.getElementById("savePresetConfirmBtn").addEventListener("click", () => {
+    const name = document.getElementById("savePresetNameInput").value.trim();
+    const minutes = parseInt(document.getElementById("customMinutesInput").value);
+    const err = document.getElementById("customMinutesError");
+    if (!minutes || minutes < 1) {
+      err.textContent = "Enter custom minutes first.";
+      err.classList.add("show");
+      return;
+    }
+    if (!name) {
+      err.textContent = "Enter a name for this preset.";
+      err.classList.add("show");
+      return;
+    }
+    customPresets.push({ id: Date.now().toString() + Math.random().toString(36).slice(2, 7), name, workMinutes: minutes });
+    saveCustomPresets();
+    selectedSession = SESSIONS.length + customPresets.length - 1;
+    renderFocus();
+    showToast(`Saved "${name}" as a preset`, "success");
   });
 
   document.getElementById("startFocusBtn").addEventListener("click", startTimer);
@@ -2491,6 +2581,106 @@ let currentRange = "week";
     switchView("reflection");
     renderReflection();
   });
+
+  // --- Reflection search (premium) ---
+  function updateSearchReflectionsBtnVisibility() {
+    document.getElementById("searchReflectionsBtn").style.display = isPremiumUser() ? "flex" : "none";
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function formatReflectionDate(dateStr) {
+    return new Date(dateStr + "T00:00:00").toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+  }
+
+  // Builds an ~80-100 char snippet centered on the match, with the match
+  // itself wrapped in <mark>. Falls back to a plain leading snippet if the
+  // query can't be found (shouldn't happen given the caller already matched).
+  function buildReflectionSnippet(text, query) {
+    const idx = text.toLowerCase().indexOf(query.toLowerCase());
+    if (idx === -1) {
+      const plain = escapeHtml(text.slice(0, 90));
+      return plain + (text.length > 90 ? "…" : "");
+    }
+    const radius = 40;
+    const start = Math.max(0, idx - radius);
+    const end = Math.min(text.length, idx + query.length + radius);
+    const relIdx = idx - start;
+    const before = escapeHtml(text.slice(start, idx));
+    const match = escapeHtml(text.slice(idx, idx + query.length));
+    const after = escapeHtml(text.slice(idx + query.length, end));
+    return (start > 0 ? "…" : "") + before + `<mark>${match}</mark>` + after + (end < text.length ? "…" : "");
+  }
+
+  function searchReflections(query) {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    const results = [];
+    Object.keys(reflections).sort().reverse().forEach(dateStr => {
+      const entry = reflections[dateStr] || {};
+      const wentWell = entry.wentWell || "";
+      const improve = entry.improve || "";
+      const matchText = wentWell.toLowerCase().includes(q) ? wentWell
+        : improve.toLowerCase().includes(q) ? improve
+        : null;
+      if (matchText !== null) {
+        results.push({ dateStr, snippet: buildReflectionSnippet(matchText, query.trim()) });
+      }
+    });
+    return results;
+  }
+
+  function openReflectionFromSearch(dateStr) {
+    closeModal(reflectionSearchOverlay);
+    reflectionReadOnly = true;
+    reflectionDate = new Date(dateStr + "T00:00:00");
+    document.getElementById("reflectionView").style.transitionDuration = "";
+    switchView("reflection");
+    renderReflection();
+  }
+
+  function renderReflectionSearchResults(query) {
+    const wrap = document.getElementById("reflectionSearchResults");
+    wrap.innerHTML = "";
+    const trimmed = query.trim();
+    if (!trimmed) {
+      wrap.innerHTML = `<div class="reflection-search-empty">Type to search your past reflections.</div>`;
+      return;
+    }
+    const results = searchReflections(trimmed);
+    if (results.length === 0) {
+      wrap.innerHTML = `<div class="reflection-search-empty">No reflections found for "${escapeHtml(trimmed)}".</div>`;
+      return;
+    }
+    results.forEach(r => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "reflection-search-result";
+      row.innerHTML = `
+        <div class="reflection-search-result-date">${formatReflectionDate(r.dateStr)}</div>
+        <div class="reflection-search-result-snippet">${r.snippet}</div>
+      `;
+      row.addEventListener("click", () => openReflectionFromSearch(r.dateStr));
+      wrap.appendChild(row);
+    });
+  }
+
+  const reflectionSearchOverlay = document.getElementById("reflectionSearchModalOverlay");
+  document.getElementById("searchReflectionsBtn").addEventListener("click", () => {
+    if (!isPremiumUser()) return;
+    const input = document.getElementById("reflectionSearchInput");
+    input.value = "";
+    renderReflectionSearchResults("");
+    openModal(reflectionSearchOverlay);
+    setTimeout(() => input.focus(), 50);
+  });
+  document.getElementById("reflectionSearchInput").addEventListener("input", (e) => {
+    renderReflectionSearchResults(e.target.value);
+  });
+  document.getElementById("reflectionSearchCloseBtn").addEventListener("click", () => closeModal(reflectionSearchOverlay));
+  reflectionSearchOverlay.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(reflectionSearchOverlay); });
 
   function showSealScreen(dateForDisplay, onDone) {
     const sealScreen = document.getElementById("sealScreen");
