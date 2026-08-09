@@ -9,15 +9,31 @@
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 <link rel="stylesheet" href="styles.css">
+<script>
+  (function() {
+    try {
+      if (localStorage.getItem("isPremium") === "true") {
+        var t = localStorage.getItem("selectedTheme");
+        if (t && t !== "forest") document.documentElement.setAttribute("data-selected-theme", t);
+      }
+    } catch (e) {}
+  })();
+</script>
 </head>
 <body>
 <div class="container">
 
-  <div class="view-tabs">
-    <button class="view-tab active" id="tabPlanner">Planner</button>
-    <button class="view-tab" id="tabGoals">Goals</button>
-    <button class="view-tab" id="tabAnalysis">Analysis</button>
-    <button class="view-tab" id="tabFocus">Deep Work</button>
+  <div id="weeklyRecapBanner" style="display:none;align-items:center;gap:0.75rem;background:var(--bg-card);border-radius:var(--radius-md);padding:1rem 1.1rem;margin-bottom:1.25rem;box-shadow:var(--shadow-elevated);"></div>
+
+  <div class="app-header-row">
+    <div class="view-tabs">
+      <button class="view-tab active" id="tabPlanner">Planner</button>
+      <button class="view-tab" id="tabGoals">Goals</button>
+      <button class="view-tab" id="tabAnalysis">Analysis</button>
+      <button class="view-tab" id="tabFocus">Deep Work</button>
+    </div>
+    <button id="exportDataBtn" class="cat-add" style="display:none;" title="Export data"><i data-lucide="download" class="icon"></i></button>
+    <button id="themesBtn" class="cat-add" style="display:none;" title="Themes"><i data-lucide="palette" class="icon"></i></button>
   </div>
 
   <div id="plannerView">
@@ -45,6 +61,11 @@
 
     <div class="category-tabs" id="categoryTabs"></div>
 
+    <div class="task-list-toolbar">
+      <button id="selectAllBtn" class="cat-pill" type="button" style="display:none;">Select all</button>
+      <button id="selectModeBtn" class="cat-pill" type="button">Select</button>
+    </div>
+
     <ul id="taskList"></ul>
   </div>
 
@@ -58,6 +79,7 @@
       <svg id="ringChart" viewBox="0 0 200 200" width="180" height="180"></svg>
       <div class="ring-legend" id="ringLegend"></div>
     </div>
+    <div id="weeklyRecapCard" style="display:none;background:var(--bg-card);border-radius:var(--radius-md);padding:1.1rem 1.3rem;margin-bottom:1.25rem;box-shadow:var(--shadow-card);"></div>
     <div id="insightsCard" style="background:var(--bg-card);border-radius:var(--radius-md);padding:1.1rem 1.3rem;margin-bottom:1.25rem;box-shadow:var(--shadow-card);"></div>
     <div id="momentumBox" style="background:var(--bg-card);border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:center;"></div>
     <div id="focusScoreBox" style="background:var(--bg-card);border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:center;"></div>
@@ -181,6 +203,50 @@
 <button class="mic-fab" id="micBtn"><i data-lucide="mic" class="icon icon-lg"></i></button>
 <button class="mic-fab" id="todayBtn" style="right: 9.5rem;"><i data-lucide="circle-dot" class="icon icon-lg"></i></button>
 
+<div id="bulkActionBar" style="display:none;">
+  <button class="bulk-action-btn danger" id="bulkDeleteBtn"><i data-lucide="trash-2" class="icon"></i>Delete</button>
+  <button class="bulk-action-btn" id="bulkMoveBtn"><i data-lucide="calendar" class="icon"></i>Move</button>
+  <button class="bulk-action-btn" id="bulkCategoryBtn"><i data-lucide="tag" class="icon"></i>Category</button>
+  <button class="bulk-action-btn" id="bulkDurationBtn"><i data-lucide="clock" class="icon"></i>Duration</button>
+  <button class="bulk-action-btn" id="bulkDuplicateBtn"><i data-lucide="copy" class="icon"></i>Duplicate</button>
+</div>
+
+<div class="modal-overlay" id="bulkMoveModalOverlay">
+  <div class="modal">
+    <h3>Move to date</h3>
+    <label>New date</label>
+    <input type="date" id="bulkMoveDate">
+    <div class="modal-actions">
+      <button class="btn-cancel" id="bulkMoveCancel">Cancel</button>
+      <button class="btn-save" id="bulkMoveSave">Move</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="bulkCategoryModalOverlay">
+  <div class="modal">
+    <h3>Change category</h3>
+    <label>Category</label>
+    <select id="bulkCategorySelect"></select>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="bulkCategoryCancel">Cancel</button>
+      <button class="btn-save" id="bulkCategorySave">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="bulkDurationModalOverlay">
+  <div class="modal">
+    <h3>Change duration</h3>
+    <label>Duration, minutes</label>
+    <input type="number" id="bulkDurationInput" min="0" step="5" placeholder="e.g. 30">
+    <div class="modal-actions">
+      <button class="btn-cancel" id="bulkDurationCancel">Cancel</button>
+      <button class="btn-save" id="bulkDurationSave">Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
     <h3 id="modalTitle">Add Task</h3>
@@ -200,6 +266,12 @@
     </div>
     <label>Date</label>
     <input type="date" id="modalDate">
+
+    <div id="copiesRow">
+      <label>Repeat this task</label>
+      <input type="number" id="modalCopies" min="1" max="10" value="1">
+      <div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:0.3rem;">Creates independent copies on save, e.g. 4 = 4 separate tasks (not recurring)</div>
+    </div>
 
     <label>Repeat</label>
     <select id="modalRepeat">
@@ -233,6 +305,27 @@
     <div class="modal-actions">
       <button class="btn-cancel" id="cancelAdd">Cancel</button>
       <button class="btn-save" id="saveAdd">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="themesModalOverlay">
+  <div class="modal">
+    <h3>Themes</h3>
+    <div class="ob-row-list" id="themeOptionList"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="themesCloseBtn">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="exportModalOverlay">
+  <div class="modal">
+    <h3>Export data</h3>
+    <button class="btn-save export-option-btn" id="exportJsonBtn">Export as JSON</button>
+    <button class="btn-save export-option-btn" id="exportCsvBtn">Export as CSV</button>
+    <div class="modal-actions" style="margin-top:0.5rem;">
+      <button class="btn-cancel" id="exportCloseBtn">Close</button>
     </div>
   </div>
 </div>

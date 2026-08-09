@@ -11,9 +11,27 @@
   let sortableInstance = null;
   let selectedWeekdays = [];
   let currentView = "planner";
+  let selectMode = false;
+  let selectedTaskIds = new Set();
 
-  const PALETTE = ["#B8D8BA", "#F4C7A8", "#A8C8E8", "#D4B8E8", "#F4D48A", "#9EDAD1", "#F0B8D4", "#C5C9D4"];
+  const PALETTE = ["#B8D8BA", "#F4C7A8", "#A8C8E8", "#D4B8E8", "#F4D48A", "#9EDAD1", "#F0B8D4", "#C5C9D4", "#F4B8AA", "#C7BFD4", "#B8E0C8", "#E8CB8A", "#A8B8E8", "#E0C9A6", "#F0C2CE", "#C3D4B0"];
   const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
+
+  // Premium accent theme presets. The actual CSS custom-property swap lives in
+  // styles.css as :root[data-selected-theme="X"] rules (light) paired with
+  // :root[data-selected-theme="X"][data-theme="dark"] rules (dark), so light/dark
+  // both stay correct automatically as the app already toggles [data-theme] per
+  // view. This object only drives the picker UI (name + preview swatch).
+  const THEMES = {
+    forest: { label: "Forest", light: { accent: "#2F5233" }, dark: { accent: "#4F7A5C" } },
+    slate: { label: "Slate", light: { accent: "#4A6B8A" }, dark: { accent: "#7FA3C4" } },
+    terracotta: { label: "Terracotta", light: { accent: "#AD5A38" }, dark: { accent: "#D68A5F" } },
+    plum: { label: "Plum", light: { accent: "#6B4C7A" }, dark: { accent: "#A57FB8" } },
+    ink: { label: "Ink", light: { accent: "#4A5568" }, dark: { accent: "#8A97AB" } },
+    moss: { label: "Moss", light: { accent: "#5C6B3D" }, dark: { accent: "#93A369" } },
+    clay: { label: "Clay", light: { accent: "#A85C52" }, dark: { accent: "#CC8B80" } },
+    ocean: { label: "Ocean", light: { accent: "#3D6B70" }, dark: { accent: "#6FA5AB" } }
+  };
 
   function setIcon(el, name, extraClass) {
     el.innerHTML = `<i data-lucide="${name}" class="icon${extraClass ? " " + extraClass : ""}"></i>`;
@@ -461,6 +479,7 @@
     listEl.innerHTML = "";
     const dayTasks = getTasksForDate(currentDate, activeCategory);
     renderProgress(dayTasks);
+    updateSelectAllBtn(dayTasks);
 
     if (dayTasks.length === 0) {
       const msg = document.createElement("div");
@@ -481,9 +500,14 @@
 
     dayTasks.forEach(task => {
       const li = document.createElement("li");
-      li.className = "task-item" + (task.occurrenceDone ? " done" : "") + (task.id === lastAddedTaskId ? " entering" : "");
+      const isSelected = selectedTaskIds.has(task.id);
+      li.className = "task-item" + (task.occurrenceDone ? " done" : "") + (task.id === lastAddedTaskId ? " entering" : "") + (selectMode ? " select-mode" : "") + (isSelected ? " item-selected" : "");
       li.style.borderLeftColor = categoryColor(task.category);
       li.dataset.taskId = task.id;
+
+      const selectCheckbox = document.createElement("div");
+      selectCheckbox.className = "select-checkbox" + (isSelected ? " checked" : "");
+      selectCheckbox.innerHTML = isSelected ? '<i data-lucide="check" class="icon"></i>' : "";
 
       const drag = document.createElement("div");
       drag.className = "drag-handle";
@@ -585,10 +609,15 @@
       });
 
       li.addEventListener("click", (e) => {
+        if (selectMode) {
+          toggleTaskSelection(task.id);
+          return;
+        }
         if (e.target === checkbox || e.target === del) return;
         openEditModal(task.id);
       });
 
+      li.appendChild(selectCheckbox);
       li.appendChild(drag);
       li.appendChild(checkbox);
       li.appendChild(name);
@@ -604,6 +633,7 @@
     sortableInstance = new Sortable(listEl, {
       animation: 150,
       ghostClass: "sortable-ghost",
+      disabled: selectMode,
       onEnd: () => {
         const newOrderIds = [...listEl.children].map(li => li.dataset.taskId).filter(Boolean);
         newOrderIds.forEach((id, index) => {
@@ -613,7 +643,47 @@
         save();
       }
     });
+
+    updateBulkActionBar();
   }
+
+  function toggleTaskSelection(taskId) {
+    if (selectedTaskIds.has(taskId)) selectedTaskIds.delete(taskId); else selectedTaskIds.add(taskId);
+    renderTasks();
+  }
+
+  function setSelectMode(on) {
+    selectMode = on;
+    if (!on) selectedTaskIds.clear();
+    document.body.classList.toggle("select-mode-active", on);
+    document.getElementById("selectModeBtn").textContent = on ? "Cancel" : "Select";
+    renderTasks();
+  }
+
+  function updateBulkActionBar() {
+    document.getElementById("bulkActionBar").style.display = (selectMode && selectedTaskIds.size > 0) ? "flex" : "none";
+  }
+
+  function updateSelectAllBtn(dayTasks) {
+    const btn = document.getElementById("selectAllBtn");
+    btn.style.display = selectMode ? "inline-block" : "none";
+    if (!selectMode) return;
+    const allSelected = dayTasks.length > 0 && dayTasks.every(t => selectedTaskIds.has(t.id));
+    btn.textContent = allSelected ? "Deselect all" : "Select all";
+  }
+
+  document.getElementById("selectModeBtn").addEventListener("click", () => setSelectMode(!selectMode));
+
+  document.getElementById("selectAllBtn").addEventListener("click", () => {
+    const dayTasks = getTasksForDate(currentDate, activeCategory);
+    const allSelected = dayTasks.length > 0 && dayTasks.every(t => selectedTaskIds.has(t.id));
+    if (allSelected) {
+      dayTasks.forEach(t => selectedTaskIds.delete(t.id));
+    } else {
+      dayTasks.forEach(t => selectedTaskIds.add(t.id));
+    }
+    renderTasks();
+  });
 
   function renderAll() {
     renderDate();
@@ -621,8 +691,9 @@
     renderTasks();
 
     const locked = isDayLocked(toDateStr(currentDate));
+    const isFutureDay = toDateStr(currentDate) > toDateStr(new Date());
     document.getElementById("lockedBanner").style.display = locked ? "block" : "none";
-    document.getElementById("endDayBtn").style.display = locked ? "none" : "block";
+    document.getElementById("endDayBtn").style.display = (locked || isFutureDay) ? "none" : "block";
   }
 
   document.getElementById("prevDay").addEventListener("click", () => { currentDate.setDate(currentDate.getDate() - 1); renderAll(); });
@@ -685,6 +756,8 @@
     repeatExtra.classList.remove("show");
     selectedWeekdays = [currentDate.getDay()];
     buildWeekdayPicker();
+    document.getElementById("copiesRow").style.display = "block";
+    document.getElementById("modalCopies").value = 1;
     openModal(overlay);
     setTimeout(() => document.getElementById("modalName").focus(), 50);
   }
@@ -693,6 +766,7 @@
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
     editingTaskId = taskId;
+    document.getElementById("copiesRow").style.display = "none";
     document.getElementById("modalTitle").textContent = "Edit Task";
     document.getElementById("modalName").value = task.name;
     document.getElementById("modalCategory").value = task.category;
@@ -757,14 +831,18 @@
       task.why = why; task.plan = plan;
       if (!task.completedDates) task.completedDates = [];
     } else {
-      const dateTasks = tasks.filter(t => t.date === date);
-      const maxOrder = dateTasks.length ? Math.max(...dateTasks.map(t => t.order ?? 0)) : -1;
-      const newId = Date.now().toString();
-      tasks.push({
-        id: newId, name, category, time, duration, date, endDate,
-        done: false, order: maxOrder + 1, recurrence, completedDates: [], isGoal, why, plan
-      });
-      lastAddedTaskId = newId;
+      let copies = parseInt(document.getElementById("modalCopies").value) || 1;
+      copies = Math.max(1, Math.min(10, copies));
+      let maxOrder = tasks.filter(t => t.date === date).reduce((max, t) => Math.max(max, t.order ?? 0), -1);
+      for (let i = 0; i < copies; i++) {
+        const newId = Date.now().toString() + Math.random().toString(36).slice(2, 7);
+        maxOrder += 1;
+        tasks.push({
+          id: newId, name, category, time, duration, date, endDate,
+          done: false, order: maxOrder, recurrence, completedDates: [], isGoal, why, plan
+        });
+        lastAddedTaskId = newId;
+      }
     }
     save();
     closeModal(overlay);
@@ -777,24 +855,131 @@
     if (e.key === "Escape") closeModal(overlay);
   });
 
+  // --- Bulk task actions ---
+  const bulkMoveOverlay = document.getElementById("bulkMoveModalOverlay");
+  const bulkCategoryOverlay = document.getElementById("bulkCategoryModalOverlay");
+  const bulkDurationOverlay = document.getElementById("bulkDurationModalOverlay");
+
+  document.getElementById("bulkDeleteBtn").addEventListener("click", () => {
+    if (!selectedTaskIds.size) return;
+    const n = selectedTaskIds.size;
+    showConfirm({
+      title: "Delete tasks",
+      message: `Delete ${n} selected task${n > 1 ? "s" : ""}?`,
+      confirmLabel: "Delete",
+      danger: true,
+      onConfirm: () => {
+        tasks = tasks.filter(t => !selectedTaskIds.has(t.id));
+        save();
+        setSelectMode(false);
+        renderAll();
+      }
+    });
+  });
+
+  document.getElementById("bulkMoveBtn").addEventListener("click", () => {
+    if (!selectedTaskIds.size) return;
+    document.getElementById("bulkMoveDate").value = toDateStr(currentDate);
+    openModal(bulkMoveOverlay);
+  });
+  document.getElementById("bulkMoveCancel").addEventListener("click", () => closeModal(bulkMoveOverlay));
+  document.getElementById("bulkMoveSave").addEventListener("click", () => {
+    const newDate = document.getElementById("bulkMoveDate").value;
+    if (!newDate) return;
+    tasks.forEach(t => { if (selectedTaskIds.has(t.id)) t.date = newDate; });
+    save();
+    closeModal(bulkMoveOverlay);
+    setSelectMode(false);
+    renderAll();
+  });
+  bulkMoveOverlay.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(bulkMoveOverlay); });
+
+  document.getElementById("bulkCategoryBtn").addEventListener("click", () => {
+    if (!selectedTaskIds.size) return;
+    const sel = document.getElementById("bulkCategorySelect");
+    sel.innerHTML = "";
+    categories.forEach(c => {
+      const opt = document.createElement("option");
+      opt.value = c.name;
+      opt.textContent = c.name;
+      sel.appendChild(opt);
+    });
+    openModal(bulkCategoryOverlay);
+  });
+  document.getElementById("bulkCategoryCancel").addEventListener("click", () => closeModal(bulkCategoryOverlay));
+  document.getElementById("bulkCategorySave").addEventListener("click", () => {
+    const newCat = document.getElementById("bulkCategorySelect").value;
+    if (!newCat) return;
+    tasks.forEach(t => { if (selectedTaskIds.has(t.id)) t.category = newCat; });
+    save();
+    closeModal(bulkCategoryOverlay);
+    setSelectMode(false);
+    renderAll();
+  });
+  bulkCategoryOverlay.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(bulkCategoryOverlay); });
+
+  document.getElementById("bulkDurationBtn").addEventListener("click", () => {
+    if (!selectedTaskIds.size) return;
+    document.getElementById("bulkDurationInput").value = "";
+    openModal(bulkDurationOverlay);
+    setTimeout(() => document.getElementById("bulkDurationInput").focus(), 50);
+  });
+  document.getElementById("bulkDurationCancel").addEventListener("click", () => closeModal(bulkDurationOverlay));
+  document.getElementById("bulkDurationSave").addEventListener("click", () => {
+    const dur = document.getElementById("bulkDurationInput").value;
+    tasks.forEach(t => { if (selectedTaskIds.has(t.id)) t.duration = dur; });
+    save();
+    closeModal(bulkDurationOverlay);
+    setSelectMode(false);
+    renderAll();
+  });
+  bulkDurationOverlay.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") document.getElementById("bulkDurationSave").click();
+    if (e.key === "Escape") closeModal(bulkDurationOverlay);
+  });
+
+  document.getElementById("bulkDuplicateBtn").addEventListener("click", () => {
+    if (!selectedTaskIds.size) return;
+    const toDuplicate = tasks.filter(t => selectedTaskIds.has(t.id));
+    toDuplicate.forEach(t => {
+      const dateTasks = tasks.filter(x => x.date === t.date);
+      const maxOrder = dateTasks.length ? Math.max(...dateTasks.map(x => x.order ?? 0)) : -1;
+      tasks.push({
+        ...t,
+        id: Date.now().toString() + Math.random().toString(36).slice(2, 7),
+        order: maxOrder + 1,
+        done: false,
+        completedDates: []
+      });
+    });
+    const n = toDuplicate.length;
+    save();
+    setSelectMode(false);
+    renderAll();
+    showToast(`Duplicated ${n} task${n > 1 ? "s" : ""}`, "success");
+  });
+
   const catOverlay = document.getElementById("catModalOverlay");
+
+  function buildColorSwatches(wrap, currentColor, onSelect) {
+    wrap.innerHTML = "";
+    PALETTE.forEach(color => {
+      const sw = document.createElement("div");
+      sw.className = "swatch" + (color === currentColor ? " selected" : "");
+      sw.style.background = color;
+      sw.addEventListener("click", () => {
+        wrap.querySelectorAll(".swatch").forEach(s => s.classList.remove("selected"));
+        sw.classList.add("selected");
+        onSelect(color);
+      });
+      wrap.appendChild(sw);
+    });
+  }
 
   function openCategoryModal() {
     document.getElementById("catName").value = "";
     selectedColor = PALETTE[0];
-    const swatchWrap = document.getElementById("colorSwatches");
-    swatchWrap.innerHTML = "";
-    PALETTE.forEach(color => {
-      const sw = document.createElement("div");
-      sw.className = "swatch" + (color === selectedColor ? " selected" : "");
-      sw.style.background = color;
-      sw.addEventListener("click", () => {
-        selectedColor = color;
-        swatchWrap.querySelectorAll(".swatch").forEach(s => s.classList.remove("selected"));
-        sw.classList.add("selected");
-      });
-      swatchWrap.appendChild(sw);
-    });
+    buildColorSwatches(document.getElementById("colorSwatches"), selectedColor, (color) => { selectedColor = color; });
     openModal(catOverlay);
     setTimeout(() => document.getElementById("catName").focus(), 50);
   }
@@ -823,19 +1008,7 @@
     editingCategoryName = cat.name;
     editingCategoryColor = cat.color;
     document.getElementById("editCatName").value = cat.name;
-    const swatchWrap = document.getElementById("editColorSwatches");
-    swatchWrap.innerHTML = "";
-    PALETTE.forEach(color => {
-      const sw = document.createElement("div");
-      sw.className = "swatch" + (color === editingCategoryColor ? " selected" : "");
-      sw.style.background = color;
-      sw.addEventListener("click", () => {
-        editingCategoryColor = color;
-        swatchWrap.querySelectorAll(".swatch").forEach(s => s.classList.remove("selected"));
-        sw.classList.add("selected");
-      });
-      swatchWrap.appendChild(sw);
-    });
+    buildColorSwatches(document.getElementById("editColorSwatches"), editingCategoryColor, (color) => { editingCategoryColor = color; });
     openModal(editCatOverlay);
   }
 
@@ -870,6 +1043,133 @@
       }
     });
   });
+
+  // --- Premium accent themes ---
+  function applySelectedTheme() {
+    const stored = localStorage.getItem("selectedTheme");
+    const themeName = (isPremiumUser() && stored && THEMES[stored]) ? stored : null;
+    if (themeName && themeName !== "forest") {
+      document.documentElement.setAttribute("data-selected-theme", themeName);
+    } else {
+      document.documentElement.removeAttribute("data-selected-theme");
+    }
+  }
+
+  function updateThemesBtnVisibility() {
+    document.getElementById("themesBtn").style.display = isPremiumUser() ? "flex" : "none";
+  }
+
+  const themesOverlay = document.getElementById("themesModalOverlay");
+
+  function renderThemeOptions() {
+    const wrap = document.getElementById("themeOptionList");
+    wrap.innerHTML = "";
+    const current = localStorage.getItem("selectedTheme") || "forest";
+    Object.keys(THEMES).forEach(key => {
+      const theme = THEMES[key];
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "ob-row" + (key === current ? " selected" : "");
+      const swatch = document.createElement("span");
+      swatch.className = "ob-row-swatch";
+      swatch.style.background = theme.light.accent;
+      const label = document.createElement("span");
+      label.className = "ob-row-name";
+      label.textContent = theme.label;
+      const check = document.createElement("span");
+      check.className = "ob-row-check";
+      row.appendChild(swatch);
+      row.appendChild(label);
+      row.appendChild(check);
+      row.addEventListener("click", () => {
+        localStorage.setItem("selectedTheme", key);
+        applySelectedTheme();
+        renderThemeOptions();
+      });
+      wrap.appendChild(row);
+    });
+  }
+
+  document.getElementById("themesBtn").addEventListener("click", () => {
+    if (!isPremiumUser()) return;
+    renderThemeOptions();
+    openModal(themesOverlay);
+  });
+  document.getElementById("themesCloseBtn").addEventListener("click", () => closeModal(themesOverlay));
+  themesOverlay.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(themesOverlay); });
+
+  // --- Premium data export ---
+  function updateExportBtnVisibility() {
+    document.getElementById("exportDataBtn").style.display = isPremiumUser() ? "flex" : "none";
+  }
+
+  function downloadFile(filename, content, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function csvEscape(value) {
+    const str = String(value == null ? "" : value);
+    if (/[",\n]/.test(str)) return '"' + str.replace(/"/g, '""') + '"';
+    return str;
+  }
+
+  function exportDataAsJson() {
+    const data = {
+      tasks: JSON.parse(localStorage.getItem("tasks")) || [],
+      categories: JSON.parse(localStorage.getItem("categories")) || [],
+      reflections: JSON.parse(localStorage.getItem("reflections")) || {},
+      lockedDays: JSON.parse(localStorage.getItem("lockedDays")) || []
+    };
+    downloadFile(`planner-export-${toDateStr(new Date())}.json`, JSON.stringify(data, null, 2), "application/json");
+  }
+
+  function exportDataAsCsv() {
+    const dateStr = toDateStr(new Date());
+
+    const storedTasks = JSON.parse(localStorage.getItem("tasks")) || [];
+    const taskHeader = ["name", "category", "date", "time", "duration", "done", "isGoal", "why", "plan"];
+    const taskLines = [taskHeader.join(",")];
+    storedTasks.forEach(t => {
+      const isRecurring = t.recurrence && t.recurrence.type !== "none";
+      const doneSummary = isRecurring ? (t.completedDates || []).join(";") : (t.done ? "true" : "false");
+      taskLines.push([
+        csvEscape(t.name), csvEscape(t.category), csvEscape(t.date), csvEscape(t.time), csvEscape(t.duration),
+        csvEscape(doneSummary), csvEscape(t.isGoal ? "true" : "false"), csvEscape(t.why), csvEscape(t.plan)
+      ].join(","));
+    });
+    downloadFile(`planner-export-tasks-${dateStr}.csv`, taskLines.join("\n"), "text/csv");
+
+    const storedReflections = JSON.parse(localStorage.getItem("reflections")) || {};
+    const reflHeader = ["date", "wentWell", "improve"];
+    const reflLines = [reflHeader.join(",")];
+    Object.keys(storedReflections).sort().forEach(date => {
+      const entry = storedReflections[date] || {};
+      reflLines.push([csvEscape(date), csvEscape(entry.wentWell), csvEscape(entry.improve)].join(","));
+    });
+    downloadFile(`planner-export-reflections-${dateStr}.csv`, reflLines.join("\n"), "text/csv");
+  }
+
+  const exportOverlay = document.getElementById("exportModalOverlay");
+  document.getElementById("exportDataBtn").addEventListener("click", () => {
+    if (!isPremiumUser()) return;
+    openModal(exportOverlay);
+  });
+  document.getElementById("exportJsonBtn").addEventListener("click", exportDataAsJson);
+  document.getElementById("exportCsvBtn").addEventListener("click", exportDataAsCsv);
+  document.getElementById("exportCloseBtn").addEventListener("click", () => closeModal(exportOverlay));
+  exportOverlay.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(exportOverlay); });
+
+  applySelectedTheme();
+  updateThemesBtnVisibility();
+  updateExportBtnVisibility();
 
   const micBtn = document.getElementById("micBtn");
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1169,12 +1469,105 @@ document.getElementById("goalViewEdit").addEventListener("click", () => {
 });
 let currentRange = "week";
 
-function renderAnalysis() {
+  // --- Weekly recap (premium) ---
+  function getISOWeekKey(date) {
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const weekNum = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+    return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2, "0")}`;
+  }
+
+  // Stats for the 7-day period ending on endDate (defaults to today), so the
+  // Analysis card can show a rolling "this week" while the rollover banner
+  // can pass yesterday to summarize the most recently completed week.
+  function computeWeeklyRecap(endDate) {
+    const end = endDate || new Date();
+    const start = new Date(end);
+    start.setDate(start.getDate() - 6);
+    const startStr = toDateStr(start);
+    const endStr = toDateStr(end);
+
+    let tasksCompleted = 0;
+    tasks.forEach(t => {
+      const isRecurring = t.recurrence && t.recurrence.type !== "none";
+      if (isRecurring) {
+        (t.completedDates || []).forEach(ds => { if (ds >= startStr && ds <= endStr) tasksCompleted++; });
+      } else if (t.done && t.date >= startStr && t.date <= endStr) {
+        tasksCompleted++;
+      }
+    });
+
+    const deepWorkSessions = (JSON.parse(localStorage.getItem("deepWorkSessions")) || [])
+      .filter(s => s.date >= startStr && s.date <= endStr).length;
+
+    const reflectionsWritten = Object.keys(JSON.parse(localStorage.getItem("reflections")) || {})
+      .filter(d => d >= startStr && d <= endStr).length;
+
+    const goalTasks = tasks.filter(t => t.isGoal);
+    let currentStreak = 0;
+    goalTasks.forEach(g => {
+      const s = computeStreak(g);
+      if (s > currentStreak) currentStreak = s;
+    });
+
+    return { weekStart: startStr, weekEnd: endStr, tasksCompleted, deepWorkSessions, reflectionsWritten, currentStreak };
+  }
+
+  function recapSummaryText(recap) {
+    return `${recap.tasksCompleted} task${recap.tasksCompleted === 1 ? "" : "s"} done · `
+      + `${recap.deepWorkSessions} Deep Work session${recap.deepWorkSessions === 1 ? "" : "s"} · `
+      + `${recap.reflectionsWritten} reflection${recap.reflectionsWritten === 1 ? "" : "s"} written`;
+  }
+
+  function renderWeeklyRecapCard() {
+    const card = document.getElementById("weeklyRecapCard");
+    if (!card) return;
+    if (!isPremiumUser()) { card.style.display = "none"; return; }
+    const recap = computeWeeklyRecap();
+    card.style.display = "block";
+    card.innerHTML = `
+      <div style="font-size:var(--text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:0.4rem;">This week</div>
+      <div style="font-size:var(--text-base);color:var(--text-primary);">${recapSummaryText(recap)}</div>
+    `;
+  }
+
+  function maybeShowWeeklyRecapBanner() {
+    if (!isPremiumUser()) return;
+    const currentWeekKey = getISOWeekKey(new Date());
+    if (localStorage.getItem("lastRecapShownWeek") === currentWeekKey) return;
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const recap = computeWeeklyRecap(yesterday);
+    const hasData = recap.tasksCompleted > 0 || recap.deepWorkSessions > 0 || recap.reflectionsWritten > 0;
+    if (!hasData) return;
+
+    const banner = document.getElementById("weeklyRecapBanner");
+    if (!banner) return;
+    banner.innerHTML = `
+      <div style="flex:1;">
+        <div style="font-size:var(--text-sm);font-weight:600;margin-bottom:0.2rem;">Last week's recap</div>
+        <div style="font-size:var(--text-sm);color:var(--text-secondary);">${recapSummaryText(recap)}</div>
+      </div>
+      <button id="weeklyRecapBannerClose" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:0.25rem;flex-shrink:0;"><i data-lucide="x" class="icon"></i></button>
+    `;
+    banner.style.display = "flex";
+    lucide.createIcons();
+    document.getElementById("weeklyRecapBannerClose").addEventListener("click", () => {
+      banner.style.display = "none";
+      localStorage.setItem("lastRecapShownWeek", currentWeekKey);
+    });
+  }
+
+  function renderAnalysis() {
     renderRingChart();
     renderBarChart(currentRange);
     renderMomentum();
     renderFocusScore();
     renderInsights();
+    renderWeeklyRecapCard();
   }
 
   // --- Smart Insights ---
@@ -2951,5 +3344,6 @@ function renderAnalysis() {
     renderOnboardingStep();
   } else {
     renderAll();
+    maybeShowWeeklyRecapBanner();
   }
   lucide.createIcons();
