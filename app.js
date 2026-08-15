@@ -1096,12 +1096,13 @@
       row.appendChild(check);
       row.addEventListener("click", () => {
         triggerHaptic("light");
-        swatch.style.transform = "scale(1.15)";
+        wrap.querySelectorAll(".ob-row.selected").forEach(r => r.classList.remove("selected"));
+        row.classList.add("selected");
         localStorage.setItem("selectedTheme", key);
         applySelectedTheme();
+        swatch.style.transform = "scale(1.15)";
         setTimeout(() => {
           swatch.style.transform = "scale(1)";
-          renderThemeOptions();
         }, 200);
       });
       wrap.appendChild(row);
@@ -1567,19 +1568,34 @@ let currentRange = "week";
 
     const banner = document.getElementById("weeklyRecapBanner");
     if (!banner) return;
+    const stat = (value, label) => `
+      <div>
+        <div style="font-size:var(--text-lg);font-weight:600;color:var(--text-primary);">${value}</div>
+        <div style="font-size:var(--text-xs);color:var(--text-secondary);">${label}</div>
+      </div>`;
     banner.innerHTML = `
-      <div style="flex:1;">
-        <div style="font-size:var(--text-sm);font-weight:600;margin-bottom:0.2rem;">Last week's recap</div>
-        <div style="font-size:var(--text-sm);color:var(--text-secondary);">${recapSummaryText(recap)}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;margin-bottom:0.85rem;">
+        <div style="font-size:var(--text-sm);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);">Last week's recap</div>
+        <button id="weeklyRecapBannerClose" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:0.25rem;flex-shrink:0;"><i data-lucide="x" class="icon"></i></button>
       </div>
-      <button id="weeklyRecapBannerClose" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:0.25rem;flex-shrink:0;"><i data-lucide="x" class="icon"></i></button>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:0.75rem;">
+        ${stat(recap.tasksCompleted, "Tasks done")}
+        ${stat(recap.deepWorkSessions, "Deep Work sessions")}
+        ${stat(recap.reflectionsWritten, "Reflections")}
+        ${stat(recap.currentStreak, "Day streak")}
+      </div>
     `;
-    banner.style.display = "flex";
     lucide.createIcons();
-    document.getElementById("weeklyRecapBannerClose").addEventListener("click", () => {
-      banner.style.display = "none";
+
+    function dismiss() {
+      banner.classList.remove("visible");
       localStorage.setItem("lastRecapShownWeek", currentWeekKey);
-    });
+    }
+    banner.onclick = dismiss;
+
+    banner.classList.remove("visible");
+    void banner.offsetWidth;
+    banner.classList.add("visible");
   }
 
   function renderAnalysis() {
@@ -2202,6 +2218,12 @@ let currentRange = "week";
     localStorage.setItem("customPresets", JSON.stringify(customPresets));
   }
 
+  function addCustomPreset(name, minutes) {
+    customPresets.push({ id: Date.now().toString() + Math.random().toString(36).slice(2, 7), name, workMinutes: minutes });
+    saveCustomPresets();
+    selectedSession = SESSIONS.length + customPresets.length - 1;
+  }
+
   // Built-in sessions plus any saved custom presets, in one combined list so
   // the grid, selection index, and timer logic all treat them uniformly.
   // The built-in "Custom" slot is identified by work === null (not by a
@@ -2212,6 +2234,16 @@ let currentRange = "week";
       name: p.name, icon: "star", time: p.workMinutes + " min", work: p.workMinutes,
       isCustomPreset: true, id: p.id
     })));
+  }
+
+  // Stable identity for a session option across getSessionOptions() calls,
+  // since preset entries are freshly re-mapped (new object references) each
+  // time — used to re-locate the selected session after the options list
+  // shifts (e.g. a preset before it gets deleted).
+  function sessionKey(s) {
+    if (s.isCustomPreset) return "preset:" + s.id;
+    if (s.work === null) return "custom";
+    return "builtin:" + s.name;
   }
 
   function isPremiumUser() {
@@ -2272,7 +2304,7 @@ let currentRange = "week";
     renderDeepWorkStats();
 
     const options = getSessionOptions();
-    if (selectedSession >= options.length) selectedSession = 0;
+    if (selectedSession !== null && selectedSession >= options.length) selectedSession = 0;
 
     const grid = document.getElementById("focusSessionGrid");
     grid.innerHTML = "";
@@ -2289,23 +2321,44 @@ let currentRange = "week";
         del.innerHTML = '<i data-lucide="x" class="icon"></i>';
         del.addEventListener("click", (e) => {
           e.stopPropagation();
-          customPresets = customPresets.filter(p => p.id !== s.id);
-          saveCustomPresets();
-          selectedSession = 0;
-          renderFocus();
+          const prevSelectedKey = selectedSession !== null && options[selectedSession] ? sessionKey(options[selectedSession]) : null;
+          const deletedKey = sessionKey(s);
+          card.classList.add("focus-session-removing");
+          void card.offsetHeight;
+          requestAnimationFrame(() => {
+            card.style.opacity = "0";
+            card.style.transform = "scale(0.9)";
+          });
+          setTimeout(() => {
+            customPresets = customPresets.filter(p => p.id !== s.id);
+            saveCustomPresets();
+            if (prevSelectedKey === null || prevSelectedKey === deletedKey) {
+              selectedSession = null;
+            } else {
+              const newIndex = getSessionOptions().findIndex(o => sessionKey(o) === prevSelectedKey);
+              selectedSession = newIndex === -1 ? null : newIndex;
+            }
+            renderFocus();
+          }, 180);
         });
         card.appendChild(del);
       }
       grid.appendChild(card);
     });
+    if (isPremiumUser()) {
+      const addCard = document.createElement("button");
+      addCard.type = "button";
+      addCard.className = "focus-session focus-session-add";
+      addCard.innerHTML = `<div class="session-name"><i data-lucide="plus" class="icon"></i> Add preset</div><div class="session-time">Create your own</div>`;
+      addCard.addEventListener("click", () => openAddPresetModal());
+      grid.appendChild(addCard);
+    }
     lucide.createIcons();
 
     const isCustomSlot = options[selectedSession] && options[selectedSession].work === null;
     document.getElementById("customMinutesRow").style.display = isCustomSlot ? "block" : "none";
     document.getElementById("customMinutesInput").value = "";
     document.getElementById("customMinutesError").classList.remove("show");
-    document.getElementById("savePresetLink").style.display = (isCustomSlot && isPremiumUser()) ? "block" : "none";
-    document.getElementById("savePresetForm").style.display = "none";
 
     const container = document.getElementById("focusTopTasks");
     container.innerHTML = "";
@@ -2425,6 +2478,10 @@ let currentRange = "week";
 
   function startTimer() {
     const session = getSessionOptions()[selectedSession];
+    if (!session) {
+      showToast("Select a session first", "warning");
+      return;
+    }
     let workMinutes = session.work;
     if (session.work === null) {
       const customInput = document.getElementById("customMinutesInput");
@@ -2464,30 +2521,40 @@ let currentRange = "week";
     document.getElementById("customMinutesError").classList.remove("show");
   });
 
-  document.getElementById("savePresetLink").addEventListener("click", () => {
-    document.getElementById("savePresetLink").style.display = "none";
-    document.getElementById("savePresetForm").style.display = "flex";
-    document.getElementById("savePresetNameInput").value = "";
-    setTimeout(() => document.getElementById("savePresetNameInput").focus(), 50);
-  });
+  function blockNonWholeNumberKeys(e) {
+    if (["e", "E", "+", "-", "."].includes(e.key)) e.preventDefault();
+  }
+  document.getElementById("customMinutesInput").addEventListener("keydown", blockNonWholeNumberKeys);
+  document.getElementById("addPresetMinutesInput").addEventListener("keydown", blockNonWholeNumberKeys);
 
-  document.getElementById("savePresetConfirmBtn").addEventListener("click", () => {
-    const name = document.getElementById("savePresetNameInput").value.trim();
-    const minutes = parseInt(document.getElementById("customMinutesInput").value);
-    const err = document.getElementById("customMinutesError");
-    if (!minutes || minutes < 1) {
-      err.textContent = "Enter custom minutes first.";
-      err.classList.add("show");
-      return;
-    }
+  const addPresetOverlay = document.getElementById("addPresetModalOverlay");
+
+  function openAddPresetModal() {
+    document.getElementById("addPresetNameInput").value = "";
+    document.getElementById("addPresetMinutesInput").value = "";
+    document.getElementById("addPresetError").classList.remove("show");
+    openModal(addPresetOverlay);
+    setTimeout(() => document.getElementById("addPresetNameInput").focus(), 50);
+  }
+
+  document.getElementById("addPresetCancelBtn").addEventListener("click", () => closeModal(addPresetOverlay));
+
+  document.getElementById("addPresetSaveBtn").addEventListener("click", () => {
+    const name = document.getElementById("addPresetNameInput").value.trim();
+    const minutes = parseInt(document.getElementById("addPresetMinutesInput").value);
+    const err = document.getElementById("addPresetError");
     if (!name) {
       err.textContent = "Enter a name for this preset.";
       err.classList.add("show");
       return;
     }
-    customPresets.push({ id: Date.now().toString() + Math.random().toString(36).slice(2, 7), name, workMinutes: minutes });
-    saveCustomPresets();
-    selectedSession = SESSIONS.length + customPresets.length - 1;
+    if (!minutes || minutes < 1) {
+      err.textContent = "Enter minutes for this preset.";
+      err.classList.add("show");
+      return;
+    }
+    addCustomPreset(name, minutes);
+    closeModal(addPresetOverlay);
     renderFocus();
     showToast(`Saved "${name}" as a preset`, "success");
   });

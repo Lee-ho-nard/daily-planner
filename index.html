@@ -23,7 +23,7 @@
 <body>
 <div class="container">
 
-  <div id="weeklyRecapBanner" style="display:none;align-items:center;gap:0.75rem;background:var(--bg-card);border-radius:var(--radius-md);padding:1rem 1.1rem;margin-bottom:1.25rem;box-shadow:var(--shadow-elevated);"></div>
+  <div class="weekly-recap-banner" id="weeklyRecapBanner"></div>
 
   <div class="app-header-row">
     <div class="view-tabs">
@@ -138,11 +138,6 @@
           <label>Custom minutes</label>
           <input type="number" id="customMinutesInput" min="1" placeholder="e.g. 40">
           <div class="field-error" id="customMinutesError"></div>
-          <button type="button" id="savePresetLink" class="save-preset-link" style="display:none;">Save this as a preset</button>
-          <div id="savePresetForm" style="display:none;">
-            <input type="text" id="savePresetNameInput" placeholder="Preset name" maxlength="20">
-            <button type="button" id="savePresetConfirmBtn" class="cat-pill">Save preset</button>
-          </div>
         </div>
 
         <div class="focus-top3">
@@ -359,6 +354,21 @@
     <div class="modal-actions">
       <button class="btn-cancel" id="catCancel">Cancel</button>
       <button class="btn-save" id="catSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="addPresetModalOverlay">
+  <div class="modal">
+    <h3>Add preset</h3>
+    <label>Name</label>
+    <input type="text" id="addPresetNameInput" placeholder="e.g. Writing block" maxlength="20">
+    <label>Minutes</label>
+    <input type="number" id="addPresetMinutesInput" min="1" placeholder="e.g. 45">
+    <div class="field-error" id="addPresetError"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="addPresetCancelBtn">Cancel</button>
+      <button class="btn-save" id="addPresetSaveBtn">Save preset</button>
     </div>
   </div>
 </div>

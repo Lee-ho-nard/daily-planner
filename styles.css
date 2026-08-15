@@ -264,10 +264,7 @@
   .focus-session-delete{ position:absolute; top:0.5rem; right:0.5rem; width:20px; height:20px; border-radius:50%; background:var(--bg-page); display:flex; align-items:center; justify-content:center; color:var(--text-muted); cursor:pointer; }
   .focus-session-delete:hover{ color:var(--danger); }
   .focus-session-delete .icon{ width:12px; height:12px; color:inherit; }
-
-  .save-preset-link{ display:block; background:none; border:none; padding:0; margin-top:0.5rem; color:var(--accent); font-size:var(--text-sm); text-decoration:underline; cursor:pointer; font-family:inherit; }
-  #savePresetForm{ display:flex; gap:0.4rem; margin-top:0.5rem; }
-  #savePresetForm input{ flex:1; padding:0.5rem 0.6rem; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--bg-page); color:var(--text-primary); font-family:inherit; font-size:var(--text-base); }
+  .focus-session.focus-session-removing{ transition: opacity 180ms ease-out, transform 180ms ease-out; pointer-events:none; }
   .focus-heading{ font-size:var(--text-base); font-weight:500; margin-bottom:0.9rem; color: var(--text-primary); }
   .focus-top3{ background: var(--bg-card); border-radius:var(--radius-md); padding:1.3rem; margin-bottom:1.75rem; }
   .focus-empty{ color: var(--text-muted); font-size: var(--text-base); }
@@ -366,11 +363,11 @@
   .onboarding-hook-subtext { font-size: var(--text-md); color: var(--text-secondary); line-height: 1.6; margin-bottom: 2.5rem; opacity: 0; transform: translateY(10px); transition: opacity 250ms ease, transform 250ms ease; }
   .onboarding-hook-subtext.ob-in { opacity: 1; transform: translateY(0); }
   .ob-row-list { display: flex; flex-direction: column; margin-bottom: 2rem; }
-  .ob-row { display: flex; align-items: center; gap: 1rem; width: 100%; padding: 1rem 0.5rem; border: none; border-bottom: 1px solid var(--border); border-radius: var(--radius-sm); background: transparent; font-family: inherit; text-align: left; cursor: pointer; transition: background 0.15s ease; }
+  .ob-row { display: flex; align-items: center; gap: 1rem; width: 100%; padding: 1rem 0.5rem; border: none; border-bottom: 1px solid var(--border); border-radius: var(--radius-sm); background: transparent; font-family: inherit; text-align: left; cursor: pointer; transition: background-color 300ms ease; }
   .ob-row:last-child { border-bottom: none; }
-  .ob-row.selected { background: var(--accent-bg); }
-  .ob-row-swatch { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1); }
-  .ob-row-icon { width: 28px; height: 28px; border-radius: var(--radius-sm); background: var(--accent-bg); flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .ob-row.selected { background: var(--accent-bg); transition: background-color 300ms ease; }
+  .ob-row-swatch { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 300ms ease; }
+  .ob-row-icon { width: 28px; height: 28px; border-radius: var(--radius-sm); background: var(--accent-bg); flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 300ms ease; }
   .ob-row-icon .icon { width: 16px; height: 16px; color: var(--accent); }
   .ob-row-name { flex: 1; font-size: var(--text-base); font-weight: 500; color: var(--text-primary); }
   .ob-row-check { width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: var(--accent); opacity: 0; transform: scale(0.5); transition: opacity 200ms cubic-bezier(0.34, 1.56, 0.64, 1), transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1); }
@@ -415,6 +412,17 @@
     transition: opacity 200ms cubic-bezier(0.34, 1.56, 0.64, 1), transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
   }
   .toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .weekly-recap-banner {
+    position: fixed; bottom: 1.5rem; left: 50%; z-index: 100;
+    background: var(--bg-card); box-shadow: var(--shadow-elevated); border-radius: var(--radius-md);
+    padding: 1.1rem 1.25rem; color: var(--text-primary);
+    width: calc(100% - 2.5rem); max-width: 420px;
+    opacity: 0; pointer-events: none; cursor: pointer;
+    transform: translateX(-50%) translateY(8px);
+    transition: opacity 200ms cubic-bezier(0.34, 1.56, 0.64, 1), transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .weekly-recap-banner.visible { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
   .field-error { display: none; color: var(--danger); font-size: var(--text-sm); margin-top: 0.4rem; }
   .field-error.show { display: block; }
 
