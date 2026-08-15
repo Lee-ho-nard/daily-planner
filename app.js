@@ -1602,6 +1602,7 @@ let currentRange = "week";
     renderRingChart();
     renderBarChart(currentRange);
     renderMomentum();
+    renderMonthComparison();
     renderFocusScore();
     renderInsights();
     renderWeeklyRecapCard();
@@ -2037,6 +2038,42 @@ let currentRange = "week";
     lucide.createIcons();
     animateCountUp(document.getElementById("momentumThisWeek"), Math.round(thisWeek), 550);
     animateCountUp(document.getElementById("momentumLastWeek"), Math.round(lastWeek), 550);
+  }
+
+  // "Last 30 days" means the 30 days before this week, so it doesn't
+  // double-count days already reflected in the this-week average.
+  function computeMonthComparison() {
+    const thisWeek = avgPctForRange(6, 0);
+    const monthAvg = avgPctForRange(36, 7);
+    const diff = (thisWeek === null || monthAvg === null) ? null : thisWeek - monthAvg;
+    return { thisWeek, monthAvg, diff };
+  }
+
+  function renderMonthComparison() {
+    const el = document.getElementById("monthComparisonBox");
+    if (!el) return;
+    if (!isPremiumUser()) { el.style.display = "none"; return; }
+    el.style.display = "block";
+
+    const comp = computeMonthComparison();
+    if (comp.thisWeek === null || comp.monthAvg === null) {
+      el.innerHTML = `<div style="color:var(--text-muted);font-size:var(--text-base);">Not enough history yet to compare.</div>`;
+      return;
+    }
+
+    const diff = Math.round(comp.diff);
+    let icon = "minus", label = "In line with your last 30 days", color = "var(--text-muted)";
+    if (diff > 3) { icon = "trending-up"; label = "Trending above your last 30 days"; color = "var(--accent)"; }
+    else if (diff < -3) { icon = "trending-down"; label = "Trending below your last 30 days"; color = "var(--danger)"; }
+
+    el.innerHTML = `
+      <div style="font-size:var(--text-xl);color:${color};"><i data-lucide="${icon}" class="icon icon-lg" style="color:inherit;"></i></div>
+      <div style="font-weight:500;color:${color};">${label}</div>
+      <div style="font-size:var(--text-sm);color:var(--text-muted);">This week: <span id="monthCompThisWeek">0</span>% · Last 30 days average: <span id="monthCompMonthAvg">0</span>%</div>
+    `;
+    lucide.createIcons();
+    animateCountUp(document.getElementById("monthCompThisWeek"), Math.round(comp.thisWeek), 550);
+    animateCountUp(document.getElementById("monthCompMonthAvg"), Math.round(comp.monthAvg), 550);
   }
 
   function renderRingChart() {
