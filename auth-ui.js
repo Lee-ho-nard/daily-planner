@@ -8,14 +8,36 @@ import {
 
 // Local open/close helpers matching app.js's .modal-overlay "open" class
 // pattern (styles.css), kept self-contained rather than depending on
-// app.js's globals — the only intentional touch point with app.js's
-// existing surface is the showToast() call below.
+// app.js's globals — the only intentional touch points with app.js's
+// existing surface are showToast() (toast notifications) and showConfirm()
+// (the sign-out confirmation below, reusing the same pattern already used
+// for task/category deletion), both used defensively.
 function openModal(el) { el.classList.add("open"); }
 function closeModal(el) { el.classList.remove("open"); }
+function closeModalInstant(el) {
+  el.style.transition = "none";
+  el.classList.remove("open");
+  void el.offsetWidth;
+  el.style.transition = "";
+}
 
 function notify(message, variant) {
   if (typeof window.showToast === "function") {
     window.showToast(message, variant);
+  }
+}
+
+function confirmSignOut(onConfirm) {
+  if (typeof window.showConfirm === "function") {
+    window.showConfirm({
+      title: "Sign out",
+      message: "You'll need to sign in again to access your synced data on this device.",
+      confirmLabel: "Sign out",
+      danger: true,
+      onConfirm
+    });
+  } else {
+    onConfirm();
   }
 }
 
@@ -43,7 +65,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const userEmailEl = document.getElementById("authUserEmail");
   const signOutBtn = document.getElementById("authSignOutBtn");
 
-  if (!overlay || !signInBtn) return; // markup not present — nothing to wire up
+  const settingsBtn = document.getElementById("settingsBtn");
+  const settingsOverlay = document.getElementById("settingsModalOverlay");
+  const settingsCloseBtn = document.getElementById("settingsCloseBtn");
+
+  if (!overlay || !signInBtn || !settingsBtn || !settingsOverlay) return; // markup not present — nothing to wire up
 
   let mode = "signin";
 
@@ -55,6 +81,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function openAuthModal() {
+    closeModal(settingsOverlay);
     mode = "signin";
     emailInput.value = "";
     passwordInput.value = "";
@@ -62,6 +89,10 @@ document.addEventListener("DOMContentLoaded", () => {
     openModal(overlay);
     setTimeout(() => emailInput.focus(), 50);
   }
+
+  settingsBtn.addEventListener("click", () => openModal(settingsOverlay));
+  settingsCloseBtn.addEventListener("click", () => closeModal(settingsOverlay));
+  settingsOverlay.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(settingsOverlay); });
 
   signInBtn.addEventListener("click", openAuthModal);
   document.getElementById("authCancelBtn").addEventListener("click", () => closeModal(overlay));
@@ -107,7 +138,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  signOutBtn.addEventListener("click", () => signOutUser());
+  signOutBtn.addEventListener("click", () => {
+    closeModalInstant(settingsOverlay);
+    confirmSignOut(() => signOutUser());
+  });
 
   onAuthChange((user, migrationResult) => {
     if (user) {

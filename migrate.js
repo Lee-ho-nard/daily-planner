@@ -43,6 +43,7 @@ export async function runMigrationIfNeeded(uid) {
   const localLockedDays = JSON.parse(localStorage.getItem("lockedDays")) || [];
   const localDeepWorkSessions = JSON.parse(localStorage.getItem("deepWorkSessions")) || [];
   const localCustomPresets = JSON.parse(localStorage.getItem("customPresets")) || [];
+  const localSelectedTheme = localStorage.getItem("selectedTheme") || null;
   const localIdentity = localStorage.getItem("userIdentity") || "";
   const localOnboardingComplete = localStorage.getItem("onboardingComplete") === "true";
 
@@ -113,6 +114,10 @@ export async function runMigrationIfNeeded(uid) {
     const docId = id || doc(collection(db, "users", uid, "customPresets")).id;
     ops.push({ ref: doc(db, "users", uid, "customPresets", docId), data: rest });
   });
+
+  if (localSelectedTheme) {
+    ops.push({ ref: doc(db, "users", uid, "settings", "prefs"), data: { selectedTheme: localSelectedTheme } });
+  }
 
   await commitInBatches(ops);
 

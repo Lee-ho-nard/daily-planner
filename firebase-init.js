@@ -11,12 +11,12 @@ import {
 // with your real project's config from the Firebase console
 // (Project settings → General → Your apps → SDK setup and configuration).
 const firebaseConfig = {
-  apiKey: "REPLACE_WITH_YOUR_API_KEY",
-  authDomain: "REPLACE_WITH_YOUR_PROJECT.firebaseapp.com",
-  projectId: "REPLACE_WITH_YOUR_PROJECT_ID",
-  storageBucket: "REPLACE_WITH_YOUR_PROJECT.appspot.com",
-  messagingSenderId: "REPLACE_WITH_YOUR_SENDER_ID",
-  appId: "REPLACE_WITH_YOUR_APP_ID"
+  apiKey: "AIzaSyBbaXv4F4kMBWCBVHegyLJUBJRHxUZ4KbM",
+  authDomain: "flit-96c38.firebaseapp.com",
+  projectId: "flit-96c38",
+  storageBucket: "flit-96c38.firebasestorage.app",
+  messagingSenderId: "532727180368",
+  appId: "1:532727180368:web:96ba0f6862f88ec42eb555"
 };
 
 export const firebaseApp = initializeApp(firebaseConfig);

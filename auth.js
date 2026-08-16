@@ -10,7 +10,12 @@ import {
 import { runMigrationIfNeeded } from "./migrate.js";
 
 export function signInWithGoogle() {
-  return signInWithPopup(auth, new GoogleAuthProvider());
+  const provider = new GoogleAuthProvider();
+  // Without this, Google silently re-signs-in with whichever account was
+  // used last instead of showing the picker — no chance to choose a
+  // different account.
+  provider.setCustomParameters({ prompt: "select_account" });
+  return signInWithPopup(auth, provider);
 }
 
 export function signUpWithEmail(email, password) {

@@ -25,6 +25,10 @@
 
   <div class="weekly-recap-banner" id="weeklyRecapBanner"></div>
 
+  <div class="settings-corner">
+    <button id="settingsBtn" class="cat-add" type="button" title="Settings"><i data-lucide="settings" class="icon"></i></button>
+  </div>
+
   <div class="app-header-row">
     <div class="view-tabs">
       <button class="view-tab active" id="tabPlanner">Planner</button>
@@ -34,11 +38,6 @@
     </div>
     <button id="exportDataBtn" class="cat-add" style="display:none;" title="Export data"><i data-lucide="download" class="icon"></i></button>
     <button id="themesBtn" class="cat-add" style="display:none;" title="Themes"><i data-lucide="palette" class="icon"></i></button>
-    <button id="authSignInBtn" class="cat-pill" type="button">Sign in</button>
-    <div id="authStatus" class="auth-status" style="display:none;">
-      <span id="authUserEmail" class="auth-status-email"></span>
-      <button id="authSignOutBtn" class="auth-status-signout" type="button">Sign out</button>
-    </div>
   </div>
 
   <div id="plannerView">
@@ -356,6 +355,24 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="settingsModalOverlay">
+  <div class="modal">
+    <h3>Settings</h3>
+    <div class="settings-section">
+      <div class="settings-section-label">Account</div>
+      <button id="authSignInBtn" class="cat-pill" type="button">Sign in</button>
+      <div id="authStatus" class="auth-status" style="display:none;">
+        <span id="authUserEmail" class="auth-status-email"></span>
+        <button id="authSignOutBtn" class="auth-status-signout" type="button">Sign out</button>
+      </div>
+    </div>
+    <!-- Subscription status goes here once billing exists client-side. -->
+    <div class="modal-actions">
+      <button class="btn-cancel" id="settingsCloseBtn">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="authModalOverlay">
   <div class="modal">
     <h3 id="authModalTitle">Sign in</h3>
@@ -475,5 +492,6 @@
 <script src="app.js"></script>
 <script type="module" src="firebase-init.js"></script>
 <script type="module" src="auth-ui.js"></script>
+<script type="module" src="firestore-sync.js"></script>
 </body>
 </html>

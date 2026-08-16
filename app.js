@@ -119,6 +119,11 @@
   return `${y}-${m}-${day}`;
 }
   function save() {
+    if (window.firestoreBridge && window.firestoreBridge.isSignedIn()) {
+      window.firestoreBridge.syncTasks(tasks);
+      window.firestoreBridge.syncCategories(categories);
+      return;
+    }
     localStorage.setItem("tasks", JSON.stringify(tasks));
     localStorage.setItem("categories", JSON.stringify(categories));
   }
@@ -1058,8 +1063,30 @@
   });
 
   // --- Premium accent themes ---
+  // No cached variable existed for this before — every read/write hit
+  // localStorage directly. Signed-in users read/write Firestore's
+  // settings/prefs doc instead, via window.firestoreBridge (set up by
+  // firestore-sync.js); signed-out users keep using localStorage exactly
+  // as before, cached here so it's not re-parsed on every call.
+  let localSelectedTheme = localStorage.getItem("selectedTheme") || null;
+
+  function getSelectedTheme() {
+    return (window.firestoreBridge && window.firestoreBridge.isSignedIn())
+      ? window.firestoreBridge.getSelectedTheme()
+      : localSelectedTheme;
+  }
+
+  function saveSelectedTheme(theme) {
+    if (window.firestoreBridge && window.firestoreBridge.isSignedIn()) {
+      window.firestoreBridge.saveSelectedTheme(theme);
+      return;
+    }
+    localSelectedTheme = theme;
+    localStorage.setItem("selectedTheme", theme);
+  }
+
   function applySelectedTheme() {
-    const stored = localStorage.getItem("selectedTheme");
+    const stored = getSelectedTheme();
     const themeName = (isPremiumUser() && stored && THEMES[stored]) ? stored : null;
     if (themeName && themeName !== "forest") {
       document.documentElement.setAttribute("data-selected-theme", themeName);
@@ -1077,7 +1104,7 @@
   function renderThemeOptions() {
     const wrap = document.getElementById("themeOptionList");
     wrap.innerHTML = "";
-    const current = localStorage.getItem("selectedTheme") || "forest";
+    const current = getSelectedTheme() || "forest";
     Object.keys(THEMES).forEach(key => {
       const theme = THEMES[key];
       const row = document.createElement("button");
@@ -1098,7 +1125,7 @@
         triggerHaptic("light");
         wrap.querySelectorAll(".ob-row.selected").forEach(r => r.classList.remove("selected"));
         row.classList.add("selected");
-        localStorage.setItem("selectedTheme", key);
+        saveSelectedTheme(key);
         applySelectedTheme();
         swatch.style.transform = "scale(1.15)";
         setTimeout(() => {
@@ -1141,11 +1168,15 @@
   }
 
   function exportDataAsJson() {
+    // Reads the cached variables (correct for both signed-in and
+    // signed-out — the cache reflects whichever is the live source) rather
+    // than localStorage directly, since localStorage isn't kept in sync
+    // for signed-in users.
     const data = {
-      tasks: JSON.parse(localStorage.getItem("tasks")) || [],
-      categories: JSON.parse(localStorage.getItem("categories")) || [],
-      reflections: JSON.parse(localStorage.getItem("reflections")) || {},
-      lockedDays: JSON.parse(localStorage.getItem("lockedDays")) || []
+      tasks,
+      categories,
+      reflections,
+      lockedDays
     };
     downloadFile(`planner-export-${toDateStr(new Date())}.json`, JSON.stringify(data, null, 2), "application/json");
     showToast("Exported — check your downloads.", "success");
@@ -1154,7 +1185,7 @@
   function exportDataAsCsv() {
     const dateStr = toDateStr(new Date());
 
-    const storedTasks = JSON.parse(localStorage.getItem("tasks")) || [];
+    const storedTasks = tasks;
     const taskHeader = ["name", "category", "date", "time", "duration", "done", "isGoal", "why", "plan"];
     const taskLines = [taskHeader.join(",")];
     storedTasks.forEach(t => {
@@ -1167,7 +1198,7 @@
     });
     downloadFile(`planner-export-tasks-${dateStr}.csv`, taskLines.join("\n"), "text/csv");
 
-    const storedReflections = JSON.parse(localStorage.getItem("reflections")) || {};
+    const storedReflections = reflections;
     const reflHeader = ["date", "wentWell", "improve"];
     const reflLines = [reflHeader.join(",")];
     Object.keys(storedReflections).sort().forEach(date => {
@@ -1521,10 +1552,10 @@ let currentRange = "week";
       }
     });
 
-    const deepWorkSessions = (JSON.parse(localStorage.getItem("deepWorkSessions")) || [])
+    const deepWorkSessions = getDeepWorkSessions()
       .filter(s => s.date >= startStr && s.date <= endStr).length;
 
-    const reflectionsWritten = Object.keys(JSON.parse(localStorage.getItem("reflections")) || {})
+    const reflectionsWritten = Object.keys(reflections)
       .filter(d => d >= startStr && d <= endStr).length;
 
     const goalTasks = tasks.filter(t => t.isGoal);
@@ -2252,6 +2283,10 @@ let currentRange = "week";
   let customPresets = JSON.parse(localStorage.getItem("customPresets")) || [];
 
   function saveCustomPresets() {
+    if (window.firestoreBridge && window.firestoreBridge.isSignedIn()) {
+      window.firestoreBridge.syncCustomPresets(customPresets);
+      return;
+    }
     localStorage.setItem("customPresets", JSON.stringify(customPresets));
   }
 
@@ -2293,18 +2328,42 @@ let currentRange = "week";
     return localStorage.getItem("isPremium") === "true";
   }
 
-  function logDeepWorkSession(session, workMinutes) {
-    const sessions = JSON.parse(localStorage.getItem("deepWorkSessions")) || [];
-    sessions.push({ date: toDateStr(new Date()), sessionName: session.name, durationMinutes: workMinutes, note: "" });
-    localStorage.setItem("deepWorkSessions", JSON.stringify(sessions));
-    return sessions.length - 1;
+  // No cached variable existed for this before — every read/write hit
+  // localStorage directly (5 separate literal reads). Signed-in users read
+  // the live Firestore mirror via window.firestoreBridge; signed-out users
+  // keep using this local cache, loaded from localStorage exactly as
+  // before. Firestore writes land in the follow-up chunk — this chunk is
+  // read-side only.
+  let localDeepWorkSessions = JSON.parse(localStorage.getItem("deepWorkSessions")) || [];
+
+  function getDeepWorkSessions() {
+    return (window.firestoreBridge && window.firestoreBridge.isSignedIn())
+      ? window.firestoreBridge.getDeepWorkSessions()
+      : localDeepWorkSessions;
   }
 
-  function saveDeepWorkSessionNote(sessionIndex, note) {
-    const sessions = JSON.parse(localStorage.getItem("deepWorkSessions")) || [];
-    if (sessions[sessionIndex]) {
-      sessions[sessionIndex].note = note;
-      localStorage.setItem("deepWorkSessions", JSON.stringify(sessions));
+  // Returns an opaque identifier threaded through to saveDeepWorkSessionNote
+  // later — an array index when signed out, a Firestore doc id (string)
+  // when signed in. Neither caller in between (showSessionCompleteScreen/
+  // showSessionNoteScreen) inspects it, just passes it along.
+  function logDeepWorkSession(session, workMinutes) {
+    const sessionData = { date: toDateStr(new Date()), sessionName: session.name, durationMinutes: workMinutes, note: "" };
+    if (window.firestoreBridge && window.firestoreBridge.isSignedIn()) {
+      return window.firestoreBridge.logDeepWorkSession(sessionData);
+    }
+    localDeepWorkSessions.push(sessionData);
+    localStorage.setItem("deepWorkSessions", JSON.stringify(localDeepWorkSessions));
+    return localDeepWorkSessions.length - 1;
+  }
+
+  function saveDeepWorkSessionNote(sessionId, note) {
+    if (window.firestoreBridge && window.firestoreBridge.isSignedIn()) {
+      window.firestoreBridge.saveDeepWorkSessionNote(sessionId, note);
+      return;
+    }
+    if (localDeepWorkSessions[sessionId]) {
+      localDeepWorkSessions[sessionId].note = note;
+      localStorage.setItem("deepWorkSessions", JSON.stringify(localDeepWorkSessions));
     }
   }
 
@@ -2314,7 +2373,7 @@ let currentRange = "week";
       el.innerHTML = `<div class="deep-work-stats-teaser">Unlock session history and stats with Premium</div>`;
       return;
     }
-    const sessions = JSON.parse(localStorage.getItem("deepWorkSessions")) || [];
+    const sessions = getDeepWorkSessions();
     const today = new Date();
     const weekStart = new Date(today);
     weekStart.setDate(weekStart.getDate() - 6);
@@ -2494,7 +2553,7 @@ let currentRange = "week";
   // deepWorkSessions history actually supports one — a real personal
   // record beats a stock compliment.
   function computeAffirmation(workMinutes) {
-    const sessions = JSON.parse(localStorage.getItem("deepWorkSessions")) || [];
+    const sessions = getDeepWorkSessions();
     const todayStr = toDateStr(new Date());
     const todayCount = sessions.filter(s => s.date === todayStr).length;
     const priorSessions = sessions.slice(0, -1); // exclude the one just logged
@@ -2761,6 +2820,13 @@ let currentRange = "week";
   let lockedDays = JSON.parse(localStorage.getItem("lockedDays")) || [];
 
   function saveLockedDays() {
+    if (window.firestoreBridge && window.firestoreBridge.isSignedIn()) {
+      // No separate write here — the only call site always immediately
+      // follows with saveReflections(dateStr) for the same date, which
+      // syncs the combined {wentWell, improve, locked} doc in one go
+      // (the schema merges lock state onto the reflection doc).
+      return;
+    }
     localStorage.setItem("lockedDays", JSON.stringify(lockedDays));
   }
 
@@ -2768,7 +2834,13 @@ let currentRange = "week";
     return lockedDays.includes(dateStr);
   }
 
-  function saveReflections() {
+  function saveReflections(dateStr) {
+    if (window.firestoreBridge && window.firestoreBridge.isSignedIn()) {
+      if (dateStr) {
+        window.firestoreBridge.syncReflection(dateStr, reflections[dateStr] || {}, lockedDays.includes(dateStr));
+      }
+      return;
+    }
     localStorage.setItem("reflections", JSON.stringify(reflections));
   }
 
@@ -2975,19 +3047,22 @@ let currentRange = "week";
       lockedDays.push(dateStr);
       saveLockedDays();
       reflections[dateStr] = { wentWell, improve };
-      saveReflections();
+      saveReflections(dateStr);
       document.getElementById("reflWentWell").value = "";
       document.getElementById("reflImprove").value = "";
 
       showSealScreen(new Date(reflectionDate), () => {
         pendingLockDate = null;
+        updateExportBtnVisibility();
+        updateThemesBtnVisibility();
+        updateSearchReflectionsBtnVisibility();
         renderAll();
         switchView("planner");
         setTimeout(animateBannerIn, 150);
       });
     } else {
       reflections[dateStr] = { wentWell, improve };
-      saveReflections();
+      saveReflections(dateStr);
       document.getElementById("reflWentWell").value = wentWell;
       document.getElementById("reflImprove").value = improve;
       showToast("Saved.", "info");
@@ -3018,6 +3093,9 @@ let currentRange = "week";
       danger: false,
       onConfirm: () => {
         pendingLockDate = dateStr;
+        document.getElementById("exportDataBtn").style.display = "none";
+        document.getElementById("themesBtn").style.display = "none";
+        document.getElementById("searchReflectionsBtn").style.display = "none";
         reflectionReadOnly = false;
         document.getElementById("reflectionView").style.transitionDuration = "400ms";
         switchView("reflection");
@@ -3773,6 +3851,82 @@ let currentRange = "week";
     renderAll();
     switchView("planner");
   }
+
+  // --- Firestore sync (signed-in users only) ---
+  // app.js is a classic script and always finishes running — including the
+  // localStorage-based bootstrap render below — before firestore-sync.js
+  // (a deferred module script) even starts, so auth state is never known
+  // yet at that point. These listeners are registered now (safe regardless
+  // of load order — dispatch always happens later) and swap in the real
+  // data once firestore-sync.js knows it.
+  function rerenderCurrentView() {
+    renderAll();
+    if (currentView === "goals") renderGoals();
+    else if (currentView === "analysis") renderAnalysis();
+    else if (currentView === "reflection") renderReflection();
+    else if (currentView === "focus") renderFocus();
+  }
+
+  function hydrateFromFirestore() {
+    if (!window.firestoreBridge || !window.firestoreBridge.isSignedIn()) return;
+    hasBeenSignedInThisSession = true;
+    tasks = window.firestoreBridge.getTasks();
+    categories = window.firestoreBridge.getCategories();
+    reflections = window.firestoreBridge.getReflections();
+    lockedDays = window.firestoreBridge.getLockedDays();
+    customPresets = window.firestoreBridge.getCustomPresets();
+    // deepWorkSessions/selectedTheme aren't cached top-level variables —
+    // getDeepWorkSessions()/getSelectedTheme() already branch live off
+    // window.firestoreBridge, so there's nothing to reassign here.
+
+    const wasOnboarding = document.body.classList.contains("onboarding-active");
+    if (wasOnboarding && categories.length > 0) {
+      localStorage.setItem("onboardingComplete", "true");
+      document.getElementById("onboardingView").classList.remove("visible");
+      document.body.classList.remove("onboarding-active");
+      switchView("planner");
+    }
+
+    rerenderCurrentView();
+  }
+
+  // Only true once we've actually seen a signed-in state this session —
+  // guards clearLocalDataOnSignOut() so it never fires for someone who was
+  // simply never signed in (every fresh, account-less visit would otherwise
+  // wipe local data on load, since "signed out" is also the default state
+  // before any sign-in has happened).
+  let hasBeenSignedInThisSession = false;
+
+  function clearLocalDataOnSignOut() {
+    tasks = [];
+    categories = [];
+    reflections = {};
+    lockedDays = [];
+    customPresets = [];
+    localDeepWorkSessions = [];
+    localSelectedTheme = null;
+    localStorage.removeItem("tasks");
+    localStorage.removeItem("categories");
+    localStorage.removeItem("reflections");
+    localStorage.removeItem("lockedDays");
+    localStorage.removeItem("customPresets");
+    localStorage.removeItem("deepWorkSessions");
+    localStorage.removeItem("selectedTheme");
+    applySelectedTheme();
+    rerenderCurrentView();
+  }
+
+  document.addEventListener("firestore-auth-ready", (e) => {
+    if (e.detail.signedIn) {
+      hydrateFromFirestore();
+    } else if (hasBeenSignedInThisSession) {
+      hasBeenSignedInThisSession = false;
+      clearLocalDataOnSignOut();
+    }
+  });
+  document.addEventListener("firestore-data-changed", () => {
+    hydrateFromFirestore();
+  });
 
   if (localStorage.getItem("onboardingComplete") !== "true" && categories.length === 0) {
     document.body.classList.add("onboarding-active");

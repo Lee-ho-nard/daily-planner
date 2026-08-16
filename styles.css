@@ -76,6 +76,8 @@
   button, input, select, textarea { font-family: inherit; }
   .container { max-width: 480px; margin: 0 auto; }
 
+  .settings-corner { position: fixed; top: 1.5rem; right: 1.5rem; z-index: 6; transition: opacity 0.5s ease; }
+  body.timer-active .settings-corner { opacity: 0; pointer-events: none; }
   .app-header-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem; }
   .app-header-row .view-tabs { flex: 1; }
   .view-tabs { display: flex; gap: 0.4rem; background: var(--border); padding: 0.3rem; border-radius: var(--radius-md); position: relative; z-index: 6; }
