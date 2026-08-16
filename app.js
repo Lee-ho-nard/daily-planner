@@ -2241,12 +2241,12 @@ let currentRange = "week";
     });
   });
   const SESSIONS = [
-    { name: "Sprint", icon: "zap", time: "25 / 5", work: 25 },
-    { name: "Flow", icon: "waves", time: "50 / 10", work: 50 },
-    { name: "Ultra", icon: "flame", time: "90 / 20", work: 90 },
-    { name: "Micro", icon: "zap-off", time: "10 / 2", work: 10 },
-    { name: "Marathon", icon: "mountain", time: "120 / 30", work: 120 },
-    { name: "Custom", icon: "settings", time: "Choose", work: null }
+    { name: "Sprint", icon: "zap", time: "25 / 5", work: 25, breakMinutes: 5 },
+    { name: "Flow", icon: "waves", time: "50 / 10", work: 50, breakMinutes: 10 },
+    { name: "Ultra", icon: "flame", time: "90 / 20", work: 90, breakMinutes: 20 },
+    { name: "Micro", icon: "zap-off", time: "10 / 2", work: 10, breakMinutes: 2 },
+    { name: "Marathon", icon: "mountain", time: "120 / 30", work: 120, breakMinutes: 30 },
+    { name: "Custom", icon: "settings", time: "Choose", work: null, breakMinutes: null }
   ];
   let selectedSession = 0;
   let customPresets = JSON.parse(localStorage.getItem("customPresets")) || [];
@@ -2255,8 +2255,11 @@ let currentRange = "week";
     localStorage.setItem("customPresets", JSON.stringify(customPresets));
   }
 
-  function addCustomPreset(name, minutes) {
-    customPresets.push({ id: Date.now().toString() + Math.random().toString(36).slice(2, 7), name, workMinutes: minutes });
+  function addCustomPreset(name, minutes, breakMinutes) {
+    const resolvedBreak = (breakMinutes === null || breakMinutes === undefined || isNaN(breakMinutes))
+      ? Math.round(minutes / 5)
+      : breakMinutes;
+    customPresets.push({ id: Date.now().toString() + Math.random().toString(36).slice(2, 7), name, workMinutes: minutes, breakMinutes: resolvedBreak });
     saveCustomPresets();
     selectedSession = SESSIONS.length + customPresets.length - 1;
   }
@@ -2269,6 +2272,9 @@ let currentRange = "week";
   function getSessionOptions() {
     return SESSIONS.concat(customPresets.map(p => ({
       name: p.name, icon: "star", time: p.workMinutes + " min", work: p.workMinutes,
+      // Presets saved before breakMinutes existed won't have it — fall back
+      // to the same work/5 default used when creating a new preset.
+      breakMinutes: p.breakMinutes != null ? p.breakMinutes : Math.round(p.workMinutes / 5),
       isCustomPreset: true, id: p.id
     })));
   }
@@ -2417,6 +2423,9 @@ let currentRange = "week";
   let remainingSeconds = 0;
   let totalSeconds = 0;
   let timerRunning = false;
+  let timerPhase = "work"; // "work" | "break"
+  let currentCompletedSession = null;
+  let lastSessionWorkMinutes = 0;
 
   function formatTime(sec) {
     const m = Math.floor(sec / 60);
@@ -2424,7 +2433,7 @@ let currentRange = "week";
     return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
   }
 
-  function drawTimerRing(pctRemaining) {
+  function drawTimerRing(pctRemaining, ringColor) {
     const svg = document.getElementById("timerRing");
     svg.innerHTML = "";
     const ns = "http://www.w3.org/2000/svg";
@@ -2438,7 +2447,7 @@ let currentRange = "week";
 
     const fg = document.createElementNS(ns, "circle");
     fg.setAttribute("cx", cx); fg.setAttribute("cy", cy); fg.setAttribute("r", r);
-    fg.setAttribute("fill", "none"); fg.setAttribute("stroke", "var(--accent)"); fg.setAttribute("stroke-width", "10");
+    fg.setAttribute("fill", "none"); fg.setAttribute("stroke", ringColor || "var(--accent)"); fg.setAttribute("stroke-width", "10");
     fg.setAttribute("stroke-linecap", "round");
     const dashLen = (pctRemaining / 100) * circumference;
     fg.setAttribute("stroke-dasharray", `${dashLen} ${circumference - dashLen}`);
@@ -2449,7 +2458,7 @@ let currentRange = "week";
 
   function updateTimerDisplay() {
     document.getElementById("timerTime").textContent = formatTime(remainingSeconds);
-    drawTimerRing((remainingSeconds / totalSeconds) * 100);
+    drawTimerRing((remainingSeconds / totalSeconds) * 100, timerPhase === "break" ? "var(--warning)" : "var(--accent)");
   }
 
   function crossfadeFocusScreens(hideEl, showEl) {
@@ -2466,9 +2475,46 @@ let currentRange = "week";
     }, 150);
   }
 
+  const AFFIRMATION_VARIANTS = [
+    "Nice work.",
+    "That's a solid block.",
+    "Locked in.",
+    "Deep work, done right.",
+    "Head down, task done."
+  ];
+  let affirmationRotationIndex = 0;
+
+  function ordinal(n) {
+    const suffixes = ["th", "st", "nd", "rd"];
+    const v = n % 100;
+    return n + (suffixes[(v - 20) % 10] || suffixes[v] || suffixes[0]);
+  }
+
+  // Prefers a specific, true line over the generic rotation whenever
+  // deepWorkSessions history actually supports one — a real personal
+  // record beats a stock compliment.
+  function computeAffirmation(workMinutes) {
+    const sessions = JSON.parse(localStorage.getItem("deepWorkSessions")) || [];
+    const todayStr = toDateStr(new Date());
+    const todayCount = sessions.filter(s => s.date === todayStr).length;
+    const priorSessions = sessions.slice(0, -1); // exclude the one just logged
+    // Strictly greater, not >= — a tied duration (very common when repeating
+    // the same preset via "Start another") shouldn't claim a new record on
+    // every single repeat and crowd out the "Nth session today" line.
+    const isLongestEver = priorSessions.length > 0 && workMinutes > Math.max(...priorSessions.map(s => s.durationMinutes));
+
+    if (isLongestEver) return "Longest session yet.";
+    if (todayCount >= 2) return `${ordinal(todayCount)} session today.`;
+
+    const line = AFFIRMATION_VARIANTS[affirmationRotationIndex % AFFIRMATION_VARIANTS.length];
+    affirmationRotationIndex++;
+    return line;
+  }
+
   function showSessionCompleteScreen(session, workMinutes, sessionIndex, onDone) {
     const screen = document.getElementById("sessionCompleteScreen");
     document.getElementById("sessionCompleteInfo").textContent = `${session.name} session — ${workMinutes} minutes`;
+    document.getElementById("sessionCompleteAffirmation").textContent = computeAffirmation(workMinutes);
     screen.classList.add("visible");
     setTimeout(() => {
       screen.classList.remove("visible");
@@ -2502,15 +2548,101 @@ let currentRange = "week";
     if (remainingSeconds <= 0) {
       clearInterval(timerInterval);
       updateTimerDisplay();
-      const session = getSessionOptions()[selectedSession];
-      const workMinutes = Math.round(totalSeconds / 60);
-      const sessionIndex = logDeepWorkSession(session, workMinutes);
-      showSessionCompleteScreen(session, workMinutes, sessionIndex, () => {
-        endTimer();
-      });
+      if (timerPhase === "break") {
+        finishBreakPhase();
+      } else {
+        finishWorkPhase();
+      }
       return;
     }
     updateTimerDisplay();
+  }
+
+  function finishWorkPhase() {
+    const session = getSessionOptions()[selectedSession];
+    const workMinutes = Math.round(totalSeconds / 60);
+    const breakMinutes = session.breakMinutes != null ? session.breakMinutes : Math.round(workMinutes / 5);
+    const sessionIndex = logDeepWorkSession(session, workMinutes);
+    currentCompletedSession = session;
+    lastSessionWorkMinutes = workMinutes;
+    showSessionCompleteScreen(session, workMinutes, sessionIndex, () => {
+      if (breakMinutes > 0) {
+        startBreakTimer(session, breakMinutes);
+      } else {
+        showRepeatScreen(session);
+      }
+    });
+  }
+
+  function finishBreakPhase() {
+    timerRunning = false;
+    showRepeatScreen(currentCompletedSession);
+  }
+
+  function setTimerLabelIcon(iconName) {
+    const iconEl = document.querySelector("#focusTimerScreen .timer-label i");
+    if (!iconEl) return;
+    iconEl.setAttribute("data-lucide", iconName);
+    lucide.createIcons();
+  }
+
+  // Shared by both the setup-screen "Start Session" path and the post-break
+  // "Start another" path, so restarting reuses the exact same duration
+  // rather than re-deriving it (which would break for ad-hoc Custom minutes).
+  function beginTimer(session, workMinutes) {
+    timerPhase = "work";
+    totalSeconds = workMinutes * 60;
+    remainingSeconds = totalSeconds;
+    timerRunning = true;
+
+    document.getElementById("focusTimerScreen").classList.remove("break-mode", "repeat-mode");
+    document.getElementById("skipBreakBtn").style.display = "none";
+    document.getElementById("timerRepeatActions").style.display = "none";
+    document.getElementById("timerLabel").textContent = session.name + " session";
+    setTimerLabelIcon("timer");
+    setIcon(document.getElementById("pauseResumeBtn"), "pause");
+    document.body.classList.add("timer-active");
+
+    updateTimerDisplay();
+    clearInterval(timerInterval);
+    timerInterval = setInterval(tick, 1000);
+  }
+
+  function startBreakTimer(session, breakMinutes) {
+    timerPhase = "break";
+    totalSeconds = breakMinutes * 60;
+    remainingSeconds = totalSeconds;
+    timerRunning = true;
+
+    document.getElementById("focusTimerScreen").classList.add("break-mode");
+    document.getElementById("timerLabel").textContent = "Break";
+    setTimerLabelIcon("coffee");
+    document.getElementById("skipBreakBtn").style.display = "block";
+    setIcon(document.getElementById("pauseResumeBtn"), "pause");
+
+    updateTimerDisplay();
+    clearInterval(timerInterval);
+    timerInterval = setInterval(tick, 1000);
+  }
+
+  function showRepeatScreen(session) {
+    timerRunning = false;
+    clearInterval(timerInterval);
+    document.body.classList.remove("timer-active");
+    document.getElementById("focusTimerScreen").classList.remove("break-mode");
+    document.getElementById("focusTimerScreen").classList.add("repeat-mode");
+    document.getElementById("skipBreakBtn").style.display = "none";
+    document.getElementById("timerLabel").textContent = "What's next?";
+    setTimerLabelIcon("timer");
+    document.getElementById("startAnotherBtn").textContent = `Start another ${session.name}`;
+    document.getElementById("timerRepeatActions").style.display = "flex";
+  }
+
+  function restartSameSession() {
+    if (!currentCompletedSession) return;
+    const idx = getSessionOptions().findIndex(o => sessionKey(o) === sessionKey(currentCompletedSession));
+    if (idx !== -1) selectedSession = idx;
+    beginTimer(currentCompletedSession, lastSessionWorkMinutes);
   }
 
   function startTimer() {
@@ -2532,24 +2664,17 @@ let currentRange = "week";
       customInput.value = "";
     }
     document.getElementById("customMinutesError").classList.remove("show");
-    totalSeconds = workMinutes * 60;
-    remainingSeconds = totalSeconds;
-    timerRunning = true;
-
     crossfadeFocusScreens(document.getElementById("focusSetup"), document.getElementById("focusTimerScreen"));
-    document.getElementById("timerLabel").textContent = session.name + " session";
-    setIcon(document.getElementById("pauseResumeBtn"), "pause");
-    document.body.classList.add("timer-active");
-
-    updateTimerDisplay();
-    clearInterval(timerInterval);
-    timerInterval = setInterval(tick, 1000);
+    beginTimer(session, workMinutes);
   }
 
   function endTimer() {
     clearInterval(timerInterval);
     timerRunning = false;
     document.body.classList.remove("timer-active");
+    document.getElementById("focusTimerScreen").classList.remove("break-mode", "repeat-mode");
+    document.getElementById("skipBreakBtn").style.display = "none";
+    document.getElementById("timerRepeatActions").style.display = "none";
     renderDeepWorkStats();
     crossfadeFocusScreens(document.getElementById("focusTimerScreen"), document.getElementById("focusSetup"));
   }
@@ -2563,12 +2688,14 @@ let currentRange = "week";
   }
   document.getElementById("customMinutesInput").addEventListener("keydown", blockNonWholeNumberKeys);
   document.getElementById("addPresetMinutesInput").addEventListener("keydown", blockNonWholeNumberKeys);
+  document.getElementById("addPresetBreakInput").addEventListener("keydown", blockNonWholeNumberKeys);
 
   const addPresetOverlay = document.getElementById("addPresetModalOverlay");
 
   function openAddPresetModal() {
     document.getElementById("addPresetNameInput").value = "";
     document.getElementById("addPresetMinutesInput").value = "";
+    document.getElementById("addPresetBreakInput").value = "";
     document.getElementById("addPresetError").classList.remove("show");
     openModal(addPresetOverlay);
     setTimeout(() => document.getElementById("addPresetNameInput").focus(), 50);
@@ -2579,6 +2706,8 @@ let currentRange = "week";
   document.getElementById("addPresetSaveBtn").addEventListener("click", () => {
     const name = document.getElementById("addPresetNameInput").value.trim();
     const minutes = parseInt(document.getElementById("addPresetMinutesInput").value);
+    const breakInputRaw = document.getElementById("addPresetBreakInput").value.trim();
+    const breakMinutes = breakInputRaw === "" ? null : parseInt(breakInputRaw);
     const err = document.getElementById("addPresetError");
     if (!name) {
       err.textContent = "Enter a name for this preset.";
@@ -2590,7 +2719,12 @@ let currentRange = "week";
       err.classList.add("show");
       return;
     }
-    addCustomPreset(name, minutes);
+    if (breakInputRaw !== "" && (isNaN(breakMinutes) || breakMinutes < 0)) {
+      err.textContent = "Break minutes can't be negative.";
+      err.classList.add("show");
+      return;
+    }
+    addCustomPreset(name, minutes, breakMinutes);
     closeModal(addPresetOverlay);
     renderFocus();
     showToast(`Saved "${name}" as a preset`, "success");
@@ -2613,6 +2747,14 @@ let currentRange = "week";
       onConfirm: endTimer
     });
   });
+
+  document.getElementById("skipBreakBtn").addEventListener("click", () => {
+    clearInterval(timerInterval);
+    finishBreakPhase();
+  });
+
+  document.getElementById("startAnotherBtn").addEventListener("click", restartSameSession);
+  document.getElementById("backToSetupBtn").addEventListener("click", endTimer);
   let reflectionDate = new Date();
   let reflectionReadOnly = false;
   let reflections = JSON.parse(localStorage.getItem("reflections")) || {};
