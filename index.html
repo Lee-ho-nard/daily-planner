@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Daily Planner</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400..800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 <link rel="stylesheet" href="styles.css">
@@ -41,6 +42,13 @@
   </div>
 
   <div id="plannerView">
+    <div id="accountNudgeBanner" class="account-nudge-banner" style="display:none;">
+      <div class="account-nudge-text"><i data-lucide="cloud-off" class="icon"></i> Your data is only saved on this device and could be lost. Create an account to back it up.</div>
+      <div class="account-nudge-actions">
+        <button type="button" id="accountNudgeCreateBtn" class="account-nudge-create-btn">Create account</button>
+        <button type="button" id="accountNudgeDismissBtn" class="account-nudge-dismiss-btn" title="Dismiss" aria-label="Dismiss"><i data-lucide="x" class="icon"></i></button>
+      </div>
+    </div>
     <div class="date-nav">
       <button id="prevDay"><i data-lucide="chevron-left" class="icon"></i></button>
       <div class="date-display">
@@ -79,24 +87,31 @@
   </div>
 
   <div id="analysisView" style="display:none;">
-    <div class="ring-section">
-      <svg id="ringChart" viewBox="0 0 200 200" width="180" height="180"></svg>
-      <div class="ring-legend" id="ringLegend"></div>
+    <div id="analysisEmptyState" class="empty-msg" style="display:none;">
+      <i data-lucide="bar-chart-3" class="icon" style="width:28px;height:28px;color:var(--text-muted);display:block;margin:0 auto 0.5rem;"></i>
+      <div class="big">Your trends will show up here.</div>
+      Analysis fills in once you've completed a few tasks — check back after a few days of using the Planner.
     </div>
-    <div id="weeklyRecapCard" style="display:none;background:var(--bg-card);border-radius:var(--radius-md);padding:1.1rem 1.3rem;margin-bottom:1.25rem;box-shadow:var(--shadow-card);"></div>
-    <div id="insightsCard" style="background:var(--bg-card);border-radius:var(--radius-md);padding:1.1rem 1.3rem;margin-bottom:1.25rem;box-shadow:var(--shadow-card);"></div>
-    <div id="momentumBox" style="background:var(--bg-card);border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:center;"></div>
-    <div id="monthComparisonBox" style="display:none;background:var(--bg-card);border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:center;"></div>
-    <div id="focusScoreBox" style="background:var(--bg-card);border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:center;"></div>
+    <div id="analysisContent">
+      <div class="ring-section">
+        <svg id="ringChart" viewBox="0 0 200 200" width="180" height="180"></svg>
+        <div class="ring-legend" id="ringLegend"></div>
+      </div>
+      <div id="weeklyRecapCard" style="display:none;background:var(--bg-card);border-radius:var(--radius-md);padding:1.1rem 1.3rem;margin-bottom:1.25rem;box-shadow:var(--shadow-card);"></div>
+      <div id="insightsCard" style="background:var(--bg-card);border-radius:var(--radius-md);padding:1.1rem 1.3rem;margin-bottom:1.25rem;box-shadow:var(--shadow-card);"></div>
+      <div id="momentumBox" style="background:var(--bg-card);border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:center;"></div>
+      <div id="monthComparisonBox" style="display:none;background:var(--bg-card);border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:center;"></div>
+      <div id="focusScoreBox" style="background:var(--bg-card);border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:center;"></div>
 
-    <div class="range-tabs">
-      <button class="range-tab active" data-range="week"><i data-lucide="bar-chart-3" class="icon"></i> Week</button>
-      <button class="range-tab" data-range="month"><i data-lucide="bar-chart-3" class="icon"></i> Month</button>
-      <button class="range-tab" data-range="year"><i data-lucide="bar-chart-3" class="icon"></i> Year</button>
+      <div class="range-tabs">
+        <button class="range-tab active" data-range="week"><i data-lucide="bar-chart-3" class="icon"></i> Week</button>
+        <button class="range-tab" data-range="month"><i data-lucide="bar-chart-3" class="icon"></i> Month</button>
+        <button class="range-tab" data-range="year"><i data-lucide="bar-chart-3" class="icon"></i> Year</button>
+      </div>
+
+      <div id="barChart" class="bar-chart"></div>
+      <div id="bestWorst" class="best-worst"></div>
     </div>
-
-    <div id="barChart" class="bar-chart"></div>
-    <div id="bestWorst" class="best-worst"></div>
   </div>
   <div id="reflectionView" style="display:none;">
     <div class="task-list-toolbar">
@@ -110,6 +125,8 @@
       </div>
       <button id="reflNextDay"><i data-lucide="chevron-right" class="icon"></i></button>
     </div>
+
+    <div id="reflEmptyIntro" class="deep-work-stats-teaser" style="display:none;">Reflection is a quick end-of-day check-in — what went well, and what you'd change. Write your first one below.</div>
 
     <div id="reflWentWellGroup" class="refl-group">
       <label style="display:flex;align-items:center;gap:0.3rem;font-size:var(--text-base);color:var(--text-secondary);margin-bottom:0.4rem;"><i data-lucide="book-open" class="icon"></i>What went well today?</label>
@@ -142,6 +159,8 @@
         <div class="custom-minutes-row" id="customMinutesRow" style="display:none;">
           <label>Custom minutes</label>
           <input type="number" id="customMinutesInput" min="1" placeholder="e.g. 40">
+          <label>Break minutes</label>
+          <input type="number" id="customBreakInput" min="0" placeholder="Defaults to minutes ÷ 5">
           <div class="field-error" id="customMinutesError"></div>
         </div>
 
@@ -187,6 +206,7 @@
     <div class="session-complete-info" id="sessionCompleteInfo"></div>
     <div class="session-complete-affirmation" id="sessionCompleteAffirmation"></div>
     <div class="session-complete-text">Session complete.</div>
+    <button type="button" id="sessionCompleteContinueBtn" class="start-focus-btn session-complete-continue">Continue</button>
   </div>
 </div>
 
@@ -216,6 +236,7 @@
 <button class="fab" id="openAddGoal" style="display:none;"><i data-lucide="plus" class="icon icon-lg"></i></button>
 <button class="mic-fab" id="micBtn"><i data-lucide="mic" class="icon icon-lg"></i></button>
 <button class="mic-fab" id="todayBtn" style="right: 9.5rem;"><i data-lucide="circle-dot" class="icon icon-lg"></i></button>
+<div class="guide-arrow fab-guide-arrow" id="fabGuideArrow" style="display:none;"><i data-lucide="arrow-down-right" class="icon"></i></div>
 
 <div id="bulkActionBar" style="display:none;">
   <button class="bulk-action-btn danger" id="bulkDeleteBtn"><i data-lucide="trash-2" class="icon"></i>Delete</button>
@@ -225,38 +246,37 @@
   <button class="bulk-action-btn" id="bulkDuplicateBtn"><i data-lucide="copy" class="icon"></i>Duplicate</button>
 </div>
 
-<div class="modal-overlay" id="bulkMoveModalOverlay">
+<div class="modal-overlay" id="bulkEditModalOverlay">
   <div class="modal">
-    <h3>Move to date</h3>
-    <label>New date</label>
-    <input type="date" id="bulkMoveDate">
-    <div class="modal-actions">
-      <button class="btn-cancel" id="bulkMoveCancel">Cancel</button>
-      <button class="btn-save" id="bulkMoveSave">Move</button>
-    </div>
-  </div>
-</div>
+    <h3 id="bulkEditModalTitle">Edit tasks</h3>
 
-<div class="modal-overlay" id="bulkCategoryModalOverlay">
-  <div class="modal">
-    <h3>Change category</h3>
-    <label>Category</label>
-    <select id="bulkCategorySelect"></select>
-    <div class="modal-actions">
-      <button class="btn-cancel" id="bulkCategoryCancel">Cancel</button>
-      <button class="btn-save" id="bulkCategorySave">Save</button>
+    <div class="bulk-field-group" id="bulkFieldGroupDate">
+      <label>Date</label>
+      <div class="bulk-field-row">
+        <input type="date" id="bulkEditDateInput">
+        <button type="button" class="bulk-field-clear" id="bulkEditDateClear" title="Clear" style="display:none;"><i data-lucide="x" class="icon"></i></button>
+      </div>
     </div>
-  </div>
-</div>
 
-<div class="modal-overlay" id="bulkDurationModalOverlay">
-  <div class="modal">
-    <h3>Change duration</h3>
-    <label>Duration, minutes</label>
-    <input type="number" id="bulkDurationInput" min="0" step="5" placeholder="e.g. 30">
+    <div class="bulk-field-group" id="bulkFieldGroupCategory">
+      <label>Category</label>
+      <div class="bulk-field-row">
+        <select id="bulkEditCategorySelect"></select>
+        <button type="button" class="bulk-field-clear" id="bulkEditCategoryClear" title="Clear" style="display:none;"><i data-lucide="x" class="icon"></i></button>
+      </div>
+    </div>
+
+    <div class="bulk-field-group" id="bulkFieldGroupDuration">
+      <label>Duration, minutes</label>
+      <div class="bulk-field-row">
+        <input type="number" id="bulkEditDurationInput" min="0" step="5" placeholder="e.g. 30">
+        <button type="button" class="bulk-field-clear" id="bulkEditDurationClear" title="Clear" style="display:none;"><i data-lucide="x" class="icon"></i></button>
+      </div>
+    </div>
+
     <div class="modal-actions">
-      <button class="btn-cancel" id="bulkDurationCancel">Cancel</button>
-      <button class="btn-save" id="bulkDurationSave">Save</button>
+      <button class="btn-cancel" id="bulkEditCancel">Close</button>
+      <button class="btn-save" id="bulkEditSave">Save</button>
     </div>
   </div>
 </div>
@@ -360,15 +380,53 @@
     <h3>Settings</h3>
     <div class="settings-section">
       <div class="settings-section-label">Account</div>
-      <button id="authSignInBtn" class="cat-pill" type="button">Sign in</button>
-      <div id="authStatus" class="auth-status" style="display:none;">
-        <span id="authUserEmail" class="auth-status-email"></span>
-        <button id="authSignOutBtn" class="auth-status-signout" type="button">Sign out</button>
+      <button id="authSignInBtn" class="start-focus-btn" type="button">Sign in</button>
+      <div id="authStatus" style="display:none;">
+        <div id="authUserEmail" class="settings-account-email"></div>
+        <div id="authAccountCreated" class="settings-account-meta"></div>
+        <div id="authSubscriptionStatus" class="settings-account-meta"></div>
+        <div id="authVerifyBanner" class="settings-verify-banner" style="display:none;">
+          <span>Email not verified.</span>
+          <button type="button" id="authResendVerifyBtn">Resend</button>
+        </div>
+        <button id="authChangePasswordBtn" class="settings-inline-link" type="button" style="display:none;">Change password</button>
+        <div class="modal-actions" style="margin-top:0.75rem;">
+          <button id="authSignOutBtn" class="btn-cancel" type="button">Sign out</button>
+          <button id="authDeleteAccountBtn" class="btn-delete-modal" type="button">Delete account</button>
+        </div>
       </div>
     </div>
-    <!-- Subscription status goes here once billing exists client-side. -->
     <div class="modal-actions">
       <button class="btn-cancel" id="settingsCloseBtn">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="changePasswordModalOverlay">
+  <div class="modal">
+    <h3>Change password</h3>
+    <label>Current password</label>
+    <input type="password" id="changePwCurrentInput" autocomplete="current-password">
+    <label>New password</label>
+    <input type="password" id="changePwNewInput" autocomplete="new-password">
+    <div class="field-error" id="changePwError"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="changePwCancelBtn">Cancel</button>
+      <button class="btn-save" id="changePwSaveBtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="reauthModalOverlay">
+  <div class="modal">
+    <h3>Confirm your password</h3>
+    <p style="font-size:var(--text-base);color:var(--text-secondary);line-height:1.5;margin-top:0.25rem;">For your security, please re-enter your password to finish deleting your account.</p>
+    <label>Password</label>
+    <input type="password" id="reauthPasswordInput" autocomplete="current-password">
+    <div class="field-error" id="reauthError"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="reauthCancelBtn">Cancel</button>
+      <button class="btn-delete-modal" id="reauthSubmitBtn">Continue</button>
     </div>
   </div>
 </div>
@@ -410,7 +468,7 @@
 
 <div class="modal-overlay" id="addPresetModalOverlay">
   <div class="modal">
-    <h3>Add preset</h3>
+    <h3 id="addPresetModalTitle">Add preset</h3>
     <label>Name</label>
     <input type="text" id="addPresetNameInput" placeholder="e.g. Writing block" maxlength="20">
     <label>Minutes</label>
@@ -477,6 +535,7 @@
   <div class="modal">
     <h3 id="goalViewName"></h3>
     <p style="font-size:var(--text-base); color:var(--text-secondary); margin-top:0.5rem;" id="goalViewCheckoff"></p>
+    <p style="font-size:var(--text-base); color:var(--text-secondary); margin-top:0.5rem; display:none;" id="goalViewFreezes"></p>
     <p style="font-size:var(--text-base); color:var(--text-muted); margin-top:0.75rem;"><strong>Why:</strong> <span id="goalViewWhy"></span></p>
     <p style="font-size:var(--text-base); color:var(--text-muted); margin-top:0.5rem;"><strong>Plan:</strong> <span id="goalViewPlan"></span></p>
     <div class="modal-actions">

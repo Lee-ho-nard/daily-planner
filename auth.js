@@ -5,7 +5,13 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   onAuthStateChanged,
-  signOut
+  signOut,
+  sendEmailVerification,
+  updatePassword,
+  deleteUser,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  reauthenticateWithPopup
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import { runMigrationIfNeeded } from "./migrate.js";
 
@@ -18,8 +24,13 @@ export function signInWithGoogle() {
   return signInWithPopup(auth, provider);
 }
 
-export function signUpWithEmail(email, password) {
-  return createUserWithEmailAndPassword(auth, email, password);
+export async function signUpWithEmail(email, password) {
+  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  // Best-effort — a failed send here (rare, e.g. transient network issue)
+  // shouldn't block account creation. The unverified-email banner in
+  // Settings gives the user a retry path either way.
+  try { await sendEmailVerification(cred.user); } catch (err) { console.error("Failed to send verification email:", err); }
+  return cred;
 }
 
 export function signInWithEmail(email, password) {
@@ -28,6 +39,61 @@ export function signInWithEmail(email, password) {
 
 export function signOutUser() {
   return signOut(auth);
+}
+
+export function getCurrentUser() {
+  return auth.currentUser;
+}
+
+export function hasPasswordProvider() {
+  const user = auth.currentUser;
+  return !!user && user.providerData.some(p => p.providerId === "password");
+}
+
+export function hasGoogleProvider() {
+  const user = auth.currentUser;
+  return !!user && user.providerData.some(p => p.providerId === "google.com");
+}
+
+export function sendVerificationEmail() {
+  const user = auth.currentUser;
+  if (!user) return Promise.reject(new Error("Not signed in"));
+  return sendEmailVerification(user);
+}
+
+// Refreshes auth.currentUser's cached fields (emailVerified, metadata, etc.)
+// from the server — needed because those don't update on their own after
+// e.g. clicking a verification link in another tab.
+export async function reloadCurrentUser() {
+  const user = auth.currentUser;
+  if (user) await user.reload();
+  return auth.currentUser;
+}
+
+export function reauthenticateWithPassword(password) {
+  const user = auth.currentUser;
+  const credential = EmailAuthProvider.credential(user.email, password);
+  return reauthenticateWithCredential(user, credential);
+}
+
+export function reauthenticateWithGoogle() {
+  const user = auth.currentUser;
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+  return reauthenticateWithPopup(user, provider);
+}
+
+// Firebase requires the current password to be verified via
+// reauthenticateWithCredential immediately before updatePassword — a stale
+// sign-in isn't enough, per Firebase Auth's security requirements.
+export function changePassword(newPassword) {
+  const user = auth.currentUser;
+  return updatePassword(user, newPassword);
+}
+
+export function deleteCurrentUser() {
+  const user = auth.currentUser;
+  return deleteUser(user);
 }
 
 // Listeners registered via onAuthChange, called whenever auth state settles

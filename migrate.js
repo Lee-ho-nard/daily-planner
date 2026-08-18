@@ -5,8 +5,7 @@ import {
   setDoc,
   collection,
   writeBatch,
-  serverTimestamp,
-  Timestamp
+  serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 const BATCH_LIMIT = 500;
@@ -49,10 +48,6 @@ export async function runMigrationIfNeeded(uid) {
 
   const hasLocalData = localTasks.length > 0 || localCategories.length > 0;
 
-  const now = new Date();
-  const trialEnd = new Date(now);
-  trialEnd.setDate(trialEnd.getDate() + 7);
-
   await setDoc(userRef, {
     // "name" and "ageBracket" are collected during onboarding but never
     // persisted to localStorage today (only held in memory during the
@@ -62,8 +57,12 @@ export async function runMigrationIfNeeded(uid) {
     ageBracket: "",
     createdAt: serverTimestamp(),
     onboardingComplete: localOnboardingComplete,
-    trialStartDate: Timestamp.fromDate(now),
-    trialEndDate: Timestamp.fromDate(trialEnd),
+    // Trial starts on the Day 1 seal (app.js's startTrialOnDayOneSeal(),
+    // written via firestoreBridge.setTrialStartDate), not here at account
+    // creation — per roadmap #7, the trial is placed after Day 1, not
+    // before/at onboarding. Null until that first seal happens.
+    trialStartDate: null,
+    trialEndDate: null,
     dataImportedAt: hasLocalData ? serverTimestamp() : null
   });
 

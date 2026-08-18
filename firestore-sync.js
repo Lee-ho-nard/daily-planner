@@ -3,11 +3,13 @@ import { onAuthChange } from "./auth.js";
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   setDoc,
   updateDoc,
   onSnapshot,
-  writeBatch
+  writeBatch,
+  Timestamp
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
 // Live in-memory mirrors of the signed-in user's Firestore data, kept fresh
@@ -24,7 +26,9 @@ const mirror = {
   lockedDays: [],
   deepWorkSessions: [],
   customPresets: [],
-  selectedTheme: null
+  selectedTheme: null,
+  userDoc: null,
+  billing: null
 };
 
 let currentUid = null;
@@ -45,6 +49,8 @@ function resetMirror() {
   mirror.deepWorkSessions = [];
   mirror.customPresets = [];
   mirror.selectedTheme = null;
+  mirror.userDoc = null;
+  mirror.billing = null;
 }
 
 function dispatchDataChanged(key) {
@@ -120,6 +126,22 @@ function startListening(uid) {
     mirror.selectedTheme = (snap.exists() && snap.data().selectedTheme) || null;
     markSourceReady(uid, "settings");
     dispatchDataChanged("selectedTheme");
+  }));
+
+  // Account (trial dates, etc.) and billing status — not part of
+  // pendingSources/the firestore-auth-ready gate since nothing in the main
+  // render path depends on them; Settings just re-renders live off the
+  // firestore-data-changed event when either arrives.
+  const userDocRef = doc(db, "users", uid);
+  unsubscribers.push(onSnapshot(userDocRef, snap => {
+    mirror.userDoc = snap.exists() ? snap.data() : null;
+    dispatchDataChanged("userDoc");
+  }));
+
+  const billingRef = doc(db, "users", uid, "billing", "status");
+  unsubscribers.push(onSnapshot(billingRef, snap => {
+    mirror.billing = snap.exists() ? snap.data() : null;
+    dispatchDataChanged("billing");
   }));
 }
 
@@ -239,6 +261,48 @@ async function saveSelectedTheme(theme) {
   await setDoc(ref, { selectedTheme: theme }, { merge: true });
 }
 
+// Starts the trial on the Day 1 seal (app.js's startTrialOnDayOneSeal()).
+// Reads the doc fresh (not the live mirror, which may not have loaded yet
+// right after sign-in — mirror.userDoc isn't part of the auth-ready gate)
+// so a seal that happens to land before the mirror catches up can't
+// clobber an already-started trial with a new start date.
+async function setTrialStartDate(startDate) {
+  if (!currentUid) return;
+  const ref = doc(db, "users", currentUid);
+  const snap = await getDoc(ref);
+  if (snap.exists() && snap.data().trialStartDate) return;
+  const end = new Date(startDate.getTime() + 7 * 86400000);
+  await setDoc(ref, {
+    trialStartDate: Timestamp.fromDate(startDate),
+    trialEndDate: Timestamp.fromDate(end)
+  }, { merge: true });
+}
+
+// Deletes every doc under users/{uid} that the client is allowed to write
+// (see firestore.rules): all subcollections plus the top-level doc itself.
+// billing/status and weeklyInsights/* are server-controlled — write: if
+// false for clients — so they're intentionally left behind; a full purge of
+// those needs a Cloud Function running under the Admin SDK, which is out of
+// scope here. Must run BEFORE the Auth account is deleted: once deleteUser()
+// succeeds the ID token is invalidated and these deletes would fail the
+// isOwner() security rule.
+async function deleteAllUserData(uid) {
+  const subcollections = ["tasks", "categories", "reflections", "deepWorkSessions", "customPresets"];
+  const ops = [];
+  for (const name of subcollections) {
+    const snap = await getDocs(collection(db, "users", uid, name));
+    snap.forEach(d => ops.push({ type: "delete", ref: d.ref }));
+  }
+  ops.push({ type: "delete", ref: doc(db, "users", uid, "settings", "prefs") });
+  ops.push({ type: "delete", ref: doc(db, "users", uid) });
+  await commitInBatches(ops);
+  teardownListeners();
+  currentUid = null;
+  pendingSources = null;
+  readyDispatchedForUid = null;
+  resetMirror();
+}
+
 window.firestoreBridge = {
   isSignedIn: () => currentUid !== null,
   getTasks: () => mirror.tasks,
@@ -248,11 +312,15 @@ window.firestoreBridge = {
   getDeepWorkSessions: () => mirror.deepWorkSessions,
   getCustomPresets: () => mirror.customPresets,
   getSelectedTheme: () => mirror.selectedTheme,
+  getAccountInfo: () => mirror.userDoc,
+  getBillingStatus: () => mirror.billing,
   syncTasks,
   syncCategories,
   syncCustomPresets,
   syncReflection,
   logDeepWorkSession,
   saveDeepWorkSessionNote,
-  saveSelectedTheme
+  saveSelectedTheme,
+  setTrialStartDate,
+  deleteAllUserData
 };

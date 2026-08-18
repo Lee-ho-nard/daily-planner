@@ -16,8 +16,17 @@ users/{uid}
   ageBracket: string
   createdAt: timestamp
   onboardingComplete: boolean
-  trialStartDate: timestamp
-  trialEndDate: timestamp        // trialStartDate + 7 days
+  trialStartDate: timestamp | null   // null until the Day 1 seal (first "End
+                                      // Day" completion) — NOT set at account
+                                      // creation. Written by
+                                      // firestoreBridge.setTrialStartDate(),
+                                      // called from app.js's
+                                      // startTrialOnDayOneSeal(). Signed-out
+                                      // users get an equivalent local trial
+                                      // via localStorage "trialStartDate" —
+                                      // the trial doesn't require an account.
+  trialEndDate: timestamp | null     // trialStartDate + 7 days, same null-
+                                      // until-Day-1 rule
   dataImportedAt: timestamp | null   // set once, after first localStorage import
 ```
 

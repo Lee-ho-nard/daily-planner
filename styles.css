@@ -24,6 +24,16 @@
     --text-xl: 1.15625rem;
     --text-2xl: 1.9rem;
     --text-display: 3.4rem;
+    /* Single family throughout — headline/body contrast comes from weight
+       and size (see the --text-2xl/--text-display consumers below), not a
+       typeface switch. */
+    --font-family: "Hanken Grotesk", system-ui, -apple-system, sans-serif;
+    /* .fab's own position/size, shared so .fab-guide-arrow can anchor off
+       it via calc() instead of a separately hand-tuned fixed position —
+       stays correctly aimed if .fab ever moves. */
+    --fab-bottom: 1.5rem;
+    --fab-right: 1.5rem;
+    --fab-size: 56px;
     --radius-sm: 8px;
     --radius-md: 14px;
     --radius-lg: 18px;
@@ -72,12 +82,16 @@
   :root[data-selected-theme="ocean"][data-theme="dark"] { --accent: #6FA5AB; --accent-hover: #84B4B9; --accent-bg: #24393B; --on-accent: #12211F; }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: "Inter", system-ui, -apple-system, sans-serif; background: var(--bg-page); color: var(--text-primary); padding: 1.75rem 1.25rem; transition: background 0.4s ease, color 0.4s ease; -webkit-font-smoothing: antialiased; }
+  body { font-family: var(--font-family); font-weight: 400; background: var(--bg-page); color: var(--text-primary); padding: 1.75rem 1.25rem; transition: background 0.5s ease, color 0.5s ease; -webkit-font-smoothing: antialiased; }
   button, input, select, textarea { font-family: inherit; }
   .container { max-width: 480px; margin: 0 auto; }
 
-  .settings-corner { position: fixed; top: 1.5rem; right: 1.5rem; z-index: 6; transition: opacity 0.5s ease; }
-  body.timer-active .settings-corner { opacity: 0; pointer-events: none; }
+  /* z-index below #focusView's (5), not above it like .timer-icon-controls —
+     this is what actually hides it throughout Deep Work, the same way
+     export/themes are hidden: they're unpositioned, so #focusView's fixed,
+     opaque, higher-stacked overlay covers them the moment it's .visible,
+     for the whole time you're on that tab, not just once a session starts. */
+  .settings-corner { position: fixed; top: 1.5rem; right: 1.5rem; z-index: 1; }
   .app-header-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem; }
   .app-header-row .view-tabs { flex: 1; }
   .view-tabs { display: flex; gap: 0.4rem; background: var(--border); padding: 0.3rem; border-radius: var(--radius-md); position: relative; z-index: 6; }
@@ -88,13 +102,28 @@
   .date-nav button { background: var(--bg-card); border: none; box-shadow: var(--shadow-card); border-radius: 50%; width: 38px; height: 38px; font-size: var(--text-lg); cursor: pointer; color: var(--text-primary); transition: transform 0.15s; }
   .date-nav button:active { transform: scale(0.92); }
   .date-display { text-align: center; }
-  .date-display .weekday { font-weight: 600; font-size: var(--text-xl); letter-spacing: -0.01em; }
+  /* Headline/body contrast now comes from weight (700-800 here vs. 400-500
+     on body/UI text) and tighter tracking, not a separate display
+     typeface — single family (Hanken Grotesk) throughout. */
+  .date-display .weekday { font-weight: 700; font-size: var(--text-xl); letter-spacing: -0.03em; }
   .date-display .fulldate { font-size: var(--text-sm); color: var(--text-secondary); margin-top: 1px; }
 
   .progress-wrap { margin-bottom: 1.5rem; }
   .progress-text { font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: 0.5rem; display: flex; justify-content: space-between; font-weight: 500; }
   .progress-bar-track { background: var(--border); border-radius: 999px; height: 5px; overflow: hidden; }
   .progress-bar-fill { background: var(--accent); height: 100%; border-radius: 999px; transition: width 300ms ease, background-color 300ms ease; }
+
+  /* Once-per-day "all done" celebration — same bouncy easing already used
+     for checkboxes/dots elsewhere, just a brief scale + glow, not a new
+     visual language. */
+  @keyframes celebratePulse {
+    0% { transform: scale(1); }
+    35% { transform: scale(1.035); }
+    65% { transform: scale(0.99); }
+    100% { transform: scale(1); }
+  }
+  .progress-wrap.celebrate-pulse { animation: celebratePulse 650ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .progress-wrap.celebrate-pulse .progress-bar-fill { box-shadow: 0 0 12px 2px var(--accent); }
 
   .category-tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; align-items: center; }
   .cat-pill { position: relative; border: none; box-shadow: var(--shadow-card); border-radius: 999px; padding: 0.45rem 0.95rem; font-size: var(--text-sm); font-weight: 500; font-family: inherit; cursor: pointer; background: var(--bg-card); color: var(--text-primary); transition: background 0.15s, color 0.15s, transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1); }
@@ -106,9 +135,15 @@
   #taskList, #goalsList { list-style: none; margin-bottom: 5rem; }
   .task-item {
     background: var(--bg-card); border-radius: var(--radius-md); padding: 1rem 1.1rem; margin-bottom: 0.55rem;
-    display: flex; align-items: center; gap: 0.75rem; cursor: grab; border-left: 4px solid var(--border);
+    display: flex; align-items: center; gap: 0.75rem; cursor: grab;
+    /* Transparent, not none — keeps the exact same box dimensions/padding
+       as the old always-visible border, so nothing shifts when this
+       becomes visible only for a real state (bulk-select below). The
+       category color is already shown via .task-category, so a colored
+       border here on every card was purely decorative. */
+    border-left: 4px solid transparent;
     box-shadow: var(--shadow-card);
-    transition: opacity 0.4s ease, box-shadow 0.2s, transform 0.15s;
+    transition: opacity 0.4s ease, box-shadow 0.2s, transform 0.15s, border-color 0.2s ease;
   }
   .task-item:hover { box-shadow: var(--shadow-elevated); transform: translateY(-1px); }
   .task-item.sortable-ghost { opacity: 0.3; }
@@ -128,6 +163,10 @@
   .checkbox { width: 21px; height: 21px; border-radius: 7px; border: 1.5px solid var(--border); cursor: pointer; flex-shrink: 0; position: relative; display: flex; align-items: center; justify-content: center; transition: background 300ms ease, border-color 300ms ease, transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1); }
   .checkbox:active { transform: scale(0.9); }
   .checkbox.checked { background: var(--accent); border-color: var(--accent); }
+  /* Frozen occurrences must stay visually distinct from .checked (solid
+     accent fill + checkmark) — same ice-blue treatment as .goal-dot.frozen. */
+  .checkbox.frozen { background: rgba(111, 168, 220, 0.15); border-color: #6FA8DC; }
+  .checkbox.frozen .icon { color: #6FA8DC; }
 
   .select-checkbox { display: none; width: 21px; height: 21px; border-radius: 7px; border: 1.5px solid var(--border); flex-shrink: 0; align-items: center; justify-content: center; transition: background 300ms ease, border-color 300ms ease; }
   .select-checkbox .icon { width: 14px; height: 14px; color: var(--on-accent); }
@@ -144,14 +183,39 @@
   .bulk-action-btn .icon { width: 18px; height: 18px; color: inherit; }
   .bulk-action-btn.danger:hover { color: var(--danger); }
 
-  body.select-mode-active .fab, body.select-mode-active .mic-fab { display: none; }
+  body.select-mode-active .fab, body.select-mode-active .mic-fab, body.select-mode-active .fab-guide-arrow { display: none; }
 
   .empty-msg { text-align: center; color: var(--text-secondary); padding: 3rem 1rem; font-size: var(--text-base); line-height: 1.6; }
   .empty-msg .big { font-size: var(--text-lg); color: var(--text-primary); font-weight: 500; margin-bottom: 0.3rem; }
+  .empty-msg .empty-msg-instruction { display: block; margin-top: 0.6rem; font-weight: 500; color: var(--text-primary); }
 
-  .fab { position: fixed; bottom: 1.5rem; right: 1.5rem; width: 56px; height: 56px; border-radius: 50%; background: var(--accent); color: var(--on-accent); border: none; cursor: pointer; box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 35%, transparent); transition: transform 0.15s, background-color 0.3s ease, box-shadow 0.3s ease; display: grid; place-items: center; padding-top: 1px; }
+  .fab { position: fixed; bottom: var(--fab-bottom); right: var(--fab-right); width: var(--fab-size); height: var(--fab-size); border-radius: 50%; background: var(--accent); color: var(--on-accent); border: none; cursor: pointer; box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 35%, transparent); transition: transform 0.15s, background-color 0.3s ease, box-shadow 0.3s ease; display: grid; place-items: center; padding-top: 1px; }
   .fab:hover { transform: scale(1.06); }
   .fab:active { transform: scale(0.94); }
+
+  /* First-time guidance arrows — nudge toward the persistent .fab / .cat-add
+     buttons rather than duplicating what they do. Small translate + opacity
+     loop (not scale) so it reads as "pointing", not "alerting" like
+     .mic-fab.listening's pulse below. Themed via --accent so it tracks dark
+     mode and premium theme presets automatically. */
+  .guide-arrow { color: var(--accent); pointer-events: none; }
+  .guide-arrow .icon { width: 22px; height: 22px; color: inherit; }
+  /* Anchored off .fab's own bottom/right/size vars (not a hand-picked fixed
+     position) so it stays aimed at .fab even if that button's position
+     changes. Places this element's own bottom-right corner 10px above and
+     10px left of .fab's top-left corner — i.e. right against .fab's
+     corner, not floating above the whole .mic-fab/.fab row — so the
+     arrow-down-right glyph's tip lands pointing at .fab specifically. */
+  .fab-guide-arrow { position: fixed; bottom: calc(var(--fab-bottom) + var(--fab-size) + 10px); right: calc(var(--fab-right) + var(--fab-size) + 10px); z-index: 4; animation: guideArrowDiag 1.7s ease-in-out infinite; }
+  @keyframes guideArrowDiag {
+    0%, 100% { transform: translate(0, 0); opacity: 0.45; }
+    50% { transform: translate(4px, 4px); opacity: 1; }
+  }
+  .catadd-guide-arrow { display: inline-flex; align-items: center; margin-right: 0.1rem; animation: guideArrowRight 1.7s ease-in-out infinite; }
+  @keyframes guideArrowRight {
+    0%, 100% { transform: translateX(0); opacity: 0.45; }
+    50% { transform: translateX(5px); opacity: 1; }
+  }
 
   .mic-fab { position: fixed; bottom: 1.5rem; right: 5.5rem; width: 56px; height: 56px; border-radius: 50%; background: var(--bg-card); border: none; color: var(--accent); font-size: var(--text-xl); cursor: pointer; box-shadow: var(--shadow-elevated); transition: transform 0.15s, color 0.3s ease; }
   .mic-fab:active { transform: scale(0.94); }
@@ -170,15 +234,24 @@
   }
   .modal { background: var(--bg-card); border-radius: var(--radius-lg); padding: 1.75rem; width: 100%; max-width: 360px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.25); transform: scale(0.96); opacity: 0; transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease; }
   .modal-overlay.open .modal { transform: scale(1); opacity: 1; }
-  .modal h3 { margin-bottom: 1rem; font-weight: 600; letter-spacing: -0.01em; }
+  .modal h3 { margin-bottom: 1rem; font-weight: 700; letter-spacing: -0.03em; }
   .modal label { display: block; font-size: var(--text-sm); color: var(--text-secondary); margin: 0.8rem 0 0.3rem; font-weight: 500; }
   .modal input, .modal select { width: 100%; padding: 0.65rem 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-page); color: var(--text-primary); font-size: var(--text-base); font-family: inherit; transition: border-color 0.15s, box-shadow 0.15s, background 0.15s; }
   .modal input:focus, .modal select:focus { outline: none; border-color: var(--accent); background: var(--bg-card); box-shadow: 0 0 0 3px var(--accent-bg); }
   .modal-row { display: flex; gap: 0.5rem; }
   .modal-row > div { flex: 1; }
+  .bulk-field-group { margin-bottom: 0.5rem; }
+  .bulk-field-row { display: flex; align-items: center; gap: 0.5rem; }
+  .bulk-field-row input, .bulk-field-row select { flex: 1; margin: 0; }
+  .bulk-field-row.changed input, .bulk-field-row.changed select { border-color: var(--accent); background: var(--accent-bg); }
+  .bulk-field-clear { flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%; border: none; background: var(--border); color: var(--text-secondary); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background-color 300ms ease, color 300ms ease; }
+  .bulk-field-clear:hover { background: var(--danger); color: #fff; }
+  .bulk-field-clear .icon { width: 14px; height: 14px; color: inherit; }
   .modal-actions { display: flex; gap: 0.5rem; margin-top: 1.5rem; }
   .modal-actions button { flex: 1; padding: 0.7rem; border-radius: var(--radius-sm); border: none; cursor: pointer; font-size: var(--text-base); font-weight: 500; font-family: inherit; transition: opacity 0.15s, transform 0.1s, background-color 300ms ease, color 300ms ease; }
   .modal-actions button:active { transform: scale(0.97); }
+  .modal-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .modal-actions button:disabled:active { transform: none; }
   .btn-cancel { background: var(--border); color: var(--text-primary); }
   .btn-save { background: var(--accent); color: var(--on-accent); }
   .btn-delete-modal { background: color-mix(in srgb, var(--danger) 14%, var(--bg-card)); color: var(--danger); }
@@ -186,9 +259,27 @@
   .export-option-btn { display: block; width: 100%; padding: 0.7rem; border-radius: var(--radius-sm); border: none; cursor: pointer; font-size: var(--text-base); font-weight: 500; font-family: inherit; margin-top: 0.6rem; transition: opacity 0.15s, transform 0.1s, background-color 300ms ease; }
   .export-option-btn:active { transform: scale(0.98); }
 
-  .auth-status { align-items: center; gap: 0.5rem; background: var(--bg-card); box-shadow: var(--shadow-card); border-radius: 999px; padding: 0.35rem 0.4rem 0.35rem 0.85rem; transition: background-color 300ms ease; }
-  .auth-status-email { font-size: var(--text-sm); color: var(--text-secondary); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .auth-status-signout { border: none; background: var(--border); color: var(--text-primary); font-family: inherit; font-size: var(--text-xs); font-weight: 500; padding: 0.35rem 0.65rem; border-radius: 999px; cursor: pointer; transition: background-color 300ms ease; }
+  #authStatus { flex-direction: column; align-items: stretch; }
+  .settings-section { background: var(--bg-page); border-radius: var(--radius-md); padding: 1.1rem 1.3rem; }
+  .settings-section-label { font-size: var(--text-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 0.6rem; }
+  .settings-account-email { font-size: var(--text-base); color: var(--text-primary); margin-bottom: 0.5rem; word-break: break-all; }
+  .settings-account-meta { font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: 0.35rem; }
+  .settings-verify-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; background: color-mix(in srgb, var(--warning) 14%, var(--bg-card)); color: var(--warning); border-radius: var(--radius-sm); padding: 0.6rem 0.8rem; font-size: var(--text-sm); margin: 0.5rem 0; }
+  .settings-verify-banner button { background: none; border: none; color: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; font-family: inherit; font-size: inherit; padding: 0; flex-shrink: 0; }
+  .settings-inline-link { display: block; background: none; border: none; padding: 0; margin-top: 0.3rem; color: var(--accent); font-size: var(--text-sm); text-decoration: underline; cursor: pointer; font-family: inherit; }
+
+  /* Dismissible, non-blocking — same "toggle display, persist a
+     localStorage flag on dismiss" pattern as #lockedBanner/the weekly
+     recap banner, not a new mechanism. */
+  .account-nudge-banner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem; background: color-mix(in srgb, var(--accent) 10%, var(--bg-card)); border-radius: var(--radius-sm); padding: 0.75rem 0.9rem; font-size: var(--text-sm); margin-bottom: 1rem; box-shadow: var(--shadow-card); }
+  .account-nudge-text { display: flex; align-items: center; gap: 0.5rem; color: var(--text-primary); flex: 1; min-width: 200px; line-height: 1.4; }
+  .account-nudge-text .icon { color: var(--accent); flex-shrink: 0; }
+  .account-nudge-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+  .account-nudge-create-btn { background: var(--accent); color: var(--on-accent); border: none; border-radius: 999px; padding: 0.4rem 0.9rem; font-size: var(--text-sm); font-weight: 600; font-family: inherit; cursor: pointer; white-space: nowrap; transition: transform 0.15s, background-color 0.3s ease; }
+  .account-nudge-create-btn:active { transform: scale(0.95); }
+  .account-nudge-dismiss-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0.2rem; display: flex; align-items: center; }
+  .account-nudge-dismiss-btn .icon { width: 16px; height: 16px; color: inherit; }
+  .confirm-text-input { margin-top: 0.9rem; }
   .auth-google-btn { display: flex; align-items: center; justify-content: center; gap: 0.6rem; width: 100%; padding: 0.7rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font-family: inherit; font-size: var(--text-base); font-weight: 500; cursor: pointer; transition: background-color 300ms ease, transform 0.1s; }
   .auth-google-btn:active { transform: scale(0.98); }
   .auth-divider { display: flex; align-items: center; gap: 0.75rem; margin: 1rem 0; color: var(--text-muted); font-size: var(--text-sm); }
@@ -221,9 +312,15 @@
   .goal-checkbox-row input { width: auto; }
   .goal-checkbox-row label { margin: 0; font-size: var(--text-base); color: var(--text-primary); }
 
-  .goal-card { background: var(--bg-card); border-radius: var(--radius-md); padding: 1.1rem; margin-bottom: 0.7rem; border-left: 4px solid var(--border); box-shadow: var(--shadow-card); }
+  /* No "at risk"/"behind pace" state exists in the app's goal logic today
+     (checked app.js), so unlike .task-item there's no real state left to
+     reserve this border for — removed outright rather than kept
+     transparent. box-shadow (below) already separates cards; the
+     category color moved to .goal-category-dot next to the name instead. */
+  .goal-card { background: var(--bg-card); border-radius: var(--radius-md); padding: 1.1rem; margin-bottom: 0.7rem; box-shadow: var(--shadow-card); }
+  .goal-category-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 0.45rem; vertical-align: middle; }
   .goal-card-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.3rem; }
-  .goal-name { font-weight: 600; font-size: var(--text-md); letter-spacing: -0.01em; }
+  .goal-name { font-weight: 700; font-size: var(--text-md); letter-spacing: -0.03em; }
   .goal-pct { font-size: var(--text-base); color: var(--text-secondary); font-weight: 500; }
   .goal-sub { font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: 0.7rem; }
   .goal-dots { display: flex; gap: 4px; flex-wrap: wrap; }
@@ -231,6 +328,10 @@
   .goal-dot.done { border: none; }
   .goal-dot.future { opacity: 0.4; border-style: dashed; }
   .goal-dot.milestone { box-shadow: 0 0 0 3px var(--accent-bg); }
+  /* Frozen days must never be mistaken for completed ones — a hatched
+     ice-blue fill instead of the flat category-color fill .done uses, so it
+     stays visually distinct no matter what color the goal's category is. */
+  .goal-dot.frozen { border: 1px solid #6FA8DC; background-image: repeating-linear-gradient(45deg, rgba(111, 168, 220, 0.35) 0, rgba(111, 168, 220, 0.35) 2px, transparent 2px, transparent 5px); background-color: rgba(111, 168, 220, 0.12); }
 
   .insight-nav-btn { background: var(--bg-card); border: none; box-shadow: var(--shadow-card); border-radius: 50%; width: 32px; height: 32px; flex-shrink: 0; cursor: pointer; display: grid; place-items: center; color: var(--text-primary); transition: transform 0.15s; }
   .insight-nav-btn:active { transform: scale(0.92); }
@@ -261,15 +362,21 @@
     z-index: 5;
     opacity: 0;
     visibility: hidden;
-    transition: opacity 0.15s ease, visibility 0s linear 0.15s, background 0.15s ease, color 0.15s ease;
+    /* Matches #focusView.visible's duration below and body's theme
+       transition — previously 0.15s here vs 0.5s on those, so leaving Deep
+       Work looked like two separate transitions on different timings (a
+       fast view fade-out immediately followed by a much slower, visibly
+       separate body color settle): a double-flash instead of one clean
+       fade. Same duration on the way out as on the way in. */
+    transition: opacity 0.5s ease, visibility 0s linear 0.5s, background 0.5s ease, color 0.5s ease;
   }
   #focusView.visible {
     opacity: 1;
     visibility: visible;
-    transition: opacity 0.4s ease, visibility 0s linear 0s, background 0.4s ease, color 0.4s ease;
+    transition: opacity 0.5s ease, visibility 0s linear 0s, background 0.5s ease, color 0.5s ease;
   }
   .focus-container{ max-width:480px; margin:0 auto; position: relative; z-index: 1; padding-top: 5.5rem; }
-  .focus-title{ font-size:var(--text-2xl); font-weight:600; letter-spacing:-0.02em; margin-top:1.25rem; margin-bottom:0.5rem; }
+  .focus-title{ font-size:var(--text-2xl); font-weight:700; letter-spacing:-0.035em; margin-top:1.25rem; margin-bottom:0.5rem; }
   .focus-subtitle{ color: var(--text-secondary); line-height:1.6; margin-bottom:2rem; font-size: var(--text-md); }
   .focus-session-grid{ display:grid; grid-template-columns:1fr 1fr; gap:0.7rem; margin-bottom:2rem; }
   .focus-session{ position:relative; background: var(--bg-card); border:1.5px solid transparent; border-radius:var(--radius-md); padding:1.1rem; cursor:pointer; color: var(--text-primary); transition: transform 0.2s, border-color 0.2s, background 0.4s ease, color 0.4s ease; font-family: inherit; text-align: left; }
@@ -277,9 +384,12 @@
   .focus-session.selected{ border-color: var(--accent); background: var(--accent-bg); }
   .session-name{ font-size:var(--text-md); font-weight:500; margin-bottom:0.4rem; }
   .session-time{ color: var(--text-secondary); font-size: var(--text-sm); }
-  .focus-session-delete{ position:absolute; top:0.5rem; right:0.5rem; width:20px; height:20px; border-radius:50%; background:var(--bg-page); display:flex; align-items:center; justify-content:center; color:var(--text-muted); cursor:pointer; }
+  .focus-session-delete, .focus-session-edit{ position:absolute; top:0.5rem; width:20px; height:20px; border-radius:50%; background:var(--bg-page); display:flex; align-items:center; justify-content:center; color:var(--text-muted); cursor:pointer; }
+  .focus-session-delete{ right:0.5rem; }
+  .focus-session-edit{ right:2rem; }
   .focus-session-delete:hover{ color:var(--danger); }
-  .focus-session-delete .icon{ width:12px; height:12px; color:inherit; }
+  .focus-session-edit:hover{ color:var(--accent); }
+  .focus-session-delete .icon, .focus-session-edit .icon{ width:12px; height:12px; color:inherit; }
   .focus-session.focus-session-removing{ transition: opacity 180ms ease-out, transform 180ms ease-out; pointer-events:none; }
   .focus-heading{ font-size:var(--text-base); font-weight:500; margin-bottom:0.9rem; color: var(--text-primary); }
   .focus-top3{ background: var(--bg-card); border-radius:var(--radius-md); padding:1.3rem; margin-bottom:1.75rem; }
@@ -303,7 +413,7 @@
   #focusSetup, #focusTimerScreen { opacity: 1; transform: scale(1); transition: opacity 200ms ease, transform 200ms cubic-bezier(0.16, 1, 0.3, 1); }
   #focusSetup.fs-hidden, #focusTimerScreen.fs-hidden { opacity: 0; transform: scale(0.97); }
   .timer-ring-wrap { position: relative; display: inline-block; margin-bottom: 1.5rem; }
-  .timer-time { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: var(--text-display); font-weight: 600; color: var(--text-primary); letter-spacing: -0.02em; }
+  .timer-time { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: var(--text-display); font-weight: 800; color: var(--text-primary); letter-spacing: -0.04em; }
   .timer-label { color: var(--text-secondary); font-size: var(--text-base); margin-bottom: 1rem; }
   .timer-icon-controls { position: fixed; top: 1.5rem; right: 1.5rem; display: none; gap: 0.75rem; z-index: 6; }
   body.timer-active .timer-icon-controls { display: flex; }
@@ -328,7 +438,7 @@
   .seal-icon { width: 48px; height: 48px; color: var(--accent); stroke-width: 1.75; display: block; margin: 0 auto 1.25rem; opacity: 0; transform: scale(0.8); transition: opacity 400ms ease-out, transform 400ms cubic-bezier(0.34, 1.56, 0.64, 1); }
   #sealScreen.visible .seal-icon { opacity: 1; transform: scale(1); }
   .seal-date { font-size: var(--text-base); color: var(--text-secondary); margin-bottom: 0.5rem; text-align: center; }
-  .seal-text { font-size: var(--text-xl); font-weight: 600; color: var(--text-primary); text-align: center; }
+  .seal-text { font-size: var(--text-xl); font-weight: 700; letter-spacing: -0.03em; color: var(--text-primary); text-align: center; }
 
   #sessionCompleteScreen {
     position: fixed; inset: 0; z-index: 15;
@@ -345,7 +455,13 @@
   #sessionCompleteScreen.visible .session-complete-icon { opacity: 1; transform: scale(1); }
   .session-complete-info { font-size: var(--text-base); color: var(--text-secondary); margin-bottom: 0.5rem; text-align: center; }
   .session-complete-affirmation { font-size: var(--text-base); font-weight: 500; color: var(--accent); margin-bottom: 0.5rem; text-align: center; }
-  .session-complete-text { font-size: var(--text-xl); font-weight: 600; color: var(--text-primary); text-align: center; }
+  .session-complete-text { font-size: var(--text-xl); font-weight: 700; letter-spacing: -0.03em; color: var(--text-primary); text-align: center; }
+  .session-complete-continue { margin-top: 1.75rem; width: 220px; max-width: 80vw; }
+
+  /* Deep Work's note screen must be a fully focused, opaque break from the
+     rest of the app — .modal-overlay's translucent/blurred backdrop is
+     meant for small in-context dialogs and would let the tab show through. */
+  #sessionNoteOverlay { background: var(--bg-page); backdrop-filter: none; }
 
   #onboardingView {
     background: var(--bg-page);
@@ -366,7 +482,8 @@
   }
   body.onboarding-active .container,
   body.onboarding-active .fab,
-  body.onboarding-active .mic-fab {
+  body.onboarding-active .mic-fab,
+  body.onboarding-active .fab-guide-arrow {
     display: none;
   }
   .onboarding-container { max-width: 420px; margin: 0 auto; }
@@ -379,7 +496,7 @@
   #onboardingView.ob-emphasis-bg { background: radial-gradient(circle at center, color-mix(in srgb, var(--accent) 12%, var(--bg-page)) 0%, var(--bg-page) 70%); }
   .onboarding-reveal { opacity: 0; transform: translateY(8px); transition: opacity 250ms ease, transform 250ms ease; pointer-events: none; }
   .onboarding-reveal.ob-in { opacity: 1; transform: translateY(0); pointer-events: auto; }
-  .onboarding-hook-headline { font-size: 2.75rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 1rem; opacity: 0; transform: translateY(10px); transition: opacity 250ms ease, transform 250ms ease; }
+  .onboarding-hook-headline { font-size: 2.75rem; font-weight: 800; letter-spacing: -0.04em; margin-bottom: 1rem; opacity: 0; transform: translateY(10px); transition: opacity 250ms ease, transform 250ms ease; }
   .onboarding-hook-headline.ob-in { opacity: 1; transform: translateY(0); }
   .onboarding-hook-subtext { font-size: var(--text-md); color: var(--text-secondary); line-height: 1.6; margin-bottom: 2.5rem; opacity: 0; transform: translateY(10px); transition: opacity 250ms ease, transform 250ms ease; }
   .onboarding-hook-subtext.ob-in { opacity: 1; transform: translateY(0); }
@@ -435,7 +552,12 @@
   .toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   .weekly-recap-banner {
-    position: fixed; bottom: 1.5rem; left: 50%; z-index: 100;
+    /* Below .modal-overlay's z-index (10), unlike .toast (which shares
+       z-index:100 but legitimately needs to sit above modals, e.g. a
+       "Saved." confirmation for an action just taken inside one) — the
+       banner is an unrelated, persistent notification and should never
+       compete with or float over a modal someone's actively using. */
+    position: fixed; bottom: 1.5rem; left: 50%; z-index: 9;
     background: var(--bg-card); box-shadow: var(--shadow-elevated); border-radius: var(--radius-md);
     padding: 1.1rem 1.25rem; color: var(--text-primary);
     width: calc(100% - 2.5rem); max-width: 420px;

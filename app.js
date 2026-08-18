@@ -17,6 +17,24 @@
   const PALETTE = ["#B8D8BA", "#F4C7A8", "#A8C8E8", "#D4B8E8", "#F4D48A", "#9EDAD1", "#F0B8D4", "#C5C9D4", "#F4B8AA", "#C7BFD4", "#B8E0C8", "#E8CB8A", "#A8B8E8", "#E0C9A6", "#F0C2CE", "#C3D4B0"];
   const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
 
+  // Trial: 7 days from the Day 1 seal (first "End Day" completion), not
+  // from account creation or first app load — matches roadmap #7 ("trial
+  // placed after Day 1 seal, not before onboarding"). Works whether or not
+  // the user has an account: signed-in trial start lives on the
+  // Firestore users/{uid} doc (synced across devices), signed-out trial
+  // start lives in localStorage (this device only). Either way it's a
+  // real timestamp that gets checked against elapsed time on every call —
+  // not a flag that, once set, stays true forever.
+  // Declared up here (not next to the functions that use them, further
+  // down) because isPremiumUser() gets called during initial synchronous
+  // script execution (applySelectedTheme() etc., a few hundred lines
+  // below) — const bindings aren't hoisted the way function declarations
+  // are, so referencing these before this line runs threw a
+  // "Cannot access before initialization" ReferenceError that broke the
+  // entire rest of the script.
+  const TRIAL_DURATION_DAYS = 7;
+  const LOCAL_TRIAL_START_KEY = "trialStartDate";
+
   // Premium accent theme presets. The actual CSS custom-property swap lives in
   // styles.css as :root[data-selected-theme="X"] rules (light) paired with
   // :root[data-selected-theme="X"][data-theme="dark"] rules (dark), so light/dark
@@ -61,7 +79,11 @@
   }
 
   let confirmOverlayEl = null;
-  function showConfirm({ title, message, confirmLabel, danger, onConfirm, statsHtml }) {
+  // requireText: { placeholder, isValid(value) } — when set, the confirm
+  // button starts disabled and only enables once isValid() passes, so a
+  // destructive action (e.g. account deletion) can't be confirmed with a
+  // single accidental tap.
+  function showConfirm({ title, message, confirmLabel, danger, onConfirm, statsHtml, requireText }) {
     if (!confirmOverlayEl) {
       confirmOverlayEl = document.createElement("div");
       confirmOverlayEl.className = "modal-overlay";
@@ -72,6 +94,7 @@
         <h3></h3>
         <p style="font-size:var(--text-base);color:var(--text-secondary);line-height:1.5;margin-top:0.25rem;"></p>
         ${statsHtml || ""}
+        ${requireText ? `<input type="text" id="confirmTextInput" class="confirm-text-input" autocomplete="off" spellcheck="false">` : ""}
         <div class="modal-actions">
           <button class="btn-cancel" id="confirmCancelBtn">Cancel</button>
           <button class="${danger ? "btn-delete-modal" : "btn-save"}" id="confirmOkBtn"></button>
@@ -80,11 +103,25 @@
     `;
     confirmOverlayEl.querySelector("h3").textContent = title;
     confirmOverlayEl.querySelector("p").textContent = message;
-    confirmOverlayEl.querySelector("#confirmOkBtn").textContent = confirmLabel || "Confirm";
+    const okBtn = confirmOverlayEl.querySelector("#confirmOkBtn");
+    okBtn.textContent = confirmLabel || "Confirm";
     confirmOverlayEl.querySelector("#confirmCancelBtn").addEventListener("click", () => {
       closeModal(confirmOverlayEl);
     });
-    confirmOverlayEl.querySelector("#confirmOkBtn").addEventListener("click", () => {
+    if (requireText) {
+      const textInput = confirmOverlayEl.querySelector("#confirmTextInput");
+      textInput.placeholder = requireText.placeholder || "";
+      okBtn.disabled = true;
+      textInput.addEventListener("input", () => {
+        okBtn.disabled = !requireText.isValid(textInput.value);
+      });
+      textInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !okBtn.disabled) okBtn.click();
+      });
+      setTimeout(() => textInput.focus(), 50);
+    }
+    okBtn.addEventListener("click", () => {
+      if (requireText && okBtn.disabled) return;
       closeModal(confirmOverlayEl);
       onConfirm();
     });
@@ -158,10 +195,80 @@
 
     let streak = 0;
     for (const ds of pastScheduled) {
-      if ((task.completedDates || []).includes(ds)) streak++;
+      if ((task.completedDates || []).includes(ds) || (task.frozenDates || []).includes(ds)) streak++;
       else break;
     }
     return streak;
+  }
+
+  // Streak freeze economy (Snapchat-style): every 7 consecutive streak days
+  // (completed or already-frozen) banks 1 freeze, capped at a stockpile of
+  // 2. A past scheduled day that's missed consumes a banked freeze instead
+  // of breaking the streak, if one's available. This is a pure re-simulation
+  // from task.date forward through completedDates/frozenDates every time
+  // it's called — deliberately not a separately-stored, freely-settable
+  // "freeze count" field, so there's nothing for a client to just edit to a
+  // higher number; the only persisted side effect is appending newly-frozen
+  // dates to frozenDates, exactly like any other task field edit already
+  // goes through the same read/write security rule.
+  // Returns { changed, freezesAvailable } — changed is true when new dates
+  // were appended to task.frozenDates (caller should persist via save()).
+  function applyStreakFreezes(task) {
+    if (!task.recurrence || task.recurrence.type === "none") return { changed: false, freezesAvailable: 0 };
+
+    const today = toDateStr(new Date());
+    const start = new Date(task.date + "T00:00:00");
+    const end = new Date((task.endDate || today) + "T00:00:00");
+    let scheduledDays = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      if (occursOn(task, d)) scheduledDays.push(toDateStr(d));
+    }
+    // Only days that have actually passed can be auto-frozen — "today" isn't
+    // a missed day until it's over.
+    const pastScheduled = scheduledDays.filter(ds => ds < today);
+
+    const completedDates = task.completedDates || [];
+    const existingFrozen = new Set(task.frozenDates || []);
+    const newlyFrozen = [];
+
+    let freezesBanked = 0;
+    let consecutive = 0;
+
+    pastScheduled.forEach(ds => {
+      const isCompleted = completedDates.includes(ds);
+      const isFrozen = existingFrozen.has(ds);
+
+      if (isCompleted || isFrozen) {
+        consecutive++;
+      } else if (freezesBanked > 0) {
+        newlyFrozen.push(ds);
+        freezesBanked--;
+        consecutive++;
+      } else {
+        consecutive = 0;
+      }
+
+      if (consecutive > 0 && consecutive % 7 === 0) {
+        freezesBanked = Math.min(2, freezesBanked + 1);
+      }
+    });
+
+    if (newlyFrozen.length === 0) return { changed: false, freezesAvailable: freezesBanked };
+    task.frozenDates = [...(task.frozenDates || []), ...newlyFrozen];
+    return { changed: true, freezesAvailable: freezesBanked };
+  }
+
+  // Runs applyStreakFreezes across every recurring task (goals and plain
+  // repeating tasks alike — frozenDates is a general task field per
+  // docs/firestore-schema.md, not goal-only) and persists once if anything
+  // changed, rather than one save() per task.
+  function syncAllStreakFreezes() {
+    let anyChanged = false;
+    tasks.forEach(t => {
+      if (applyStreakFreezes(t).changed) anyChanged = true;
+    });
+    if (anyChanged) save();
+    return anyChanged;
   }
   function occursOn(t, dateObj) {
     const dateStr = toDateStr(dateObj);
@@ -193,7 +300,8 @@
     return list.map(t => {
       const isRecurring = t.recurrence && t.recurrence.type !== "none";
       const done = isRecurring ? (t.completedDates || []).includes(dateStr) : t.done;
-      return { ...t, occurrenceDate: dateStr, occurrenceDone: done, isRecurring };
+      const frozen = isRecurring && !done && (t.frozenDates || []).includes(dateStr);
+      return { ...t, occurrenceDate: dateStr, occurrenceDone: done, occurrenceFrozen: frozen, isRecurring };
     }).sort((a, b) => {
       if (a.occurrenceDone !== b.occurrenceDone) return a.occurrenceDone ? 1 : -1;
       return (a.order ?? 0) - (b.order ?? 0);
@@ -222,6 +330,7 @@
     document.getElementById("openAddGoal").style.display = view === "goals" ? "block" : "none";
     document.getElementById("micBtn").style.display = view === "planner" ? "block" : "none";
     document.getElementById("todayBtn").style.display = view === "planner" ? "block" : "none";
+    updateFabArrow();
     document.body.classList.toggle("deep-work-mode", view === "focus");
     document.documentElement.setAttribute("data-theme", view === "focus" ? "dark" : "light");
 
@@ -286,6 +395,8 @@
   }
 
   function renderGoals() {
+    syncAllStreakFreezes();
+    updateFabArrow();
     const listEl = document.getElementById("goalsList");
     listEl.innerHTML = "";
     const goalTasks = tasks.filter(t => t.isGoal);
@@ -294,7 +405,12 @@
     if (goalTasks.length === 0) {
       const msg = document.createElement("div");
       msg.className = "empty-msg";
-      msg.innerHTML = `<i data-lucide="target" class="icon" style="width:28px;height:28px;color:var(--text-muted);display:block;margin:0 auto 0.5rem;"></i><div class="big">No goals yet.</div>Tap + to create one.`;
+      msg.innerHTML = `
+        <i data-lucide="target" class="icon" style="width:28px;height:28px;color:var(--text-muted);display:block;margin:0 auto 0.5rem;"></i>
+        <div class="big">No goals yet.</div>
+        Goals track a small daily action, repeated, that adds up to something bigger over time.
+        <span class="empty-msg-instruction">Add your first goal</span>
+      `;
       listEl.appendChild(msg);
       lucide.createIcons();
       return;
@@ -314,16 +430,19 @@
       const doneCount = scheduledDays.filter(ds => (goal.completedDates || []).includes(ds)).length;
       const pct = scheduledDays.length ? Math.round((doneCount / scheduledDays.length) * 100) : 0;
       const streak = computeStreak(goal);
+      const freezesAvailable = applyStreakFreezes(goal).freezesAvailable;
 
       const card = document.createElement("li");
       card.className = "goal-card";
-      card.style.borderLeftColor = categoryColor(goal.category);
 
       const top = document.createElement("div");
       top.className = "goal-card-top";
       const name = document.createElement("div");
       name.className = "goal-name";
-      name.innerHTML = '<i data-lucide="target" class="icon"></i> ';
+      // Category color now lives here (a dot) instead of the card's old
+      // border-left — no "at risk"/"behind pace" state exists to reserve
+      // that border for, so it was purely decorative.
+      name.innerHTML = `<span class="goal-category-dot" style="background:${categoryColor(goal.category)}"></span><i data-lucide="target" class="icon"></i> `;
       name.append(goal.name);
       const pctEl = document.createElement("div");
       pctEl.className = "goal-pct";
@@ -352,6 +471,14 @@
         sub.appendChild(flame);
         sub.append(` ${streak} day${streak === 1 ? "" : "s"}`);
       }
+      if (freezesAvailable > 0) {
+        sub.append(" · ");
+        const snow = document.createElement("i");
+        snow.setAttribute("data-lucide", "snowflake");
+        snow.className = "icon";
+        sub.appendChild(snow);
+        sub.append(` ${freezesAvailable} freeze${freezesAvailable === 1 ? "" : "s"} banked`);
+      }
 
       const dots = document.createElement("div");
       dots.className = "goal-dots";
@@ -359,16 +486,19 @@
       scheduledDays.forEach((ds, idx) => {
         const dot = document.createElement("div");
         const isDone = (goal.completedDates || []).includes(ds);
+        // A frozen day must never look like a completed one — see the
+        // .goal-dot.frozen rule in styles.css for the distinct treatment.
+        const isFrozen = !isDone && (goal.frozenDates || []).includes(ds);
         const isFuture = ds > today;
-        dot.className = "goal-dot" + (isDone ? " done" : "") + (isFuture && !isDone ? " future" : "");
-        if (isDone) {
-          dot.style.background = categoryColor(goal.category);
+        dot.className = "goal-dot" + (isDone ? " done" : "") + (isFrozen ? " frozen" : "") + (isFuture && !isDone && !isFrozen ? " future" : "");
+        if (isDone || isFrozen) {
+          if (isDone) dot.style.background = categoryColor(goal.category);
           consecutiveDone++;
           if (consecutiveDone % 7 === 0) dot.classList.add("milestone");
         } else {
           consecutiveDone = 0;
         }
-        dot.title = ds;
+        dot.title = isFrozen ? `${ds} — streak freeze used` : ds;
         dot.style.opacity = "0";
         dot.style.transform = "scale(0.7)";
         dots.appendChild(dot);
@@ -426,6 +556,42 @@
     document.getElementById("progressMsg").textContent = msg;
   }
 
+  // Lightweight, once-per-day "all done" celebration. Keyed off a plain
+  // localStorage date string (not the completion state itself) so unchecking
+  // and rechecking a task, or just reopening the app later the same day,
+  // never re-fires it — only a NEW calendar day resets the gate.
+  const DAILY_COMPLETION_CELEBRATED_KEY = "dailyCompletionCelebratedDate";
+  function maybeCelebrateDailyCompletion() {
+    const todayStr = toDateStr(new Date());
+    const todayTasks = getTasksForDate(new Date(), "All");
+    if (todayTasks.length === 0 || !todayTasks.every(t => t.occurrenceDone)) return;
+    if (localStorage.getItem(DAILY_COMPLETION_CELEBRATED_KEY) === todayStr) return;
+    localStorage.setItem(DAILY_COMPLETION_CELEBRATED_KEY, todayStr);
+
+    showToast("🎉 All done for today. Nice work.", "success", 3200);
+    const wrap = document.getElementById("progressWrap");
+    if (wrap) {
+      wrap.classList.add("celebrate-pulse");
+      setTimeout(() => wrap.classList.remove("celebrate-pulse"), 900);
+    }
+  }
+
+  // First-time guidance arrow pointing at the shared .fab button (#openAdd
+  // on Planner, #openAddGoal on Goals — never both visible at once, so one
+  // arrow element serves both). Purely a visibility toggle; never disables
+  // or hides the .fab itself.
+  function updateFabArrow() {
+    const el = document.getElementById("fabGuideArrow");
+    if (!el) return;
+    let show = false;
+    if (currentView === "planner") {
+      show = categories.length > 0 && tasks.length === 0;
+    } else if (currentView === "goals") {
+      show = tasks.filter(t => t.isGoal).length === 0;
+    }
+    el.style.display = show ? "flex" : "none";
+  }
+
   function renderCategoryTabs() {
     const wrap = document.getElementById("categoryTabs");
     wrap.innerHTML = "";
@@ -455,12 +621,20 @@
       wrap.appendChild(pill);
     });
 
+    if (categories.length === 0) {
+      const catAddArrow = document.createElement("div");
+      catAddArrow.className = "guide-arrow catadd-guide-arrow";
+      catAddArrow.innerHTML = '<i data-lucide="arrow-right" class="icon"></i>';
+      wrap.appendChild(catAddArrow);
+    }
+
     const addBtn = document.createElement("button");
     addBtn.className = "cat-add";
     addBtn.innerHTML = '<i data-lucide="plus" class="icon"></i>';
     addBtn.addEventListener("click", openCategoryModal);
     wrap.appendChild(addBtn);
     lucide.createIcons();
+    updateFabArrow();
 
     const sel = document.getElementById("modalCategory");
     sel.innerHTML = "";
@@ -489,8 +663,26 @@
     if (dayTasks.length === 0) {
       const msg = document.createElement("div");
       msg.className = "empty-msg";
-      msg.innerHTML = `<i data-lucide="calendar-days" class="icon" style="width:28px;height:28px;color:var(--text-muted);display:block;margin:0 auto 0.5rem;"></i><div class="big">No tasks for this day.</div>`;
-      listEl.appendChild(msg);
+      // A brand-new account (no tasks anywhere yet, viewing the unfiltered
+      // list) gets the fuller "what is this for" prompt; a returning user
+      // who just has nothing scheduled for this particular day/category
+      // keeps the plain, unobtrusive message — they don't need onboarding.
+      if (tasks.length === 0 && activeCategory === "All") {
+        // Sequenced guidance: a category has to exist before a task can be
+        // added to it (openAddModal() itself blocks otherwise), so point at
+        // .cat-add first and only point at .fab once that's satisfied.
+        const instruction = categories.length === 0 ? "Add a category to get started" : "Add your first task";
+        msg.innerHTML = `
+          <i data-lucide="calendar-days" class="icon" style="width:28px;height:28px;color:var(--text-muted);display:block;margin:0 auto 0.5rem;"></i>
+          <div class="big">Plan your day here.</div>
+          Add the tasks you want to get done today, then check them off as you go.
+          <span class="empty-msg-instruction">${instruction}</span>
+        `;
+        listEl.appendChild(msg);
+      } else {
+        msg.innerHTML = `<i data-lucide="calendar-days" class="icon" style="width:28px;height:28px;color:var(--text-muted);display:block;margin:0 auto 0.5rem;"></i><div class="big">No tasks for this day.</div>`;
+        listEl.appendChild(msg);
+      }
       lucide.createIcons();
       return;
     }
@@ -507,7 +699,10 @@
       const li = document.createElement("li");
       const isSelected = selectedTaskIds.has(task.id);
       li.className = "task-item" + (task.occurrenceDone ? " done" : "") + (task.id === lastAddedTaskId ? " entering" : "") + (selectMode ? " select-mode" : "") + (isSelected ? " item-selected" : "");
-      li.style.borderLeftColor = categoryColor(task.category);
+      // No inline border-left-color here — an inline style would outrank
+      // the .item-selected CSS rule's border-left-color (inline beats any
+      // class selector), silently breaking the selection-state color.
+      // .task-category below already carries the category color.
       li.dataset.taskId = task.id;
 
       const selectCheckbox = document.createElement("div");
@@ -519,8 +714,13 @@
       drag.innerHTML = '<i data-lucide="grip-vertical" class="icon"></i>';
 
       const checkbox = document.createElement("div");
-      checkbox.className = "checkbox" + (task.occurrenceDone ? " checked" : "");
-      checkbox.innerHTML = task.occurrenceDone ? '<i data-lucide="check" class="icon"></i>' : "";
+      checkbox.className = "checkbox" + (task.occurrenceDone ? " checked" : "") + (task.occurrenceFrozen ? " frozen" : "");
+      // A frozen day must never look like a completed one — snowflake, not a
+      // checkmark, and never combined with the "checked" state (occurrenceFrozen
+      // is only ever true when occurrenceDone is false, see getTasksForDate).
+      if (task.occurrenceDone) checkbox.innerHTML = '<i data-lucide="check" class="icon"></i>';
+      else if (task.occurrenceFrozen) { checkbox.innerHTML = '<i data-lucide="snowflake" class="icon"></i>'; checkbox.title = "Streak freeze used this day"; }
+      else checkbox.innerHTML = "";
       checkbox.addEventListener("click", (e) => {
         e.stopPropagation();
         if (isDayLocked(task.occurrenceDate)) { showToast("This day is locked. Reflection already completed.", "warning"); return; }
@@ -550,6 +750,7 @@
           });
           li.classList.add("completing");
           save();
+          maybeCelebrateDailyCompletion();
           setTimeout(() => renderTasks(), 450);
         } else {
           checkbox.innerHTML = "";
@@ -568,12 +769,15 @@
       const durIcon = durText ? '<i data-lucide="clock" class="icon"></i>' + durText : "";
       const goalIcon = task.isGoal ? '<i data-lucide="target" class="icon"></i>' : "";
       let streakIcon = "";
+      let freezeIcon = "";
       if (task.isRecurring) {
         const realTask = tasks.find(t => t.id === task.id);
         const streak = computeStreak(realTask);
         streakIcon = streak > 0 ? `<i data-lucide="flame" class="icon"></i>${streak}` : '<i data-lucide="repeat" class="icon"></i>';
+        const freezesAvailable = applyStreakFreezes(realTask).freezesAvailable;
+        if (freezesAvailable > 0) freezeIcon = `<i data-lucide="snowflake" class="icon"></i>${freezesAvailable}`;
       }
-      const metaParts = [task.time, durIcon, streakIcon, goalIcon].filter(Boolean);
+      const metaParts = [task.time, durIcon, streakIcon, freezeIcon, goalIcon].filter(Boolean);
       meta.innerHTML = metaParts.join(" · ");
 
       const cat = document.createElement("span");
@@ -690,10 +894,31 @@
     renderTasks();
   });
 
+  // Shown once there's real data at stake for a signed-out user — not
+  // during onboarding itself (nothing to protect yet), and not once
+  // dismissed (a flat, permanent localStorage flag, same pattern as
+  // lastRecapShownWeek elsewhere — just without the weekly reset).
+  const ACCOUNT_NUDGE_DISMISSED_KEY = "accountNudgeDismissed";
+  function updateAccountNudgeBanner() {
+    const banner = document.getElementById("accountNudgeBanner");
+    if (!banner) return;
+    const signedIn = window.firestoreBridge && window.firestoreBridge.isSignedIn();
+    const hasRealData = tasks.length > 0;
+    const dismissed = localStorage.getItem(ACCOUNT_NUDGE_DISMISSED_KEY) === "true";
+    const onboarding = document.body.classList.contains("onboarding-active");
+    banner.style.display = (!signedIn && hasRealData && !dismissed && !onboarding) ? "flex" : "none";
+  }
+  document.getElementById("accountNudgeDismissBtn").addEventListener("click", () => {
+    localStorage.setItem(ACCOUNT_NUDGE_DISMISSED_KEY, "true");
+    updateAccountNudgeBanner();
+  });
+
   function renderAll() {
+    syncAllStreakFreezes();
     renderDate();
     renderCategoryTabs();
     renderTasks();
+    updateAccountNudgeBanner();
 
     const locked = isDayLocked(toDateStr(currentDate));
     const isFutureDay = toDateStr(currentDate) > toDateStr(new Date());
@@ -861,10 +1086,6 @@
   });
 
   // --- Bulk task actions ---
-  const bulkMoveOverlay = document.getElementById("bulkMoveModalOverlay");
-  const bulkCategoryOverlay = document.getElementById("bulkCategoryModalOverlay");
-  const bulkDurationOverlay = document.getElementById("bulkDurationModalOverlay");
-
   document.getElementById("bulkDeleteBtn").addEventListener("click", () => {
     if (!selectedTaskIds.size) return;
     const n = selectedTaskIds.size;
@@ -880,67 +1101,6 @@
         renderAll();
       }
     });
-  });
-
-  document.getElementById("bulkMoveBtn").addEventListener("click", () => {
-    if (!selectedTaskIds.size) return;
-    document.getElementById("bulkMoveDate").value = toDateStr(currentDate);
-    openModal(bulkMoveOverlay);
-  });
-  document.getElementById("bulkMoveCancel").addEventListener("click", () => closeModal(bulkMoveOverlay));
-  document.getElementById("bulkMoveSave").addEventListener("click", () => {
-    const newDate = document.getElementById("bulkMoveDate").value;
-    if (!newDate) return;
-    tasks.forEach(t => { if (selectedTaskIds.has(t.id)) t.date = newDate; });
-    save();
-    closeModal(bulkMoveOverlay);
-    setSelectMode(false);
-    renderAll();
-  });
-  bulkMoveOverlay.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(bulkMoveOverlay); });
-
-  document.getElementById("bulkCategoryBtn").addEventListener("click", () => {
-    if (!selectedTaskIds.size) return;
-    const sel = document.getElementById("bulkCategorySelect");
-    sel.innerHTML = "";
-    categories.forEach(c => {
-      const opt = document.createElement("option");
-      opt.value = c.name;
-      opt.textContent = c.name;
-      sel.appendChild(opt);
-    });
-    openModal(bulkCategoryOverlay);
-  });
-  document.getElementById("bulkCategoryCancel").addEventListener("click", () => closeModal(bulkCategoryOverlay));
-  document.getElementById("bulkCategorySave").addEventListener("click", () => {
-    const newCat = document.getElementById("bulkCategorySelect").value;
-    if (!newCat) return;
-    tasks.forEach(t => { if (selectedTaskIds.has(t.id)) t.category = newCat; });
-    save();
-    closeModal(bulkCategoryOverlay);
-    setSelectMode(false);
-    renderAll();
-  });
-  bulkCategoryOverlay.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(bulkCategoryOverlay); });
-
-  document.getElementById("bulkDurationBtn").addEventListener("click", () => {
-    if (!selectedTaskIds.size) return;
-    document.getElementById("bulkDurationInput").value = "";
-    openModal(bulkDurationOverlay);
-    setTimeout(() => document.getElementById("bulkDurationInput").focus(), 50);
-  });
-  document.getElementById("bulkDurationCancel").addEventListener("click", () => closeModal(bulkDurationOverlay));
-  document.getElementById("bulkDurationSave").addEventListener("click", () => {
-    const dur = document.getElementById("bulkDurationInput").value;
-    tasks.forEach(t => { if (selectedTaskIds.has(t.id)) t.duration = dur; });
-    save();
-    closeModal(bulkDurationOverlay);
-    setSelectMode(false);
-    renderAll();
-  });
-  bulkDurationOverlay.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") document.getElementById("bulkDurationSave").click();
-    if (e.key === "Escape") closeModal(bulkDurationOverlay);
   });
 
   document.getElementById("bulkDuplicateBtn").addEventListener("click", () => {
@@ -962,6 +1122,103 @@
     setSelectMode(false);
     renderAll();
     showToast(`Duplicated ${n} task${n > 1 ? "s" : ""}`, "success");
+  });
+
+  // Move/Category/Duration each open the same modal shell, but scoped to
+  // just the one field that was clicked — only that field is shown, and
+  // Save only ever writes that single field to the selected tasks.
+  const bulkEditOverlay = document.getElementById("bulkEditModalOverlay");
+  const bulkEditTitle = document.getElementById("bulkEditModalTitle");
+  const BULK_EDIT_FIELDS = {
+    date: { input: "bulkEditDateInput", clear: "bulkEditDateClear", group: "bulkFieldGroupDate", label: "Date" },
+    category: { input: "bulkEditCategorySelect", clear: "bulkEditCategoryClear", group: "bulkFieldGroupCategory", label: "Category" },
+    duration: { input: "bulkEditDurationInput", clear: "bulkEditDurationClear", group: "bulkFieldGroupDuration", label: "Duration" }
+  };
+  let activeBulkEditField = null;
+
+  function bulkEditFieldRow(key) {
+    return document.getElementById(BULK_EDIT_FIELDS[key].input).closest(".bulk-field-row");
+  }
+
+  function updateBulkEditFieldState(key) {
+    const input = document.getElementById(BULK_EDIT_FIELDS[key].input);
+    const clearBtn = document.getElementById(BULK_EDIT_FIELDS[key].clear);
+    const changed = input.value.trim() !== "";
+    bulkEditFieldRow(key).classList.toggle("changed", changed);
+    clearBtn.style.display = changed ? "flex" : "none";
+  }
+
+  function resetBulkEditField(key) {
+    document.getElementById(BULK_EDIT_FIELDS[key].input).value = "";
+    updateBulkEditFieldState(key);
+  }
+
+  Object.keys(BULK_EDIT_FIELDS).forEach(key => {
+    const { input, clear } = BULK_EDIT_FIELDS[key];
+    document.getElementById(input).addEventListener("input", () => updateBulkEditFieldState(key));
+    document.getElementById(clear).addEventListener("click", () => resetBulkEditField(key));
+  });
+
+  function populateBulkEditCategorySelect() {
+    const sel = document.getElementById("bulkEditCategorySelect");
+    sel.innerHTML = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "No change";
+    sel.appendChild(placeholder);
+    categories.forEach(c => {
+      const opt = document.createElement("option");
+      opt.value = c.name;
+      opt.textContent = c.name;
+      sel.appendChild(opt);
+    });
+  }
+
+  const BULK_EDIT_FOCUS_MAP = { date: "bulkEditDateInput", category: "bulkEditCategorySelect", duration: "bulkEditDurationInput" };
+
+  function openBulkEditModal(focusField) {
+    if (!selectedTaskIds.size) return;
+    activeBulkEditField = focusField;
+    populateBulkEditCategorySelect();
+    Object.keys(BULK_EDIT_FIELDS).forEach(key => {
+      resetBulkEditField(key);
+      document.getElementById(BULK_EDIT_FIELDS[key].group).style.display = key === focusField ? "" : "none";
+    });
+    bulkEditTitle.textContent = `Edit ${BULK_EDIT_FIELDS[focusField].label}`;
+    openModal(bulkEditOverlay);
+    const focusId = BULK_EDIT_FOCUS_MAP[focusField];
+    if (focusId) {
+      setTimeout(() => {
+        const el = document.getElementById(focusId);
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+        el.focus();
+      }, 50);
+    }
+  }
+
+  document.getElementById("bulkMoveBtn").addEventListener("click", () => openBulkEditModal("date"));
+  document.getElementById("bulkCategoryBtn").addEventListener("click", () => openBulkEditModal("category"));
+  document.getElementById("bulkDurationBtn").addEventListener("click", () => openBulkEditModal("duration"));
+
+  function closeBulkEditModal() {
+    closeModal(bulkEditOverlay);
+  }
+
+  document.getElementById("bulkEditCancel").addEventListener("click", closeBulkEditModal);
+  bulkEditOverlay.addEventListener("keydown", (e) => { if (e.key === "Escape") closeBulkEditModal(); });
+
+  document.getElementById("bulkEditSave").addEventListener("click", () => {
+    const field = activeBulkEditField;
+    if (field && bulkEditFieldRow(field).classList.contains("changed")) {
+      const val = document.getElementById(BULK_EDIT_FIELDS[field].input).value;
+      tasks.forEach(t => {
+        if (!selectedTaskIds.has(t.id)) return;
+        t[field] = val;
+      });
+      save();
+      renderAll();
+    }
+    closeBulkEditModal();
   });
 
   const catOverlay = document.getElementById("catModalOverlay");
@@ -1063,25 +1320,30 @@
   });
 
   // --- Premium accent themes ---
-  // No cached variable existed for this before — every read/write hit
-  // localStorage directly. Signed-in users read/write Firestore's
-  // settings/prefs doc instead, via window.firestoreBridge (set up by
-  // firestore-sync.js); signed-out users keep using localStorage exactly
-  // as before, cached here so it's not re-parsed on every call.
+  // localSelectedTheme is always the source of truth for reads (kept fresh
+  // by saveSelectedTheme() below and, for signed-in users, by
+  // hydrateFromFirestore() when a Firestore snapshot arrives) — it does NOT
+  // branch live to window.firestoreBridge.getSelectedTheme() on every read.
+  // That used to be the case, and it caused a real bug: Firestore writes
+  // are inherently async (they only land once onSnapshot echoes them back),
+  // so applySelectedTheme() — called synchronously right after
+  // saveSelectedTheme() in the same click handler — would still read the
+  // *previous* theme, leaving --accent-bg (and the row's background color)
+  // one click behind the checkmark, which updates via a plain classList
+  // change and was never affected. Updating this cache optimistically,
+  // synchronously, on save fixes that.
   let localSelectedTheme = localStorage.getItem("selectedTheme") || null;
 
   function getSelectedTheme() {
-    return (window.firestoreBridge && window.firestoreBridge.isSignedIn())
-      ? window.firestoreBridge.getSelectedTheme()
-      : localSelectedTheme;
+    return localSelectedTheme;
   }
 
   function saveSelectedTheme(theme) {
+    localSelectedTheme = theme;
     if (window.firestoreBridge && window.firestoreBridge.isSignedIn()) {
       window.firestoreBridge.saveSelectedTheme(theme);
       return;
     }
-    localSelectedTheme = theme;
     localStorage.setItem("selectedTheme", theme);
   }
 
@@ -1466,6 +1728,10 @@ function openGoalViewModal(goalId) {
   if (!g) return;
   document.getElementById("goalViewName").textContent = g.name;
   document.getElementById("goalViewCheckoff").textContent = "Daily check-off: " + (g.checkoffLabel || g.name);
+  const freezesAvailable = applyStreakFreezes(g).freezesAvailable;
+  const freezesEl = document.getElementById("goalViewFreezes");
+  freezesEl.style.display = freezesAvailable > 0 ? "block" : "none";
+  freezesEl.textContent = freezesAvailable > 0 ? `❄ ${freezesAvailable} streak freeze${freezesAvailable === 1 ? "" : "s"} banked` : "";
   document.getElementById("goalViewWhy").textContent = g.why || "—";
   document.getElementById("goalViewPlan").textContent = g.plan || "—";
   editingGoalId = goalId;
@@ -1597,6 +1863,22 @@ let currentRange = "week";
     const hasData = recap.tasksCompleted > 0 || recap.deepWorkSessions > 0 || recap.reflectionsWritten > 0;
     if (!hasData) return;
 
+    showWeeklyRecapBannerWhenClear(recap, currentWeekKey, 60);
+  }
+
+  // The banner should never show while a modal is open — it used to have a
+  // higher z-index than modals, so it could visually stack on top of one,
+  // and dismissing it while a modal's own close transition was also active
+  // made the animation stutter (two competing transitions). Waits for any
+  // open modal to close (checked every 500ms, capped at ~30s) rather than
+  // showing over it or silently giving up right away.
+  function showWeeklyRecapBannerWhenClear(recap, currentWeekKey, attemptsLeft) {
+    if (document.querySelector(".modal-overlay.open")) {
+      if (attemptsLeft <= 0) return;
+      setTimeout(() => showWeeklyRecapBannerWhenClear(recap, currentWeekKey, attemptsLeft - 1), 500);
+      return;
+    }
+
     const banner = document.getElementById("weeklyRecapBanner");
     if (!banner) return;
     const stat = (value, label) => `
@@ -1629,7 +1911,18 @@ let currentRange = "week";
     banner.classList.add("visible");
   }
 
+  function hasAnyCompletionHistory() {
+    return tasks.some(t => (t.completedDates && t.completedDates.length > 0) || t.done);
+  }
+
   function renderAnalysis() {
+    syncAllStreakFreezes();
+    const hasHistory = hasAnyCompletionHistory();
+    document.getElementById("analysisEmptyState").style.display = hasHistory ? "none" : "block";
+    document.getElementById("analysisContent").style.display = hasHistory ? "block" : "none";
+    lucide.createIcons();
+    if (!hasHistory) return;
+
     renderRingChart();
     renderBarChart(currentRange);
     renderMomentum();
@@ -2324,8 +2617,53 @@ let currentRange = "week";
     return "builtin:" + s.name;
   }
 
+  function getTrialStartDate() {
+    if (window.firestoreBridge && window.firestoreBridge.isSignedIn() && window.firestoreBridge.getAccountInfo) {
+      const account = window.firestoreBridge.getAccountInfo();
+      const raw = account && account.trialStartDate;
+      if (!raw) return null;
+      return raw.toDate ? raw.toDate() : new Date(raw);
+    }
+    const raw = localStorage.getItem(LOCAL_TRIAL_START_KEY);
+    return raw ? new Date(raw) : null;
+  }
+
+  function trialDaysRemaining() {
+    const start = getTrialStartDate();
+    if (!start) return 0;
+    const elapsedMs = Date.now() - start.getTime();
+    const remainingMs = TRIAL_DURATION_DAYS * 86400000 - elapsedMs;
+    return Math.max(0, Math.ceil(remainingMs / 86400000));
+  }
+
+  function isTrialActive() {
+    return trialDaysRemaining() > 0;
+  }
+
+  // Called from the Day 1 seal moment (see reflSaveBtn's handler below) —
+  // a no-op if a trial has already been started, so sealing every
+  // subsequent day doesn't reset the clock. Safe to call unconditionally
+  // on every seal rather than needing to separately track "is this
+  // actually Day 1".
+  function startTrialOnDayOneSeal() {
+    if (getTrialStartDate()) return;
+    const now = new Date();
+    if (window.firestoreBridge && window.firestoreBridge.isSignedIn() && window.firestoreBridge.setTrialStartDate) {
+      window.firestoreBridge.setTrialStartDate(now);
+    } else {
+      localStorage.setItem(LOCAL_TRIAL_START_KEY, now.toISOString());
+    }
+  }
+
   function isPremiumUser() {
-    return localStorage.getItem("isPremium") === "true";
+    // "Real" premium is still just a client-editable localStorage flag —
+    // roadmap #8 moves this to users/{uid}/billing/status, written only by
+    // a Cloud Function. Kept here as a manual-testing escape hatch and the
+    // eventual seam for an actual paid subscription; the trial above is
+    // the real, timestamp-checked path every new user actually goes
+    // through today.
+    const reallyPremium = localStorage.getItem("isPremium") === "true";
+    return reallyPremium || isTrialActive();
   }
 
   // No cached variable existed for this before — every read/write hit
@@ -2374,6 +2712,10 @@ let currentRange = "week";
       return;
     }
     const sessions = getDeepWorkSessions();
+    if (sessions.length === 0) {
+      el.innerHTML = `<div class="deep-work-stats-teaser">Deep Work sessions help you focus on one task without distractions. Pick a session length below and start your first one.</div>`;
+      return;
+    }
     const today = new Date();
     const weekStart = new Date(today);
     weekStart.setDate(weekStart.getDate() - 6);
@@ -2401,8 +2743,16 @@ let currentRange = "week";
   }
 
   function renderFocus() {
-    document.getElementById("focusSetup").style.display = "block";
-    document.getElementById("focusTimerScreen").style.display = "none";
+    // A background re-render (e.g. a Firestore snapshot update landing right
+    // after logDeepWorkSession writes the just-completed session) can fire
+    // while a session is running or its complete/note/repeat screens are
+    // showing. Forcing the screen back to setup here would flash it over
+    // whatever's actually on screen — only reset when the timer screen isn't
+    // already the one showing.
+    if (document.getElementById("focusTimerScreen").style.display !== "block") {
+      document.getElementById("focusSetup").style.display = "block";
+      document.getElementById("focusTimerScreen").style.display = "none";
+    }
     renderDeepWorkStats();
 
     const options = getSessionOptions();
@@ -2417,6 +2767,17 @@ let currentRange = "week";
       card.innerHTML = `<div class="session-name"><i data-lucide="${s.icon}" class="icon"></i> ${s.name}</div><div class="session-time">${s.time}</div>`;
       card.addEventListener("click", () => { selectedSession = i; renderFocus(); });
       if (s.isCustomPreset) {
+        const edit = document.createElement("span");
+        edit.className = "focus-session-edit";
+        edit.title = "Edit preset";
+        edit.innerHTML = '<i data-lucide="edit-3" class="icon"></i>';
+        edit.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const preset = customPresets.find(p => p.id === s.id);
+          if (preset) openEditPresetModal(preset);
+        });
+        card.appendChild(edit);
+
         const del = document.createElement("span");
         del.className = "focus-session-delete";
         del.title = "Remove preset";
@@ -2460,6 +2821,7 @@ let currentRange = "week";
     const isCustomSlot = options[selectedSession] && options[selectedSession].work === null;
     document.getElementById("customMinutesRow").style.display = isCustomSlot ? "block" : "none";
     document.getElementById("customMinutesInput").value = "";
+    document.getElementById("customBreakInput").value = "";
     document.getElementById("customMinutesError").classList.remove("show");
 
     const container = document.getElementById("focusTopTasks");
@@ -2482,9 +2844,24 @@ let currentRange = "week";
   let remainingSeconds = 0;
   let totalSeconds = 0;
   let timerRunning = false;
+  // How far (ms) into the current whole-second window the countdown had
+  // gotten when it was last paused, and when that window last started —
+  // together these let resume pick up exactly where pause left off instead
+  // of always waiting a fresh full second (see pauseResumeBtn handler).
+  let tickElapsedMs = 0;
+  let lastTickAt = 0;
+
+  function scheduleTick(delayMs) {
+    timerInterval = setTimeout(tick, delayMs);
+  }
   let timerPhase = "work"; // "work" | "break"
   let currentCompletedSession = null;
   let lastSessionWorkMinutes = 0;
+  // Only meaningful for the ad-hoc Custom slot (session.breakMinutes is
+  // always null there, unlike built-ins/presets which carry their own) —
+  // set from #customBreakInput when a Custom timer starts, null meaning
+  // "use the work/5 default", same as an unset preset break value.
+  let customSlotBreakMinutes = null;
 
   function formatTime(sec) {
     const m = Math.floor(sec / 60);
@@ -2492,27 +2869,66 @@ let currentRange = "week";
     return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
   }
 
+  const TIMER_RING_R = 90;
+  const TIMER_RING_CIRCUMFERENCE = 2 * Math.PI * TIMER_RING_R;
+
+  // Reuses the same bg/fg <circle> elements across calls instead of
+  // rebuilding the SVG every tick — rebuilding meant a brand-new fg element
+  // each second with no prior state to transition from, so the CSS
+  // transition never actually had anything to animate and the ring visibly
+  // stepped instead of sweeping smoothly.
   function drawTimerRing(pctRemaining, ringColor) {
     const svg = document.getElementById("timerRing");
-    svg.innerHTML = "";
     const ns = "http://www.w3.org/2000/svg";
-    const cx = 100, cy = 100, r = 90;
-    const circumference = 2 * Math.PI * r;
+    const cx = 100, cy = 100;
+    let bg = svg.querySelector(".timer-ring-bg");
+    let fg = svg.querySelector(".timer-ring-fg");
 
-    const bg = document.createElementNS(ns, "circle");
-    bg.setAttribute("cx", cx); bg.setAttribute("cy", cy); bg.setAttribute("r", r);
-    bg.setAttribute("fill", "none"); bg.setAttribute("stroke", "var(--border)"); bg.setAttribute("stroke-width", "10");
-    svg.appendChild(bg);
+    if (!bg || !fg) {
+      svg.innerHTML = "";
+      bg = document.createElementNS(ns, "circle");
+      bg.setAttribute("class", "timer-ring-bg");
+      bg.setAttribute("cx", cx); bg.setAttribute("cy", cy); bg.setAttribute("r", TIMER_RING_R);
+      bg.setAttribute("fill", "none"); bg.setAttribute("stroke", "var(--border)"); bg.setAttribute("stroke-width", "10");
+      svg.appendChild(bg);
 
-    const fg = document.createElementNS(ns, "circle");
-    fg.setAttribute("cx", cx); fg.setAttribute("cy", cy); fg.setAttribute("r", r);
-    fg.setAttribute("fill", "none"); fg.setAttribute("stroke", ringColor || "var(--accent)"); fg.setAttribute("stroke-width", "10");
-    fg.setAttribute("stroke-linecap", "round");
-    const dashLen = (pctRemaining / 100) * circumference;
-    fg.setAttribute("stroke-dasharray", `${dashLen} ${circumference - dashLen}`);
-    fg.setAttribute("transform", `rotate(-90 ${cx} ${cy})`);
-    fg.style.transition = "stroke-dasharray 1s linear";
-    svg.appendChild(fg);
+      fg = document.createElementNS(ns, "circle");
+      fg.setAttribute("class", "timer-ring-fg");
+      fg.setAttribute("cx", cx); fg.setAttribute("cy", cy); fg.setAttribute("r", TIMER_RING_R);
+      fg.setAttribute("fill", "none"); fg.setAttribute("stroke-width", "10");
+      fg.setAttribute("stroke-linecap", "round");
+      fg.setAttribute("transform", `rotate(-90 ${cx} ${cy})`);
+      fg.style.transition = TIMER_RING_TRANSITION;
+      svg.appendChild(fg);
+    }
+
+    const dashLen = (pctRemaining / 100) * TIMER_RING_CIRCUMFERENCE;
+    fg.setAttribute("stroke-dasharray", `${dashLen} ${TIMER_RING_CIRCUMFERENCE - dashLen}`);
+    fg.setAttribute("stroke", ringColor || "var(--accent)");
+  }
+
+  const TIMER_RING_TRANSITION = "stroke-dasharray 1s linear, stroke 300ms ease";
+
+  // The ring's fg circle has its own CSS transition (see drawTimerRing) that
+  // keeps gliding toward its last-set target on its own clock — clearing the
+  // tick interval stops future targets from being set, but doesn't cancel an
+  // already-in-flight transition. Snap it to wherever it currently sits and
+  // disable the transition so pause is visually instant too.
+  function freezeTimerRing() {
+    const fg = document.getElementById("timerRing").querySelector(".timer-ring-fg");
+    if (!fg) return;
+    const current = getComputedStyle(fg).strokeDasharray
+      .split(",")
+      .map(parseFloat);
+    fg.style.transition = "none";
+    fg.setAttribute("stroke-dasharray", current.join(" "));
+    void fg.getBoundingClientRect();
+  }
+
+  function unfreezeTimerRing() {
+    const fg = document.getElementById("timerRing").querySelector(".timer-ring-fg");
+    if (!fg) return;
+    fg.style.transition = TIMER_RING_TRANSITION;
   }
 
   function updateTimerDisplay() {
@@ -2575,20 +2991,21 @@ let currentRange = "week";
     document.getElementById("sessionCompleteInfo").textContent = `${session.name} session — ${workMinutes} minutes`;
     document.getElementById("sessionCompleteAffirmation").textContent = computeAffirmation(workMinutes);
     screen.classList.add("visible");
-    setTimeout(() => {
+    document.getElementById("sessionCompleteContinueBtn").addEventListener("click", () => {
       screen.classList.remove("visible");
       if (isPremiumUser()) {
         showSessionNoteScreen(sessionIndex, onDone);
       } else {
         onDone();
       }
-    }, 1200);
+    }, { once: true });
   }
 
   function showSessionNoteScreen(sessionIndex, onDone) {
     const overlay = document.getElementById("sessionNoteOverlay");
     const input = document.getElementById("sessionNoteInput");
     input.value = "";
+    document.getElementById("sessionNoteSaveBtn").disabled = true;
     openModal(overlay);
     setTimeout(() => input.focus(), 50);
 
@@ -2607,20 +3024,34 @@ let currentRange = "week";
     if (remainingSeconds <= 0) {
       clearInterval(timerInterval);
       updateTimerDisplay();
-      if (timerPhase === "break") {
-        finishBreakPhase();
-      } else {
-        finishWorkPhase();
-      }
+      // Calling finishWorkPhase/finishBreakPhase synchronously here means the
+      // "0:00" display update above and the completion screen covering it up
+      // both happen within the same tick, before the browser ever paints —
+      // so "0" is never actually seen, and it looks like completion fires a
+      // second early. A short deferral lets "0:00" genuinely render first.
+      const phase = timerPhase;
+      setTimeout(() => {
+        if (!document.body.classList.contains("timer-active")) return; // user backed out (e.g. tapped End) during the pause-at-zero
+        if (phase === "break") {
+          finishBreakPhase();
+        } else {
+          finishWorkPhase();
+        }
+      }, 500);
       return;
     }
     updateTimerDisplay();
+    lastTickAt = Date.now();
+    tickElapsedMs = 0;
+    scheduleTick(1000);
   }
 
   function finishWorkPhase() {
     const session = getSessionOptions()[selectedSession];
     const workMinutes = Math.round(totalSeconds / 60);
-    const breakMinutes = session.breakMinutes != null ? session.breakMinutes : Math.round(workMinutes / 5);
+    const breakMinutes = session.breakMinutes != null ? session.breakMinutes
+      : customSlotBreakMinutes != null ? customSlotBreakMinutes
+      : Math.round(workMinutes / 5);
     const sessionIndex = logDeepWorkSession(session, workMinutes);
     currentCompletedSession = session;
     lastSessionWorkMinutes = workMinutes;
@@ -2660,11 +3091,14 @@ let currentRange = "week";
     document.getElementById("timerLabel").textContent = session.name + " session";
     setTimerLabelIcon("timer");
     setIcon(document.getElementById("pauseResumeBtn"), "pause");
+    document.getElementById("pauseResumeBtn").style.display = ""; // undo the break screen's hide, if coming from one
     document.body.classList.add("timer-active");
 
     updateTimerDisplay();
     clearInterval(timerInterval);
-    timerInterval = setInterval(tick, 1000);
+    lastTickAt = Date.now();
+    tickElapsedMs = 0;
+    scheduleTick(1000);
   }
 
   function startBreakTimer(session, breakMinutes) {
@@ -2677,11 +3111,16 @@ let currentRange = "week";
     document.getElementById("timerLabel").textContent = "Break";
     setTimerLabelIcon("coffee");
     document.getElementById("skipBreakBtn").style.display = "block";
-    setIcon(document.getElementById("pauseResumeBtn"), "pause");
+    // Pause and Skip break both just stop the break from continuing
+    // normally, which is redundant — Skip break already covers that use
+    // case here, so Pause (unlike on the work screen) has no real purpose.
+    document.getElementById("pauseResumeBtn").style.display = "none";
 
     updateTimerDisplay();
     clearInterval(timerInterval);
-    timerInterval = setInterval(tick, 1000);
+    lastTickAt = Date.now();
+    tickElapsedMs = 0;
+    scheduleTick(1000);
   }
 
   function showRepeatScreen(session) {
@@ -2713,14 +3152,26 @@ let currentRange = "week";
     let workMinutes = session.work;
     if (session.work === null) {
       const customInput = document.getElementById("customMinutesInput");
+      const breakInput = document.getElementById("customBreakInput");
+      const err = document.getElementById("customMinutesError");
       workMinutes = parseInt(customInput.value);
       if (!workMinutes || workMinutes < 1) {
-        const err = document.getElementById("customMinutesError");
         err.textContent = "Enter custom minutes first.";
         err.classList.add("show");
         return;
       }
+      const breakRaw = breakInput.value.trim();
+      const breakVal = breakRaw === "" ? null : parseInt(breakRaw);
+      if (breakRaw !== "" && (isNaN(breakVal) || breakVal < 0)) {
+        err.textContent = "Break minutes can't be negative.";
+        err.classList.add("show");
+        return;
+      }
+      customSlotBreakMinutes = breakVal;
       customInput.value = "";
+      breakInput.value = "";
+    } else {
+      customSlotBreakMinutes = null;
     }
     document.getElementById("customMinutesError").classList.remove("show");
     crossfadeFocusScreens(document.getElementById("focusSetup"), document.getElementById("focusTimerScreen"));
@@ -2741,20 +3192,46 @@ let currentRange = "week";
   document.getElementById("customMinutesInput").addEventListener("input", () => {
     document.getElementById("customMinutesError").classList.remove("show");
   });
+  document.getElementById("customBreakInput").addEventListener("input", () => {
+    document.getElementById("customMinutesError").classList.remove("show");
+  });
+
+  document.getElementById("sessionNoteInput").addEventListener("input", () => {
+    document.getElementById("sessionNoteSaveBtn").disabled = document.getElementById("sessionNoteInput").value.trim() === "";
+  });
 
   function blockNonWholeNumberKeys(e) {
     if (["e", "E", "+", "-", "."].includes(e.key)) e.preventDefault();
   }
   document.getElementById("customMinutesInput").addEventListener("keydown", blockNonWholeNumberKeys);
+  document.getElementById("customBreakInput").addEventListener("keydown", blockNonWholeNumberKeys);
   document.getElementById("addPresetMinutesInput").addEventListener("keydown", blockNonWholeNumberKeys);
   document.getElementById("addPresetBreakInput").addEventListener("keydown", blockNonWholeNumberKeys);
 
   const addPresetOverlay = document.getElementById("addPresetModalOverlay");
+  // null while creating a new preset; set to the preset's id while the modal
+  // is open in edit mode, so the shared save handler knows which path to take.
+  let editingPresetId = null;
 
   function openAddPresetModal() {
+    editingPresetId = null;
+    document.getElementById("addPresetModalTitle").textContent = "Add preset";
+    document.getElementById("addPresetSaveBtn").textContent = "Save preset";
     document.getElementById("addPresetNameInput").value = "";
     document.getElementById("addPresetMinutesInput").value = "";
     document.getElementById("addPresetBreakInput").value = "";
+    document.getElementById("addPresetError").classList.remove("show");
+    openModal(addPresetOverlay);
+    setTimeout(() => document.getElementById("addPresetNameInput").focus(), 50);
+  }
+
+  function openEditPresetModal(preset) {
+    editingPresetId = preset.id;
+    document.getElementById("addPresetModalTitle").textContent = "Edit preset";
+    document.getElementById("addPresetSaveBtn").textContent = "Save changes";
+    document.getElementById("addPresetNameInput").value = preset.name;
+    document.getElementById("addPresetMinutesInput").value = preset.workMinutes;
+    document.getElementById("addPresetBreakInput").value = preset.breakMinutes != null ? preset.breakMinutes : "";
     document.getElementById("addPresetError").classList.remove("show");
     openModal(addPresetOverlay);
     setTimeout(() => document.getElementById("addPresetNameInput").focus(), 50);
@@ -2783,10 +3260,23 @@ let currentRange = "week";
       err.classList.add("show");
       return;
     }
-    addCustomPreset(name, minutes, breakMinutes);
-    closeModal(addPresetOverlay);
-    renderFocus();
-    showToast(`Saved "${name}" as a preset`, "success");
+    if (editingPresetId) {
+      const preset = customPresets.find(p => p.id === editingPresetId);
+      if (preset) {
+        preset.name = name;
+        preset.workMinutes = minutes;
+        preset.breakMinutes = breakInputRaw === "" ? Math.round(minutes / 5) : breakMinutes;
+        saveCustomPresets();
+      }
+      closeModal(addPresetOverlay);
+      renderFocus();
+      showToast(`Updated "${name}"`, "success");
+    } else {
+      addCustomPreset(name, minutes, breakMinutes);
+      closeModal(addPresetOverlay);
+      renderFocus();
+      showToast(`Saved "${name}" as a preset`, "success");
+    }
   });
 
   document.getElementById("startFocusBtn").addEventListener("click", startTimer);
@@ -2795,6 +3285,31 @@ let currentRange = "week";
     timerRunning = !timerRunning;
     const btn = document.getElementById("pauseResumeBtn");
     setIcon(btn, timerRunning ? "pause" : "play");
+    // Pausing must stop the countdown the instant it's tapped, not just flip
+    // a flag that tick() only checks on its next already-scheduled fire —
+    // clearInterval() is what actually freezes the display right where it
+    // is. The ring also needs its in-flight CSS transition killed
+    // (freezeTimerRing), since clearInterval alone doesn't stop an already-
+    // animating stroke-dasharray from gliding on to its last-set target.
+    //
+    // Resuming must feel instant, not wait out however much of the current
+    // whole-second window is left (that could be up to ~1s if pause landed
+    // right after a tick, which reads as exactly the "delay" this is fixing).
+    // Cap the wait for the very next tick short regardless of tickElapsedMs
+    // (captured on pause, below) — it costs a shaved fraction of a second off
+    // one countdown step per pause/resume, imperceptible for a focus timer,
+    // in exchange for resume always feeling immediate. Normal 1s cadence
+    // resumes right after that first tick (see tick()'s own reschedule).
+    clearInterval(timerInterval);
+    if (timerRunning) {
+      unfreezeTimerRing();
+      const remainderMs = Math.min(Math.max(0, 1000 - tickElapsedMs), 150);
+      lastTickAt = Date.now();
+      scheduleTick(remainderMs);
+    } else {
+      tickElapsedMs = Date.now() - lastTickAt;
+      freezeTimerRing();
+    }
   });
 
   document.getElementById("stopSessionBtn").addEventListener("click", () => {
@@ -2860,6 +3375,8 @@ let currentRange = "week";
     document.getElementById("reflBackBtn").style.display = reflectionReadOnly ? "block" : "none";
     document.getElementById("reflPrevDay").style.visibility = (reflectionReadOnly || pendingLockDate) ? "hidden" : "visible";
     document.getElementById("reflNextDay").style.visibility = (reflectionReadOnly || pendingLockDate) ? "hidden" : "visible";
+
+    document.getElementById("reflEmptyIntro").style.display = Object.keys(reflections).length === 0 ? "block" : "none";
   }
 
   function startReflectionReveal() {
@@ -3046,6 +3563,7 @@ let currentRange = "week";
       document.getElementById("reflFormError").classList.remove("show");
       lockedDays.push(dateStr);
       saveLockedDays();
+      startTrialOnDayOneSeal();
       reflections[dateStr] = { wentWell, improve };
       saveReflections(dateStr);
       document.getElementById("reflWentWell").value = "";
@@ -3150,6 +3668,7 @@ let currentRange = "week";
   let onboardingAgeBracket = "";
   let onboardingGoalName = "";
   let onboardingGoalCategory = "";
+  let onboardingGoalCheckoff = "";
   let onboardingGoalWhy = "";
   let onboardingGoalPlan = "";
 
@@ -3465,6 +3984,8 @@ let currentRange = "week";
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">You said you're becoming ${identityLower}. Time to make it real: one goal.</div>
           <input type="text" id="obGoalName" placeholder="What's one goal that would prove it?" value="${onboardingGoalName}" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:1.5rem;">
+          <label style="display:block;font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:0.5rem;font-weight:500;">What will you check off each day?</label>
+          <input type="text" id="obGoalCheckoff" placeholder="e.g. Watch one episode" value="${onboardingGoalCheckoff}" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:1.5rem;">
           <div id="obGoalCategoryChips" class="ob-row-list"></div>
           <label style="display:block;font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:0.5rem;font-weight:500;">Why does this goal matter to you?</label>
           <input type="text" id="obGoalWhy" placeholder="Be specific" value="${onboardingGoalWhy}" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:1.5rem;">
@@ -3475,6 +3996,7 @@ let currentRange = "week";
         </div>
       `;
       const goalNameInput = document.getElementById("obGoalName");
+      const goalCheckoffInput = document.getElementById("obGoalCheckoff");
       const goalWhyInput = document.getElementById("obGoalWhy");
       const goalPlanInput = document.getElementById("obGoalPlan");
       const catChipsWrap = document.getElementById("obGoalCategoryChips");
@@ -3513,6 +4035,7 @@ let currentRange = "week";
       });
       goalContinueBtn.addEventListener("click", () => {
         onboardingGoalName = goalNameInput.value.trim();
+        onboardingGoalCheckoff = onboardingGoalName ? goalCheckoffInput.value.trim() : "";
         onboardingGoalWhy = onboardingGoalName ? goalWhyInput.value.trim() : "";
         onboardingGoalPlan = onboardingGoalName ? goalPlanInput.value.trim() : "";
         if (!onboardingGoalName) onboardingGoalCategory = "";
@@ -3835,7 +4358,7 @@ let currentRange = "week";
         name: onboardingGoalName, category: goalCategory, time: "", duration: "",
         date: today, endDate: toDateStr(endD),
         done: false, order: maxOrder + 1, recurrence: { type: "daily" }, completedDates: [],
-        isGoal: true, checkoffLabel: onboardingGoalName, why: onboardingGoalWhy, plan: onboardingGoalPlan
+        isGoal: true, checkoffLabel: onboardingGoalCheckoff || onboardingGoalName, why: onboardingGoalWhy, plan: onboardingGoalPlan
       });
     }
 
@@ -3875,9 +4398,11 @@ let currentRange = "week";
     reflections = window.firestoreBridge.getReflections();
     lockedDays = window.firestoreBridge.getLockedDays();
     customPresets = window.firestoreBridge.getCustomPresets();
-    // deepWorkSessions/selectedTheme aren't cached top-level variables —
-    // getDeepWorkSessions()/getSelectedTheme() already branch live off
-    // window.firestoreBridge, so there's nothing to reassign here.
+    localSelectedTheme = window.firestoreBridge.getSelectedTheme();
+    applySelectedTheme();
+    // deepWorkSessions isn't a cached top-level variable — getDeepWorkSessions()
+    // still branches live off window.firestoreBridge, so there's nothing to
+    // reassign here for it.
 
     const wasOnboarding = document.body.classList.contains("onboarding-active");
     if (wasOnboarding && categories.length > 0) {
@@ -3912,6 +4437,13 @@ let currentRange = "week";
     localStorage.removeItem("customPresets");
     localStorage.removeItem("deepWorkSessions");
     localStorage.removeItem("selectedTheme");
+    // TEMPORARY: isPremium is still a client-editable localStorage flag
+    // (roadmap #8 moves this to users/{uid}/billing/status, server-written
+    // only). Until then, sign-out must clear it here too, or a signed-out
+    // user keeps whatever premium state they last had. When #8 ships, this
+    // reset needs to carry over to whatever clears the real billing doc's
+    // local mirror on sign-out — don't let it get dropped in that migration.
+    localStorage.removeItem("isPremium");
     applySelectedTheme();
     rerenderCurrentView();
   }
