@@ -76,7 +76,21 @@ users/{uid}/tasks/{taskId}
   checkoffLabel: string
   why: string
   plan: string
+  milestonesEarned: {            // shareable milestone cards (roadmap #6)
+    [threshold: "7" | "30" | "100"]: {
+      threshold: number,
+      startDate: string,          // "YYYY-MM-DD", first day of that streak
+      earnedDate: string,         // "YYYY-MM-DD", day the threshold was hit
+      protectedDays: number       // frozen (not completed) days in that window
+    }
+  }
 ```
+
+Gates each threshold to firing once per streak (checkStreakMilestones() in
+app.js) and lets "View milestone" later re-render the exact snapshot as it
+was earned, not the task's current (possibly longer) streak — recomputed
+from completedDates/frozenDates via occursOn() over [startDate, earnedDate],
+same as everywhere else in the app, not stored as a rendered image.
 
 ## `users/{uid}/categories/{categoryId}`
 

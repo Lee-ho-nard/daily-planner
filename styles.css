@@ -224,7 +224,11 @@
 
   .modal-overlay {
     display: flex; position: fixed; inset: 0; background: rgba(0,0,0,0.35); backdrop-filter: blur(4px);
-    align-items: center; justify-content: center; padding: 1rem; z-index: 10;
+    align-items: center; justify-content: center; padding: 1rem;
+    /* Above #onboardingView (20) and .onboarding-back-wrap (21) — the
+       account-creation onboarding step opens this same auth modal, which
+       needs to render on top of the onboarding screen, not behind it. */
+    z-index: 22;
     opacity: 0; visibility: hidden;
     transition: opacity 200ms ease, visibility 0s linear 200ms;
   }
@@ -323,11 +327,22 @@
   .goal-name { font-weight: 700; font-size: var(--text-md); letter-spacing: -0.03em; }
   .goal-pct { font-size: var(--text-base); color: var(--text-secondary); font-weight: 500; }
   .goal-sub { font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: 0.7rem; }
+  .goal-milestone-link { background: none; border: none; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font-family: inherit; font-size: inherit; display: inline-flex; align-items: center; gap: 0.2rem; vertical-align: middle; }
+  .goal-milestone-link .icon { width: 13px; height: 13px; color: inherit; }
   .goal-dots { display: flex; gap: 4px; flex-wrap: wrap; }
   .goal-dot { width: 15px; height: 15px; border-radius: 5px; background: var(--bg-page); border: 1px solid var(--border); transition: transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1), background 200ms, opacity 250ms; }
   .goal-dot.done { border: none; }
   .goal-dot.future { opacity: 0.4; border-style: dashed; }
   .goal-dot.milestone { box-shadow: 0 0 0 3px var(--accent-bg); }
+  /* Onboarding's streak preview: today's dot is empty like the rest (no
+     day is done yet), just visually singled out as "yours to start" via a
+     gentle breathing ring, not a fill — never implies a completion that
+     hasn't happened. */
+  .goal-dot.today-ready { border: 1.5px solid var(--accent); animation: todayReadyPulse 1.8s ease-in-out infinite; }
+  @keyframes todayReadyPulse {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 40%, transparent); }
+    50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent); }
+  }
   /* Frozen days must never be mistaken for completed ones — a hatched
      ice-blue fill instead of the flat category-color fill .done uses, so it
      stays visually distinct no matter what color the goal's category is. */
@@ -458,6 +473,49 @@
   .session-complete-text { font-size: var(--text-xl); font-weight: 700; letter-spacing: -0.03em; color: var(--text-primary); text-align: center; }
   .session-complete-continue { margin-top: 1.75rem; width: 220px; max-width: 80vw; }
 
+  /* Shareable milestone card (roadmap #6) — same fixed full-screen
+     takeover pattern as #sealScreen/#sessionCompleteScreen above, but the
+     card itself carries a fixed brand background (#2F5233) regardless of
+     the app's current theme/dark-mode/premium-preset — this is exported
+     and shared outside the app, so it needs to look the same everywhere. */
+  #milestoneScreen {
+    position: fixed; inset: 0; z-index: 16;
+    background: var(--bg-page);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; visibility: hidden;
+    transition: opacity 0.4s ease, visibility 0s linear 0.4s;
+    padding: 1.5rem;
+  }
+  #milestoneScreen.visible {
+    opacity: 1; visibility: visible;
+    transition: opacity 0.4s ease, visibility 0s linear 0s;
+  }
+  .milestone-screen-inner { display: flex; flex-direction: column; align-items: center; width: 100%; }
+  .milestone-card {
+    width: min(85vw, 320px);
+    aspect-ratio: 4 / 5;
+    background: #2F5233;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-elevated);
+    padding: 1.6rem 1.4rem;
+    display: flex;
+    flex-direction: column;
+    color: #FAFAF7;
+    transform: scale(0.92);
+    opacity: 0;
+    transition: opacity 400ms ease-out, transform 400ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  #milestoneScreen.visible .milestone-card { opacity: 1; transform: scale(1); }
+  .milestone-wordmark { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.16em; opacity: 0.7; color: #FAFAF7; }
+  .milestone-dots { flex: 1; display: flex; flex-wrap: wrap; align-content: center; justify-content: center; }
+  .milestone-dot { flex-shrink: 0; } /* border-radius set inline per dot, proportional to size (see renderMilestoneDotsDOM) */
+  .milestone-dot.completed { background: #FAFAF7; }
+  .milestone-dot.protected { background: transparent; border: 1.5px dashed #FAFAF7; box-sizing: border-box; }
+  .milestone-stat { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.02em; text-align: center; color: #FAFAF7; margin-bottom: 0.6rem; }
+  .milestone-footer { text-align: center; font-size: 0.72rem; line-height: 1.6; opacity: 0.85; color: #FAFAF7; }
+  .milestone-actions { display: flex; flex-direction: column; align-items: stretch; gap: 0.6rem; width: min(85vw, 320px); margin-top: 1.5rem; }
+  .milestone-share-btn { background: var(--bg-card); color: var(--text-primary); }
+
   /* Deep Work's note screen must be a fully focused, opaque break from the
      rest of the app — .modal-overlay's translucent/blurred backdrop is
      meant for small in-context dialogs and would let the tab show through. */
@@ -552,7 +610,7 @@
   .toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   .weekly-recap-banner {
-    /* Below .modal-overlay's z-index (10), unlike .toast (which shares
+    /* Below .modal-overlay's z-index (22), unlike .toast (which shares
        z-index:100 but legitimately needs to sit above modals, e.g. a
        "Saved." confirmation for an action just taken inside one) — the
        banner is an unrelated, persistent notification and should never

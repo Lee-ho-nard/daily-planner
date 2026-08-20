@@ -90,7 +90,7 @@
     <div id="analysisEmptyState" class="empty-msg" style="display:none;">
       <i data-lucide="bar-chart-3" class="icon" style="width:28px;height:28px;color:var(--text-muted);display:block;margin:0 auto 0.5rem;"></i>
       <div class="big">Your trends will show up here.</div>
-      Analysis fills in once you've completed a few tasks — check back after a few days of using the Planner.
+      Analysis fills in once you've completed a few tasks. Check back after a few days of using the Planner.
     </div>
     <div id="analysisContent">
       <div class="ring-section">
@@ -126,7 +126,7 @@
       <button id="reflNextDay"><i data-lucide="chevron-right" class="icon"></i></button>
     </div>
 
-    <div id="reflEmptyIntro" class="deep-work-stats-teaser" style="display:none;">Reflection is a quick end-of-day check-in — what went well, and what you'd change. Write your first one below.</div>
+    <div id="reflEmptyIntro" class="deep-work-stats-teaser" style="display:none;">Reflection is a quick end-of-day check-in: what went well, and what you'd change. Write your first one below.</div>
 
     <div id="reflWentWellGroup" class="refl-group">
       <label style="display:flex;align-items:center;gap:0.3rem;font-size:var(--text-base);color:var(--text-secondary);margin-bottom:0.4rem;"><i data-lucide="book-open" class="icon"></i>What went well today?</label>
@@ -207,6 +207,25 @@
     <div class="session-complete-affirmation" id="sessionCompleteAffirmation"></div>
     <div class="session-complete-text">Session complete.</div>
     <button type="button" id="sessionCompleteContinueBtn" class="start-focus-btn session-complete-continue">Continue</button>
+  </div>
+</div>
+
+<div id="milestoneScreen">
+  <div class="milestone-screen-inner">
+    <div class="milestone-card" id="milestoneCard">
+      <div class="milestone-wordmark">FLIT</div>
+      <div class="milestone-dots" id="milestoneDots"></div>
+      <div class="milestone-stat" id="milestoneStat"></div>
+      <div class="milestone-footer">
+        <div id="milestoneDateRange"></div>
+        <div id="milestoneProtected"></div>
+      </div>
+    </div>
+    <div class="milestone-actions">
+      <button type="button" id="milestoneSaveBtn" class="start-focus-btn">Save image</button>
+      <button type="button" id="milestoneShareBtn" class="start-focus-btn milestone-share-btn">Share</button>
+      <button type="button" id="milestoneCloseBtn" class="auth-mode-toggle">Close</button>
+    </div>
   </div>
 </div>
 

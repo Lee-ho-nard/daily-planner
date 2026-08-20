@@ -26,11 +26,20 @@ export function signInWithGoogle() {
 
 export async function signUpWithEmail(email, password) {
   const cred = await createUserWithEmailAndPassword(auth, email, password);
-  // Best-effort — a failed send here (rare, e.g. transient network issue)
-  // shouldn't block account creation. The unverified-email banner in
-  // Settings gives the user a retry path either way.
-  try { await sendEmailVerification(cred.user); } catch (err) { console.error("Failed to send verification email:", err); }
-  return cred;
+  // Do not provide a custom continue URL here. Firebase only permits URLs
+  // whose domains are explicitly allow-listed in its console; using the
+  // current origin made the send fail on preview and newly deployed sites.
+  // Firebase's default verification handler still verifies the account.
+  try {
+    await sendEmailVerification(cred.user);
+    return { credential: cred, verificationError: null };
+  } catch (verificationError) {
+    // The account already exists at this point. Keep the user signed in so
+    // they can use the visible Resend control instead of seeing a misleading
+    // failed-signup state and then an "email already in use" retry error.
+    console.error("Initial verification email failed:", verificationError);
+    return { credential: cred, verificationError };
+  }
 }
 
 export function signInWithEmail(email, password) {

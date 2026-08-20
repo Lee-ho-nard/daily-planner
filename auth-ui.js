@@ -53,10 +53,12 @@ function confirmSignOut(onConfirm) {
 function friendlyAuthError(err) {
   const code = err && err.code ? err.code : "";
   if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") return null;
-  if (code === "auth/email-already-in-use") return "That email is already registered — try signing in instead.";
+  if (code === "auth/email-already-in-use") return "That email is already registered. Try signing in instead.";
   if (code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found") return "Incorrect email or password.";
   if (code === "auth/weak-password") return "Password should be at least 6 characters.";
   if (code === "auth/invalid-email") return "Enter a valid email address.";
+  if (code === "auth/too-many-requests") return "Too many attempts. Please wait a few minutes and try again.";
+  if (code === "auth/unauthorized-continue-uri" || code === "auth/unauthorized-domain") return "This site isn't authorized for email verification. Add its domain in Firebase Console → Authentication → Settings → Authorized domains.";
   return "Something went wrong. Please try again.";
 }
 
@@ -92,7 +94,7 @@ function computeSubscriptionStatus() {
   }
   if (typeof window.trialDaysRemaining === "function") {
     const daysLeft = window.trialDaysRemaining();
-    if (daysLeft > 0) return `Free trial — ${daysLeft} day${daysLeft === 1 ? "" : "s"} left`;
+    if (daysLeft > 0) return `Free trial: ${daysLeft} day${daysLeft === 1 ? "" : "s"} left`;
   }
   return "Free plan";
 }
@@ -135,6 +137,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (!overlay || !signInBtn || !settingsBtn || !settingsOverlay) return; // markup not present — nothing to wire up
 
+  // Small bridge for app.js (classic script) — onboarding's email-
+  // verification step needs auth state without importing the Firebase SDK.
+  window.authBridge = {
+    getCurrentUser,
+    reloadCurrentUser,
+    sendVerificationEmail,
+    hasPasswordProvider,
+    hasGoogleProvider
+  };
+
   let mode = "signin";
   let currentUser = null;
 
@@ -154,6 +166,12 @@ document.addEventListener("DOMContentLoaded", () => {
     openModal(overlay);
     setTimeout(() => emailInput.focus(), 50);
   }
+
+  // Lets onboarding's account-creation step open this same modal (in signup
+  // mode) rather than app.js rebuilding its own Google/email form — the
+  // one thing onboarding needs from this file that isn't already an event
+  // listener on markup app.js doesn't own.
+  window.openOnboardingAuthModal = () => openAuthModal("signup");
 
   function renderAccountDetails(user) {
     if (!user) return;
@@ -195,10 +213,17 @@ document.addEventListener("DOMContentLoaded", () => {
     renderMode();
   });
 
+  function notifyOnboardingAuthChanged() {
+    if (document.body.classList.contains("onboarding-active")) {
+      document.dispatchEvent(new CustomEvent("onboarding-auth-changed"));
+    }
+  }
+
   document.getElementById("authGoogleBtn").addEventListener("click", async () => {
     try {
       await signInWithGoogle();
       closeModal(overlay);
+      notifyOnboardingAuthChanged();
     } catch (err) {
       const msg = friendlyAuthError(err);
       if (msg) { errorEl.textContent = msg; errorEl.classList.add("show"); }
@@ -218,11 +243,21 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       if (mode === "signin") {
         await signInWithEmail(email, password);
+        closeModal(overlay);
+        notifyOnboardingAuthChanged();
       } else {
-        await signUpWithEmail(email, password);
-        notify("Account created — check your email to verify it.", "success");
+        const result = await signUpWithEmail(email, password);
+        closeModal(overlay);
+        if (result.verificationError) {
+          notify("Account created, but the verification email could not be sent. Use Resend to try again.", "error");
+          notifyOnboardingAuthChanged();
+        } else if (document.body.classList.contains("onboarding-active")) {
+          notify("Verification email sent. Check your inbox.", "success");
+          notifyOnboardingAuthChanged();
+        } else {
+          notify("Account created. Check your email to verify it.", "success");
+        }
       }
-      closeModal(overlay);
     } catch (err) {
       const msg = friendlyAuthError(err);
       if (msg) { errorEl.textContent = msg; errorEl.classList.add("show"); }
@@ -405,7 +440,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const email = user.email || "";
     window.showConfirm({
       title: "Delete account",
-      message: "This permanently deletes your account and all of your data — tasks, categories, reflections, deep work history, and presets. This cannot be undone.",
+      message: "This permanently deletes your account and all of your data: tasks, categories, reflections, deep work history, and presets. This cannot be undone.",
       confirmLabel: "Delete account",
       danger: true,
       requireText: {
@@ -434,6 +469,11 @@ document.addEventListener("DOMContentLoaded", () => {
       signInBtn.style.display = "none";
       statusPill.style.display = "flex";
       renderAccountDetails(user);
+      // Permanent, never cleared on sign-out — lets app.js's account-nudge
+      // banner tell "never had an account" apart from "has one, just
+      // signed out right now on this device", so it doesn't nag someone
+      // who already made an account (e.g. during the new onboarding step).
+      localStorage.setItem("hasSignedInBefore", "true");
     } else {
       signInBtn.style.display = "flex";
       statusPill.style.display = "none";
@@ -442,7 +482,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (migrationResult && migrationResult.reason === "error") {
       notify("Signed in, but syncing your data failed. It'll retry next time you sign in.", "warning");
     } else if (migrationResult && migrationResult.imported) {
-      notify(`Signed in — synced ${migrationResult.taskCount} task${migrationResult.taskCount === 1 ? "" : "s"} to your account.`, "success");
+      notify(`Signed in. Synced ${migrationResult.taskCount} task${migrationResult.taskCount === 1 ? "" : "s"} to your account.`, "success");
     } else if (user && !isInitialLoad) {
       notify("Signed in.", "success");
     }

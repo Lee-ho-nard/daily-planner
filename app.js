@@ -177,7 +177,13 @@
     return rem ? h + "h " + rem + "m" : h + "h";
   }
 
-  function computeStreak(task) {
+  // Chronological (oldest-first) list of dates making up the task's
+  // CURRENT unbroken streak — completed or frozen days only, stopping at
+  // the first real gap. computeStreak() and the milestone-card feature
+  // both need this same walk (length for one, the actual dates for the
+  // other), so it lives in one place rather than two similar loops
+  // drifting apart.
+  function getCurrentStreakDates(task) {
     const today = toDateStr(new Date());
     const start = new Date(task.date + "T00:00:00");
     const end = new Date((task.endDate || today) + "T00:00:00");
@@ -193,12 +199,16 @@
       pastScheduled = pastScheduled.slice(1);
     }
 
-    let streak = 0;
+    const streakDates = [];
     for (const ds of pastScheduled) {
-      if ((task.completedDates || []).includes(ds) || (task.frozenDates || []).includes(ds)) streak++;
+      if ((task.completedDates || []).includes(ds) || (task.frozenDates || []).includes(ds)) streakDates.push(ds);
       else break;
     }
-    return streak;
+    return streakDates.reverse(); // oldest first
+  }
+
+  function computeStreak(task) {
+    return getCurrentStreakDates(task).length;
   }
 
   // Streak freeze economy (Snapchat-style): every 7 consecutive streak days
@@ -258,18 +268,345 @@
     return { changed: true, freezesAvailable: freezesBanked };
   }
 
-  // Runs applyStreakFreezes across every recurring task (goals and plain
-  // repeating tasks alike — frozenDates is a general task field per
-  // docs/firestore-schema.md, not goal-only) and persists once if anything
-  // changed, rather than one save() per task.
+  // Shareable milestone cards (roadmap #6). MILESTONE_THRESHOLDS gates
+  // are recorded per-task in task.milestonesEarned = { "7": record, ... }
+  // (see docs/firestore-schema.md) so each threshold only ever fires once
+  // per streak, and "View milestone" later can re-render the exact
+  // snapshot from when it was actually earned — not the task's current,
+  // possibly-longer streak.
+  const MILESTONE_THRESHOLDS = [7, 30, 100];
+
+  // Mutates task.milestonesEarned in place and returns the newly-earned
+  // record if the task's current streak just crossed a threshold it
+  // hadn't already earned, else null. Only ever reports (and records) one
+  // threshold per call — if a streak already spans multiple unearned
+  // thresholds at once (e.g. this feature shipped after someone already
+  // had a 40-day streak), the rest get caught on the next check rather
+  // than firing several full-screen takeovers back to back.
+  function checkStreakMilestones(task) {
+    if (!task.recurrence || task.recurrence.type === "none") return null;
+    const streakDates = getCurrentStreakDates(task);
+    const streak = streakDates.length;
+    const earned = task.milestonesEarned || {};
+    for (const threshold of MILESTONE_THRESHOLDS) {
+      if (streak >= threshold && !earned[threshold]) {
+        const windowDates = streakDates.slice(streakDates.length - threshold);
+        const completedDates = task.completedDates || [];
+        const protectedDays = windowDates.filter(ds => !completedDates.includes(ds)).length;
+        const record = {
+          threshold,
+          startDate: windowDates[0],
+          earnedDate: windowDates[windowDates.length - 1],
+          protectedDays
+        };
+        task.milestonesEarned = { ...earned, [threshold]: record };
+        return record;
+      }
+    }
+    return null;
+  }
+
+  // Runs applyStreakFreezes + checkStreakMilestones across every recurring
+  // task (goals and plain repeating tasks alike — frozenDates is a general
+  // task field per docs/firestore-schema.md, not goal-only) and persists
+  // once if anything changed, rather than one save() per task. Shows the
+  // full-screen milestone card for the first newly-earned milestone found,
+  // as long as nothing else is already on screen — the natural "checked
+  // whenever streak state is calculated/displayed" hook this already is
+  // for freezes doubles as the milestone trigger point.
   function syncAllStreakFreezes() {
     let anyChanged = false;
+    let newMilestone = null;
     tasks.forEach(t => {
       if (applyStreakFreezes(t).changed) anyChanged = true;
+      const record = checkStreakMilestones(t);
+      if (record) {
+        anyChanged = true;
+        if (!newMilestone) newMilestone = { task: t, record };
+      }
     });
     if (anyChanged) save();
+    if (newMilestone && !document.querySelector(".modal-overlay.open") &&
+        !document.getElementById("milestoneScreen").classList.contains("visible")) {
+      showMilestoneScreen(newMilestone.task, newMilestone.record);
+    }
     return anyChanged;
   }
+
+  // --- Shareable milestone card: card data, DOM preview, canvas export ---
+
+  // Dot size/gap (CSS px at the card's 320px reference width — see
+  // .milestone-card in styles.css) scaled down as the day count grows, so
+  // a 100-dot grid still fits the card cleanly instead of overflowing or
+  // shrinking the rest of the layout.
+  function milestoneDotMetrics(threshold) {
+    if (threshold <= 7) return { size: 18, gap: 8 };
+    if (threshold <= 30) return { size: 11, gap: 5 };
+    return { size: 6, gap: 3 };
+  }
+
+  function formatMilestoneDate(dateStr) {
+    return new Date(dateStr + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  // Rebuilds the exact scheduled-occurrence dates between the milestone's
+  // stored startDate/earnedDate (not the task's current, possibly-longer
+  // streak) so "View milestone" always reproduces the snapshot as it was
+  // actually earned. Uses occursOn() rather than every calendar day in the
+  // range, since a weekly-recurring task's streak dates skip non-scheduled
+  // days.
+  function buildMilestoneCardData(task, record) {
+    const start = new Date(record.startDate + "T00:00:00");
+    const end = new Date(record.earnedDate + "T00:00:00");
+    const completedDates = task.completedDates || [];
+    const dots = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      if (!occursOn(task, d)) continue;
+      const ds = toDateStr(d);
+      dots.push({ date: ds, protected: !completedDates.includes(ds) });
+    }
+    return {
+      taskName: task.checkoffLabel || task.name,
+      threshold: record.threshold,
+      startDate: record.startDate,
+      earnedDate: record.earnedDate,
+      protectedDays: record.protectedDays,
+      dots
+    };
+  }
+
+  function renderMilestoneDotsDOM(container, data) {
+    container.innerHTML = "";
+    const metrics = milestoneDotMetrics(data.threshold);
+    container.style.gap = metrics.gap + "px";
+    data.dots.forEach(dot => {
+      const el = document.createElement("div");
+      el.className = "milestone-dot " + (dot.protected ? "protected" : "completed");
+      el.style.width = metrics.size + "px";
+      el.style.height = metrics.size + "px";
+      // Same 5px-at-18px ratio as .goal-dot, scaled with dot size — a flat
+      // 5px radius would read as a plain circle once dots shrink to 6-11px.
+      el.style.borderRadius = (metrics.size * (5 / 18)) + "px";
+      container.appendChild(el);
+    });
+  }
+
+  let currentMilestoneCardData = null;
+
+  function showMilestoneScreen(task, record) {
+    const data = buildMilestoneCardData(task, record);
+    currentMilestoneCardData = data;
+    renderMilestoneDotsDOM(document.getElementById("milestoneDots"), data);
+    document.getElementById("milestoneStat").textContent = `${data.threshold}-day streak`;
+    document.getElementById("milestoneDateRange").textContent =
+      `${formatMilestoneDate(data.startDate)} to ${formatMilestoneDate(data.earnedDate)}`;
+    const protectedEl = document.getElementById("milestoneProtected");
+    if (data.protectedDays > 0) {
+      protectedEl.textContent = `${data.protectedDays} of ${data.threshold} days protected`;
+      protectedEl.style.display = "block";
+    } else {
+      // Never show "0 of N days protected" — the honesty line only earns
+      // its place when there's something to actually disclose.
+      protectedEl.textContent = "";
+      protectedEl.style.display = "none";
+    }
+    lucide.createIcons();
+    document.getElementById("milestoneScreen").classList.add("visible");
+  }
+
+  document.getElementById("milestoneCloseBtn").addEventListener("click", () => {
+    document.getElementById("milestoneScreen").classList.remove("visible");
+  });
+  document.getElementById("milestoneScreen").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") document.getElementById("milestoneScreen").classList.remove("visible");
+  });
+
+  // --- Canvas export (actual downloadable/shareable image, not a DOM
+  // screenshot) — redraws the same design at export resolution using the
+  // fixed brand color/dimensions, independent of the on-screen preview's
+  // CSS so it renders identically regardless of viewport size or theme. ---
+
+  const MILESTONE_CANVAS_WIDTH = 1080;
+  const MILESTONE_CANVAS_HEIGHT = 1350; // 4:5
+  const MILESTONE_CARD_REF_WIDTH = 320; // matches .milestone-card's CSS reference width
+  const MILESTONE_SCALE = MILESTONE_CANVAS_WIDTH / MILESTONE_CARD_REF_WIDTH;
+
+  function drawRoundedRectPath(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  // Canvas has no native letter-spacing support reliable across browsers,
+  // so each character is measured and placed by hand for the wordmark's
+  // 0.16em tracking.
+  function drawLetterSpacedText(ctx, text, x, y, spacing) {
+    let cursorX = x;
+    [...text].forEach(ch => {
+      ctx.fillText(ch, cursorX, y);
+      cursorX += ctx.measureText(ch).width + spacing;
+    });
+  }
+
+  function renderMilestoneCardCanvas(data) {
+    const canvas = document.createElement("canvas");
+    canvas.width = MILESTONE_CANVAS_WIDTH;
+    canvas.height = MILESTONE_CANVAS_HEIGHT;
+    const ctx = canvas.getContext("2d");
+    const S = MILESTONE_SCALE;
+
+    ctx.fillStyle = "#2F5233";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const padX = 22.4 * S;
+    const padTop = 25.6 * S;
+
+    // Wordmark, top-left, quiet.
+    ctx.fillStyle = "rgba(250,250,247,0.7)";
+    ctx.font = `600 ${11.2 * S}px "Hanken Grotesk", sans-serif`;
+    ctx.textBaseline = "top";
+    ctx.textAlign = "left";
+    drawLetterSpacedText(ctx, "FLIT", padX, padTop, 1.79 * S);
+
+    // Dot grid, centered in a fixed middle band so it's unaffected by the
+    // exact height of the wordmark/stat/footer text around it.
+    const metrics = milestoneDotMetrics(data.threshold);
+    const dotSize = metrics.size * S;
+    const dotGap = metrics.gap * S;
+    const dotsAreaTop = canvas.height * 0.22;
+    const dotsAreaBottom = canvas.height * 0.66;
+    const dotsAreaWidth = canvas.width - padX * 2;
+    const perRow = Math.max(1, Math.floor((dotsAreaWidth + dotGap) / (dotSize + dotGap)));
+    const rowCount = Math.ceil(data.dots.length / perRow);
+    const gridHeight = rowCount * dotSize + (rowCount - 1) * dotGap;
+    const gridTop = dotsAreaTop + Math.max(0, ((dotsAreaBottom - dotsAreaTop) - gridHeight) / 2);
+
+    data.dots.forEach((dot, i) => {
+      const row = Math.floor(i / perRow);
+      const col = i % perRow;
+      const dotsInRow = Math.min(perRow, data.dots.length - row * perRow);
+      const rowWidth = dotsInRow * dotSize + (dotsInRow - 1) * dotGap;
+      const rowLeft = padX + (dotsAreaWidth - rowWidth) / 2;
+      const x = rowLeft + col * (dotSize + dotGap);
+      const y = gridTop + row * (dotSize + dotGap);
+      // Same 5px-at-18px ratio as .goal-dot (5px radius on a 15px box,
+      // ~0.33) scaled down for the 30/100-day dot sizes — a flat 5px
+      // radius stops reading as a rounded square and looks like a plain
+      // circle once dots shrink to 6-11px.
+      drawRoundedRectPath(ctx, x, y, dotSize, dotSize, dotSize * (5 / 18));
+      if (dot.protected) {
+        ctx.strokeStyle = "#FAFAF7";
+        ctx.lineWidth = 1.5 * S;
+        ctx.setLineDash([dotSize * 0.35, dotSize * 0.25]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else {
+        ctx.fillStyle = "#FAFAF7";
+        ctx.fill();
+      }
+    });
+
+    // Stat line — moderate weight, not display-scale type.
+    ctx.fillStyle = "#FAFAF7";
+    ctx.font = `600 ${20 * S}px "Hanken Grotesk", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(`${data.threshold}-day streak`, canvas.width / 2, canvas.height * 0.72);
+
+    // Footer — date range, plus the honesty line only when it has
+    // something real to disclose.
+    ctx.font = `400 ${11.52 * S}px "Hanken Grotesk", sans-serif`;
+    ctx.fillStyle = "rgba(250,250,247,0.85)";
+    const lineHeight = 11.52 * S * 1.6;
+    const footerLines = [`${formatMilestoneDate(data.startDate)} to ${formatMilestoneDate(data.earnedDate)}`];
+    if (data.protectedDays > 0) footerLines.push(`${data.protectedDays} of ${data.threshold} days protected`);
+    const footerBottom = canvas.height - padTop;
+    const footerTop = footerBottom - (footerLines.length - 1) * lineHeight;
+    footerLines.forEach((line, i) => {
+      ctx.fillText(line, canvas.width / 2, footerTop + i * lineHeight);
+    });
+
+    return canvas;
+  }
+
+  function canvasToBlob(canvas) {
+    return new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+  }
+
+  async function exportMilestoneCanvas() {
+    if (!currentMilestoneCardData) return null;
+    // Canvas text silently falls back to a default font if the requested
+    // one isn't loaded yet when drawing happens. document.fonts.ready
+    // alone isn't enough here — it only resolves for fonts some element on
+    // the page has already triggered a load for, and nothing else on
+    // screen necessarily uses these exact weights yet. Explicitly request
+    // the exact font strings the canvas draws with (weight matters — a
+    // browser can have 400 loaded but not 600) and wait for those.
+    try {
+      await Promise.all([
+        document.fonts.load(`600 40px "Hanken Grotesk"`),
+        document.fonts.load(`400 40px "Hanken Grotesk"`)
+      ]);
+    } catch (err) { /* best-effort — falls back to a system sans if this fails */ }
+    return renderMilestoneCardCanvas(currentMilestoneCardData);
+  }
+
+  document.getElementById("milestoneSaveBtn").addEventListener("click", async () => {
+    const btn = document.getElementById("milestoneSaveBtn");
+    btn.disabled = true;
+    try {
+      const canvas = await exportMilestoneCanvas();
+      const blob = await canvasToBlob(canvas);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `flit-${currentMilestoneCardData.threshold}-day-streak.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      showToast("Couldn't save the image. Try again.", "warning");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById("milestoneShareBtn").addEventListener("click", async () => {
+    const btn = document.getElementById("milestoneShareBtn");
+    btn.disabled = true;
+    try {
+      const canvas = await exportMilestoneCanvas();
+      const blob = await canvasToBlob(canvas);
+      const file = new File([blob], `flit-${currentMilestoneCardData.threshold}-day-streak.png`, { type: "image/png" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: `${currentMilestoneCardData.threshold}-day streak` });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = file.name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        showToast("Sharing isn't available here. Saved the image instead.", "info");
+      }
+    } catch (err) {
+      // A user cancelling the native share sheet throws AbortError — not
+      // a real failure, nothing to tell them.
+      if (err && err.name !== "AbortError") {
+        showToast("Couldn't share the image. Try again.", "warning");
+      }
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
   function occursOn(t, dateObj) {
     const dateStr = toDateStr(dateObj);
     if (!t.recurrence || t.recurrence.type === "none") {
@@ -479,6 +816,21 @@
         sub.appendChild(snow);
         sub.append(` ${freezesAvailable} freeze${freezesAvailable === 1 ? "" : "s"} banked`);
       }
+      const earnedMilestones = goal.milestonesEarned || {};
+      const earnedThresholds = MILESTONE_THRESHOLDS.filter(t => earnedMilestones[t]);
+      if (earnedThresholds.length > 0) {
+        const highest = earnedThresholds[earnedThresholds.length - 1];
+        sub.append(" · ");
+        const viewLink = document.createElement("button");
+        viewLink.type = "button";
+        viewLink.className = "goal-milestone-link";
+        viewLink.innerHTML = '<i data-lucide="image" class="icon"></i> View milestone';
+        viewLink.addEventListener("click", (e) => {
+          e.stopPropagation();
+          showMilestoneScreen(goal, earnedMilestones[highest]);
+        });
+        sub.appendChild(viewLink);
+      }
 
       const dots = document.createElement("div");
       dots.className = "goal-dots";
@@ -498,7 +850,7 @@
         } else {
           consecutiveDone = 0;
         }
-        dot.title = isFrozen ? `${ds} — streak freeze used` : ds;
+        dot.title = isFrozen ? `${ds}: streak freeze used` : ds;
         dot.style.opacity = "0";
         dot.style.transform = "scale(0.7)";
         dots.appendChild(dot);
@@ -550,8 +902,8 @@
     let msg = "";
     if (remaining === 0) msg = "Everything completed";
     else if (remaining === 1) msg = "Only 1 task left";
-    else if (pct >= 75) msg = `Almost there — ${remaining} to go`;
-    else if (pct >= 50) msg = `Over halfway — ${remaining} to go`;
+    else if (pct >= 75) msg = `Almost there, ${remaining} to go`;
+    else if (pct >= 50) msg = `Over halfway, ${remaining} to go`;
     else if (done > 0) msg = `${remaining} more to go`;
     document.getElementById("progressMsg").textContent = msg;
   }
@@ -906,7 +1258,13 @@
     const hasRealData = tasks.length > 0;
     const dismissed = localStorage.getItem(ACCOUNT_NUDGE_DISMISSED_KEY) === "true";
     const onboarding = document.body.classList.contains("onboarding-active");
-    banner.style.display = (!signedIn && hasRealData && !dismissed && !onboarding) ? "flex" : "none";
+    // Onboarding now offers account creation directly (step 11), so every
+    // new user either has an account already or explicitly skipped it —
+    // hasSignedInBefore (set once, never cleared on sign-out) distinguishes
+    // "has an account, just signed out on this device right now" from
+    // "genuinely never had one", which plain isSignedIn() alone can't.
+    const everHadAccount = localStorage.getItem("hasSignedInBefore") === "true";
+    banner.style.display = (!signedIn && !everHadAccount && hasRealData && !dismissed && !onboarding) ? "flex" : "none";
   }
   document.getElementById("accountNudgeDismissBtn").addEventListener("click", () => {
     localStorage.setItem(ACCOUNT_NUDGE_DISMISSED_KEY, "true");
@@ -1441,7 +1799,7 @@
       lockedDays
     };
     downloadFile(`planner-export-${toDateStr(new Date())}.json`, JSON.stringify(data, null, 2), "application/json");
-    showToast("Exported — check your downloads.", "success");
+    showToast("Exported. Check your downloads.", "success");
   }
 
   function exportDataAsCsv() {
@@ -1468,7 +1826,7 @@
       reflLines.push([csvEscape(date), csvEscape(entry.wentWell), csvEscape(entry.improve)].join(","));
     });
     downloadFile(`planner-export-reflections-${dateStr}.csv`, reflLines.join("\n"), "text/csv");
-    showToast("Exported — check your downloads.", "success");
+    showToast("Exported. Check your downloads.", "success");
   }
 
   const exportOverlay = document.getElementById("exportModalOverlay");
@@ -1732,8 +2090,8 @@ function openGoalViewModal(goalId) {
   const freezesEl = document.getElementById("goalViewFreezes");
   freezesEl.style.display = freezesAvailable > 0 ? "block" : "none";
   freezesEl.textContent = freezesAvailable > 0 ? `❄ ${freezesAvailable} streak freeze${freezesAvailable === 1 ? "" : "s"} banked` : "";
-  document.getElementById("goalViewWhy").textContent = g.why || "—";
-  document.getElementById("goalViewPlan").textContent = g.plan || "—";
+  document.getElementById("goalViewWhy").textContent = g.why || "None";
+  document.getElementById("goalViewPlan").textContent = g.plan || "None";
   editingGoalId = goalId;
   openModal(goalViewOverlay);
 }
@@ -2252,7 +2610,7 @@ let currentRange = "week";
       card.innerHTML = `
         <div style="text-align:center;">
           <i data-lucide="sparkles" class="icon" style="width:28px;height:28px;color:var(--text-muted);display:block;margin:0 auto 0.5rem;"></i>
-          <div style="font-size:var(--text-base);color:var(--text-muted);line-height:1.5;">Not enough history yet — keep going and insights will show up here.</div>
+          <div style="font-size:var(--text-base);color:var(--text-muted);line-height:1.5;">Not enough history yet. Keep going and insights will show up here.</div>
         </div>
       `;
       lucide.createIcons();
@@ -2988,7 +3346,7 @@ let currentRange = "week";
 
   function showSessionCompleteScreen(session, workMinutes, sessionIndex, onDone) {
     const screen = document.getElementById("sessionCompleteScreen");
-    document.getElementById("sessionCompleteInfo").textContent = `${session.name} session — ${workMinutes} minutes`;
+    document.getElementById("sessionCompleteInfo").textContent = `${session.name} session, ${workMinutes} minutes`;
     document.getElementById("sessionCompleteAffirmation").textContent = computeAffirmation(workMinutes);
     screen.classList.add("visible");
     document.getElementById("sessionCompleteContinueBtn").addEventListener("click", () => {
@@ -3629,28 +3987,8 @@ let currentRange = "week";
   });
 
   // --- Onboarding ---
-  const ONBOARDING_TIME_LOST_OPTIONS = [
-    "Less than 30 min",
-    "30 min – 1 hour",
-    "1–2 hours",
-    "No idea, probably more than I think"
-  ];
   const ONBOARDING_CATEGORY_PRESETS = ["Fitness", "Building/Business", "School/Work", "Deep Work", "Personal"];
-  const ONBOARDING_TIME_LOST_CAUSE_OPTIONS = [
-    "No clear plan",
-    "Jumping between tasks",
-    "Phone / distractions",
-    "Procrastinating before starting",
-    "I'm not sure."
-  ];
-  const ONBOARDING_TIME_LOST_HOURS = {
-    "Less than 30 min": 0.4,
-    "30 min – 1 hour": 0.75,
-    "1–2 hours": 1.5,
-    "No idea, probably more than I think": 1.5
-  };
   const ONBOARDING_AGE_OPTIONS = ["Under 16", "16–18", "19–24", "25+"];
-  const FACT_QUALIFYING_AGE_BRACKETS = ["Under 16", "16–18", "19–24"];
   const ONBOARDING_IDENTITY_OPTIONS = [
     "Someone who shows up, even on the bad days",
     "Someone who finishes what they start",
@@ -3660,8 +3998,6 @@ let currentRange = "week";
 
   let currentOnboardingStep = 1;
   let onboardingName = "";
-  let onboardingTimeLost = "";
-  let onboardingTimeLostCauses = [];
   let onboardingCategories = [];
   let onboardingSeedTasks = [];
   let onboardingIdentity = "";
@@ -3671,6 +4007,13 @@ let currentRange = "week";
   let onboardingGoalCheckoff = "";
   let onboardingGoalWhy = "";
   let onboardingGoalPlan = "";
+  // Guards finalizeOnboardingData() against running more than once. Without
+  // it, going back from the account-creation/verification step to the
+  // synthesis step ("here's what we set up") and pressing "Let's go" again
+  // re-pushed a fresh copy of every seed task and the goal task (categories
+  // were already duplicate-guarded by name, tasks weren't) — real,
+  // synced-to-Firestore duplicate data, not just a display glitch.
+  let onboardingDataFinalized = false;
 
   function setMainAppVisible(visible) {
     document.querySelector(".container").style.display = visible ? "" : "none";
@@ -3692,15 +4035,6 @@ let currentRange = "week";
   }
 
   const ONBOARDING_OPTION_ICONS = {
-    "Less than 30 min": "timer",
-    "30 min – 1 hour": "clock",
-    "1–2 hours": "hourglass",
-    "No idea, probably more than I think": "help-circle",
-    "No clear plan": "compass",
-    "Jumping between tasks": "shuffle",
-    "Phone / distractions": "smartphone",
-    "Procrastinating before starting": "pause",
-    "I'm not sure.": "help-circle",
     "Under 16": "user",
     "16–18": "user",
     "19–24": "user",
@@ -3748,14 +4082,14 @@ let currentRange = "week";
   function updateOnboardingProgress() {
     const wrap = document.getElementById("onboardingProgressWrap");
     const stepIndicator = document.getElementById("onboardingStepIndicator");
-    const PROGRESS_START = 3;    // first step the progress bar appears on (time-lost question)
-    const PROGRESS_END = 14;     // step where progress reaches 100% (synthesis)
-    const PROGRESS_EXCLUDE = 13; // step with no bar/indicator (streak preview)
-    const showProgress = currentOnboardingStep >= PROGRESS_START && currentOnboardingStep <= PROGRESS_END && currentOnboardingStep !== PROGRESS_EXCLUDE;
+    // The streak preview deliberately remains presentation-only, without a
+    // progress indicator; all other setup steps show their real position.
+    const PROGRESS_STEPS = [3, 4, 5, 6, 7, 8, 10];
+    const currentStepNum = PROGRESS_STEPS.indexOf(currentOnboardingStep) + 1;
+    const showProgress = currentStepNum > 0;
     wrap.style.display = showProgress ? "block" : "none";
     if (showProgress) {
-      const totalSteps = PROGRESS_END - (PROGRESS_START - 1);
-      const currentStepNum = currentOnboardingStep - (PROGRESS_START - 1);
+      const totalSteps = PROGRESS_STEPS.length;
       const pct = Math.round((currentStepNum / totalSteps) * 100);
       document.getElementById("onboardingProgressFill").style.width = pct + "%";
       stepIndicator.textContent = `Step ${currentStepNum} of ${totalSteps}`;
@@ -3784,10 +4118,39 @@ let currentRange = "week";
     goToOnboardingStep(currentOnboardingStep - 1);
   });
 
+  function onboardingAccountNeedsEmailVerification() {
+    const bridge = window.authBridge;
+    if (!bridge || !bridge.getCurrentUser) return false;
+    const user = bridge.getCurrentUser();
+    if (!user) return false;
+    return !user.emailVerified && bridge.hasPasswordProvider && bridge.hasPasswordProvider();
+  }
+
+  function advanceOnboardingAfterAccountStep() {
+    if (onboardingAccountNeedsEmailVerification()) {
+      renderOnboardingStep();
+      return;
+    }
+    goToOnboardingStep(12);
+  }
+
+  function showSkipAccountWarning(onConfirm) {
+    showConfirm({
+      title: "Continue without an account?",
+      message: "Your tasks, streaks, and reflections will stay on this device only. They won't be backed up or available on other devices, and you can lose everything if you clear browser data. Your 7-day premium trial still starts after Day 1, but it won't carry over unless you sign up.",
+      confirmLabel: "Continue without account",
+      onConfirm
+    });
+  }
+
+  document.addEventListener("onboarding-auth-changed", () => {
+    if (currentOnboardingStep === 11) renderOnboardingStep();
+  });
+
   function renderOnboardingStep() {
     updateOnboardingProgress();
     updateOnboardingBackButton();
-    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1 || currentOnboardingStep === 13);
+    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1 || currentOnboardingStep === 9);
     const content = document.getElementById("onboardingContent");
     const step = currentOnboardingStep;
 
@@ -3846,80 +4209,6 @@ let currentRange = "week";
     } else if (step === 3) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
-          <div class="onboarding-reveal" id="obConsiderGreeting" style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;">${onboardingName}.</div>
-          <div class="onboarding-reveal" id="obConsiderLine1" style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;">Most days slip by without anyone tracking where the time went.</div>
-          <div class="onboarding-reveal" id="obConsiderBody">
-            <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;">How much time do you think you lose most days?</div>
-            <div id="obTimeLostChips" class="ob-row-list"></div>
-            <div id="obTimeLostCauseGroup" class="onboarding-reveal${onboardingTimeLost ? " ob-in" : ""}">
-              <div style="font-size:var(--text-lg);font-weight:600;margin-bottom:1.5rem;">What's the biggest reason, day to day?</div>
-              <div id="obTimeLostCauseChips" class="ob-row-list"></div>
-            </div>
-            <button id="obContinue" class="start-focus-btn"${(onboardingTimeLost && onboardingTimeLostCauses.length) ? "" : " disabled"}>Continue</button>
-          </div>
-        </div>
-      `;
-      requestAnimationFrame(() => { document.getElementById("obConsiderGreeting").classList.add("ob-in"); });
-      setTimeout(() => { document.getElementById("obConsiderLine1").classList.add("ob-in"); }, 200);
-      setTimeout(() => { document.getElementById("obConsiderBody").classList.add("ob-in"); }, 400);
-      const btn = document.getElementById("obContinue");
-      const causeGroup = document.getElementById("obTimeLostCauseGroup");
-      const causeChipsEl = document.getElementById("obTimeLostCauseChips");
-      renderOnboardingChips(
-        document.getElementById("obTimeLostChips"),
-        ONBOARDING_TIME_LOST_OPTIONS,
-        (option) => onboardingTimeLost === option,
-        (option) => {
-          const wasEmpty = !onboardingTimeLost;
-          onboardingTimeLost = option;
-          btn.disabled = !(onboardingTimeLost && onboardingTimeLostCauses.length);
-          if (wasEmpty) requestAnimationFrame(() => causeGroup.classList.add("ob-in"));
-        }
-      );
-      const NOT_SURE_CAUSE = "I'm not sure.";
-      function renderCauseChips() {
-        renderOnboardingChips(
-          causeChipsEl,
-          ONBOARDING_TIME_LOST_CAUSE_OPTIONS,
-          (option) => onboardingTimeLostCauses.includes(option),
-          (option) => {
-            if (option === NOT_SURE_CAUSE) {
-              onboardingTimeLostCauses = onboardingTimeLostCauses.includes(NOT_SURE_CAUSE) ? [] : [NOT_SURE_CAUSE];
-            } else {
-              const idx = onboardingTimeLostCauses.indexOf(option);
-              if (idx === -1) {
-                onboardingTimeLostCauses = onboardingTimeLostCauses.filter(c => c !== NOT_SURE_CAUSE);
-                onboardingTimeLostCauses.push(option);
-              } else {
-                onboardingTimeLostCauses.splice(idx, 1);
-              }
-            }
-            btn.disabled = !(onboardingTimeLost && onboardingTimeLostCauses.length);
-            renderCauseChips();
-          }
-        );
-      }
-      renderCauseChips();
-      btn.addEventListener("click", () => { if (onboardingTimeLost && onboardingTimeLostCauses.length) goToOnboardingStep(4); });
-
-    } else if (step === 4) {
-      const dailyHours = ONBOARDING_TIME_LOST_HOURS[onboardingTimeLost] || 1;
-      const weekly = Math.round(dailyHours * 7);
-      const yearly = Math.round(dailyHours * 365);
-      content.innerHTML = `
-        <div class="onboarding-container" style="padding-top:4rem;">
-          <div style="font-size:var(--text-xl);font-weight:600;line-height:1.6;margin-bottom:2.5rem;">
-            <div>If you get even some of that back, that's <span style="color:var(--accent);">roughly ${weekly} hours a week</span>,</div>
-            <div style="font-size:var(--text-md);color:var(--text-secondary);margin-top:0.5rem;">about ${yearly} hours a year.</div>
-          </div>
-          <button id="obContinue" class="start-focus-btn">Continue</button>
-        </div>
-      `;
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(5));
-
-    } else if (step === 5) {
-      content.innerHTML = `
-        <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">How old are you?</div>
           <div id="obAgeChips" class="ob-row-list"></div>
           <button id="obContinue" class="start-focus-btn"${onboardingAgeBracket ? "" : " disabled"}>Continue</button>
@@ -3935,30 +4224,9 @@ let currentRange = "week";
           ageBtn.disabled = !onboardingAgeBracket;
         }
       );
-      ageBtn.addEventListener("click", () => { if (onboardingAgeBracket) goToOnboardingStep(6); });
+      ageBtn.addEventListener("click", () => { if (onboardingAgeBracket) goToOnboardingStep(4); });
 
-    } else if (step === 6) {
-      const isQualifyingAge = FACT_QUALIFYING_AGE_BRACKETS.includes(onboardingAgeBracket);
-      const factHeadline = isQualifyingAge
-        ? "People your age procrastinate more than any other age group. It's not just you."
-        : "About 1 in 5 people are chronic procrastinators. It's more common than people admit.";
-      const factCaption = isQualifyingAge
-        ? "Based on research by Piers Steel, University of Calgary (2007 meta-analysis)."
-        : "Based on research by Piers Steel, University of Calgary.";
-      const factBody = isQualifyingAge
-        ? "You're ambitious, you've got real goals, and you're willing to put in the work, but almost everyone your age hits the same wall: no clear system, endless scrolling instead of starting, and then stress when the progress isn't showing up. That's what we're here for."
-        : "You've got real goals and the drive to hit them, but almost everyone hits the same wall: no clear system, constant small distractions, and stress when progress isn't visible day to day. That's what we're here for.";
-      content.innerHTML = `
-        <div class="onboarding-container" style="padding-top:4rem;">
-          <div style="font-size:var(--text-xl);font-weight:600;letter-spacing:-0.02em;margin-bottom:0.5rem;">${factHeadline}</div>
-          <div style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:1.5rem;">${factCaption}</div>
-          <div style="font-size:var(--text-md);color:var(--text-secondary);line-height:1.6;margin-bottom:2.5rem;">${factBody}</div>
-          <button id="obContinue" class="start-focus-btn">Continue</button>
-        </div>
-      `;
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(7));
-
-    } else if (step === 7) {
+    } else if (step === 4) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">What kind of person do you want to become?</div>
@@ -3976,9 +4244,9 @@ let currentRange = "week";
           identityBtn2.disabled = !onboardingIdentity;
         }
       );
-      identityBtn2.addEventListener("click", () => { if (onboardingIdentity) goToOnboardingStep(8); });
+      identityBtn2.addEventListener("click", () => { if (onboardingIdentity) goToOnboardingStep(5); });
 
-    } else if (step === 8) {
+    } else if (step === 5) {
       const identityLower = onboardingIdentity ? (onboardingIdentity.charAt(0).toLowerCase() + onboardingIdentity.slice(1)) : "someone new";
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
@@ -4039,10 +4307,10 @@ let currentRange = "week";
         onboardingGoalWhy = onboardingGoalName ? goalWhyInput.value.trim() : "";
         onboardingGoalPlan = onboardingGoalName ? goalPlanInput.value.trim() : "";
         if (!onboardingGoalName) onboardingGoalCategory = "";
-        goToOnboardingStep(9);
+        goToOnboardingStep(6);
       });
 
-    } else if (step === 9) {
+    } else if (step === 6) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div class="onboarding-reveal" id="obTrackLeadIn" style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:0.5rem;">Now let's set up a few tasks.</div>
@@ -4087,10 +4355,10 @@ let currentRange = "week";
         chipsWrap.appendChild(row);
       });
       btn.addEventListener("click", () => {
-        if (onboardingCategories.length) goToOnboardingStep(10);
+        if (onboardingCategories.length) goToOnboardingStep(7);
       });
 
-    } else if (step === 10) {
+    } else if (step === 7) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.5rem;">Let's get specific.</div>
@@ -4147,10 +4415,10 @@ let currentRange = "week";
           const val = input.value.trim();
           if (val) onboardingSeedTasks.push({ category: row.dataset.cat, taskName: val });
         });
-        goToOnboardingStep(11);
+        goToOnboardingStep(8);
       });
 
-    } else if (step === 11) {
+    } else if (step === 8) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;line-height:1.8;margin-bottom:2.5rem;">
@@ -4184,34 +4452,6 @@ let currentRange = "week";
       } else if (onboardingCategories.length) {
         headerText = `You set up ${onboardingCategories.join(", ")}. Here's what happens from here:`;
       }
-      const CAUSE_LINE_OVERRIDES = {
-        "No clear plan": {
-          lineIndex: 0,
-          generic: "The streak shows what actually happened. Real progress, not just a plan you meant to follow.",
-          taskSpecific: "Complete it today, and it counts toward a streak. Real progress, not just a plan you meant to follow."
-        },
-        "Jumping between tasks": {
-          lineIndex: 1,
-          generic: "Deep Work locks out everything but one task. No more jumping between tasks.",
-          taskSpecific: "Run a Deep Work session on it, and everything else disappears until it's done. No more jumping between tasks."
-        },
-        "Phone / distractions": {
-          lineIndex: 1,
-          generic: "Deep Work locks out everything but one task. No other tasks pulling at you, nothing to switch to.",
-          taskSpecific: "Run a Deep Work session on it, and everything else disappears until it's done. No other tasks pulling at you, nothing to switch to."
-        },
-        "Procrastinating before starting": {
-          lineIndex: 2,
-          generic: "Reflection ends the day. No editing after. No more putting it off.",
-          taskSpecific: "Reflect tonight, and today locks in. No editing after. No more putting it off."
-        }
-      };
-      const primaryCause = onboardingTimeLostCauses[0];
-      const causeOverride = (primaryCause && primaryCause !== "I'm not sure.") ? CAUSE_LINE_OVERRIDES[primaryCause] : null;
-      if (causeOverride) {
-        lines = [...lines];
-        lines[causeOverride.lineIndex] = firstSeedTask ? causeOverride.taskSpecific : causeOverride.generic;
-      }
       const headerEl = document.getElementById("obSolvesHeader");
       if (headerText) {
         headerEl.textContent = headerText;
@@ -4221,43 +4461,9 @@ let currentRange = "week";
       document.getElementById("obSolvesLine1").textContent = lines[0];
       document.getElementById("obSolvesLine2").textContent = lines[1];
       document.getElementById("obSolvesLine3").textContent = lines[2];
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(12));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(9));
 
-    } else if (step === 12) {
-      const svgWidth = 320, svgHeight = 160, padding = 20;
-      const totalDays = 365;
-      const maxVal = Math.pow(1.01, totalDays);
-      const points = [];
-      for (let d = 0; d <= totalDays; d += 5) {
-        const val = Math.pow(1.01, d);
-        const x = padding + (d / totalDays) * (svgWidth - padding * 2);
-        const y = svgHeight - padding - (val / maxVal) * (svgHeight - padding * 2);
-        points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
-      }
-      const pathD = "M" + points.join(" L");
-      const day90X = padding + (90 / totalDays) * (svgWidth - padding * 2);
-      const baseY = svgHeight - padding;
-      const groundingLine = onboardingIdentity
-        ? `One task done. One Deep Work session. One night of reflection. That's the 1% that compounds into ${onboardingIdentity.charAt(0).toLowerCase() + onboardingIdentity.slice(1)}.`
-        : "One task done. One Deep Work session. One night of reflection. That's the 1%.";
-      content.innerHTML = `
-        <div class="onboarding-container" style="padding-top:4rem;">
-          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">Small, consistent gains compound.</div>
-          <svg viewBox="0 0 ${svgWidth} ${svgHeight}" width="100%" style="margin-bottom:1rem;display:block;">
-            <line x1="${padding}" y1="${baseY}" x2="${svgWidth - padding}" y2="${baseY}" stroke="var(--border)" stroke-width="1"></line>
-            <path d="${pathD}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
-            <text x="${padding}" y="${svgHeight - 4}" font-size="10" fill="var(--text-muted)" text-anchor="start">Day 1</text>
-            <text x="${day90X}" y="${svgHeight - 4}" font-size="10" fill="var(--text-muted)" text-anchor="middle">Day 90</text>
-            <text x="${svgWidth - padding}" y="${svgHeight - 4}" font-size="10" fill="var(--text-muted)" text-anchor="end">Day 365</text>
-          </svg>
-          <div style="font-size:var(--text-sm);color:var(--text-muted);line-height:1.6;margin-bottom:0.5rem;">1% better each day compounds to roughly 38x over a year.</div>
-          <div style="font-size:var(--text-sm);color:var(--text-muted);line-height:1.6;margin-bottom:2rem;">${groundingLine}</div>
-          <button id="obContinue" class="start-focus-btn">Continue</button>
-        </div>
-      `;
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(13));
-
-    } else if (step === 13) {
+    } else if (step === 9) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Your first streak starts tonight.</div>
@@ -4270,12 +4476,16 @@ let currentRange = "week";
       const dotsWrap = document.getElementById("obDemoDots");
       for (let i = 0; i < 7; i++) {
         const dot = document.createElement("div");
-        dot.className = "goal-dot future";
+        // No dot is ever pre-filled as done here — nothing's been earned
+        // yet. The first dot (today) gets a distinct "ready to start"
+        // outline/pulse instead, same honesty standard as streak freeze:
+        // never show progress before it's real.
+        dot.className = i === 0 ? "goal-dot today-ready" : "goal-dot future";
         dotsWrap.appendChild(dot);
       }
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(14));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(10));
 
-    } else if (step === 14) {
+    } else if (step === 10) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
           <div id="obSynthesisHeading" style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;"></div>
@@ -4311,16 +4521,92 @@ let currentRange = "week";
       });
       document.getElementById("obContinue").addEventListener("click", () => {
         finalizeOnboardingData();
-        goToOnboardingStep(15);
+        goToOnboardingStep(11);
       });
 
-    } else if (step === 15) {
-      content.innerHTML = `
-        <div class="onboarding-container" style="padding-top:8rem;">
-          <div style="background:var(--bg-card);border-radius:var(--radius-md);padding:1.5rem;box-shadow:var(--shadow-card);">
-            <div style="font-size:var(--text-md);font-weight:600;margin-bottom:1rem;">A couple things are still on the way: deeper insights, more focus presets. Everything else is ready now.</div>
-            <button id="obContinue" class="start-focus-btn">Continue</button>
+    } else if (step === 11) {
+      // Reuses the exact same #authModalOverlay/openAuthModal("signup")
+      // Settings already uses (window.openOnboardingAuthModal, exposed by
+      // auth-ui.js) rather than rebuilding a Google/email form here.
+      // finalizeOnboardingData() already wrote this session's tasks/
+      // categories to localStorage back at step 10 — signing up here runs
+      // straight into the existing runMigrationIfNeeded() path, so that
+      // local data gets imported into the new account automatically.
+      const authUser = window.authBridge && window.authBridge.getCurrentUser ? window.authBridge.getCurrentUser() : null;
+      if (authUser && !onboardingAccountNeedsEmailVerification()) {
+        goToOnboardingStep(12);
+        return;
+      }
+      if (authUser && onboardingAccountNeedsEmailVerification()) {
+        content.innerHTML = `
+          <div class="onboarding-container" style="padding-top:4rem;">
+            <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Verify your email.</div>
+            <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1.5rem;line-height:1.6;">We sent a verification link to <strong id="obVerifyEmail" style="color:var(--text-primary);"></strong>. Open it, then come back here and tap the button below.</div>
+            <div id="obVerifyStatus" style="font-size:var(--text-sm);color:var(--text-muted);margin-bottom:1rem;min-height:1.25rem;"></div>
+            <button id="obCheckVerifiedBtn" class="start-focus-btn">I've verified my email</button>
+            <button id="obResendVerifyBtn" class="auth-mode-toggle" style="margin-top:1rem;">Resend verification email</button>
           </div>
+        `;
+        document.getElementById("obVerifyEmail").textContent = authUser.email || "your email";
+        const statusEl = document.getElementById("obVerifyStatus");
+        document.getElementById("obCheckVerifiedBtn").addEventListener("click", async () => {
+          const btn = document.getElementById("obCheckVerifiedBtn");
+          btn.disabled = true;
+          statusEl.textContent = "Checking…";
+          try {
+            const fresh = await window.authBridge.reloadCurrentUser();
+            if (fresh && fresh.emailVerified) {
+              showToast("Email verified. You're all set.", "success");
+              goToOnboardingStep(12);
+            } else {
+              statusEl.textContent = "Not verified yet. Check your inbox (and spam), click the link, then try again.";
+            }
+          } catch (err) {
+            statusEl.textContent = "Couldn't check verification status. Try again in a moment.";
+          } finally {
+            btn.disabled = false;
+          }
+        });
+        document.getElementById("obResendVerifyBtn").addEventListener("click", async () => {
+          const btn = document.getElementById("obResendVerifyBtn");
+          btn.disabled = true;
+          statusEl.textContent = "";
+          try {
+            await window.authBridge.sendVerificationEmail();
+            showToast("Verification email sent.", "success");
+          } catch (err) {
+            const code = err && err.code ? err.code : "";
+            statusEl.textContent = code === "auth/too-many-requests"
+              ? "Too many attempts. Wait a few minutes, then try again."
+              : "Couldn't send the email. Try again shortly.";
+          } finally {
+            btn.disabled = false;
+          }
+        });
+      } else {
+        content.innerHTML = `
+          <div class="onboarding-container" style="padding-top:4rem;">
+            <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Save your progress.</div>
+            <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:2rem;line-height:1.6;">Create an account so today's setup (tasks, goals, streaks) is backed up and available on any device.</div>
+            <button id="obCreateAccountBtn" class="start-focus-btn">Create account</button>
+            <button id="obContinue" class="auth-mode-toggle" style="margin-top:1rem;">Skip for now</button>
+          </div>
+        `;
+        document.getElementById("obCreateAccountBtn").addEventListener("click", () => {
+          if (typeof window.openOnboardingAuthModal === "function") window.openOnboardingAuthModal();
+        });
+        document.getElementById("obContinue").addEventListener("click", () => {
+          showSkipAccountWarning(() => goToOnboardingStep(12));
+        });
+      }
+
+    } else if (step === 12) {
+      content.innerHTML = `
+        <div class="onboarding-container" style="padding-top:4rem;">
+          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Your first 7 days are on us.</div>
+          <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;line-height:1.6;">Every premium feature (themes, deep work history, weekly recaps, and more) is unlocked for 7 days once you complete Day 1.</div>
+          <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:2rem;line-height:1.6;">No card required to start.</div>
+          <button id="obContinue" class="start-focus-btn">Continue</button>
         </div>
       `;
       document.getElementById("obContinue").addEventListener("click", () => completeOnboarding());
@@ -4328,6 +4614,8 @@ let currentRange = "week";
   }
 
   function finalizeOnboardingData() {
+    if (onboardingDataFinalized) return;
+    onboardingDataFinalized = true;
     onboardingCategories.forEach(catName => {
       if (categories.some(c => c.name === catName)) return;
       categories.push({ name: catName, color: onboardingCategoryColor(catName) });
@@ -4406,10 +4694,20 @@ let currentRange = "week";
 
     const wasOnboarding = document.body.classList.contains("onboarding-active");
     if (wasOnboarding && categories.length > 0) {
-      localStorage.setItem("onboardingComplete", "true");
-      document.getElementById("onboardingView").classList.remove("visible");
-      document.body.classList.remove("onboarding-active");
-      switchView("planner");
+      // Signing up on the account-creation step (11) migrates this
+      // session's local data in, landing right here with categories now
+      // populated. Let step 11's own logic decide whether that means
+      // advancing to the trial-explainer step (12) or showing the
+      // verification screen first, instead of the general case below,
+      // which would otherwise skip past both.
+      if (currentOnboardingStep === 11) {
+        advanceOnboardingAfterAccountStep();
+      } else {
+        localStorage.setItem("onboardingComplete", "true");
+        document.getElementById("onboardingView").classList.remove("visible");
+        document.body.classList.remove("onboarding-active");
+        switchView("planner");
+      }
     }
 
     rerenderCurrentView();
