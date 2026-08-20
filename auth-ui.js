@@ -203,8 +203,6 @@ document.addEventListener("DOMContentLoaded", () => {
   settingsOverlay.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(settingsOverlay); });
 
   signInBtn.addEventListener("click", () => openAuthModal());
-  const accountNudgeCreateBtn = document.getElementById("accountNudgeCreateBtn");
-  if (accountNudgeCreateBtn) accountNudgeCreateBtn.addEventListener("click", () => openAuthModal("signup"));
   document.getElementById("authCancelBtn").addEventListener("click", () => closeModal(overlay));
   overlay.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(overlay); });
 
@@ -469,11 +467,6 @@ document.addEventListener("DOMContentLoaded", () => {
       signInBtn.style.display = "none";
       statusPill.style.display = "flex";
       renderAccountDetails(user);
-      // Permanent, never cleared on sign-out — lets app.js's account-nudge
-      // banner tell "never had an account" apart from "has one, just
-      // signed out right now on this device", so it doesn't nag someone
-      // who already made an account (e.g. during the new onboarding step).
-      localStorage.setItem("hasSignedInBefore", "true");
     } else {
       signInBtn.style.display = "flex";
       statusPill.style.display = "none";

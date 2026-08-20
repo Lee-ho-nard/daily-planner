@@ -1246,37 +1246,11 @@
     renderTasks();
   });
 
-  // Shown once there's real data at stake for a signed-out user — not
-  // during onboarding itself (nothing to protect yet), and not once
-  // dismissed (a flat, permanent localStorage flag, same pattern as
-  // lastRecapShownWeek elsewhere — just without the weekly reset).
-  const ACCOUNT_NUDGE_DISMISSED_KEY = "accountNudgeDismissed";
-  function updateAccountNudgeBanner() {
-    const banner = document.getElementById("accountNudgeBanner");
-    if (!banner) return;
-    const signedIn = window.firestoreBridge && window.firestoreBridge.isSignedIn();
-    const hasRealData = tasks.length > 0;
-    const dismissed = localStorage.getItem(ACCOUNT_NUDGE_DISMISSED_KEY) === "true";
-    const onboarding = document.body.classList.contains("onboarding-active");
-    // Onboarding now offers account creation directly (step 11), so every
-    // new user either has an account already or explicitly skipped it —
-    // hasSignedInBefore (set once, never cleared on sign-out) distinguishes
-    // "has an account, just signed out on this device right now" from
-    // "genuinely never had one", which plain isSignedIn() alone can't.
-    const everHadAccount = localStorage.getItem("hasSignedInBefore") === "true";
-    banner.style.display = (!signedIn && !everHadAccount && hasRealData && !dismissed && !onboarding) ? "flex" : "none";
-  }
-  document.getElementById("accountNudgeDismissBtn").addEventListener("click", () => {
-    localStorage.setItem(ACCOUNT_NUDGE_DISMISSED_KEY, "true");
-    updateAccountNudgeBanner();
-  });
-
   function renderAll() {
     syncAllStreakFreezes();
     renderDate();
     renderCategoryTabs();
     renderTasks();
-    updateAccountNudgeBanner();
 
     const locked = isDayLocked(toDateStr(currentDate));
     const isFutureDay = toDateStr(currentDate) > toDateStr(new Date());
@@ -4134,15 +4108,6 @@ let currentRange = "week";
     goToOnboardingStep(12);
   }
 
-  function showSkipAccountWarning(onConfirm) {
-    showConfirm({
-      title: "Continue without an account?",
-      message: "Your tasks, streaks, and reflections will stay on this device only. They won't be backed up or available on other devices, and you can lose everything if you clear browser data. Your 7-day premium trial still starts after Day 1, but it won't carry over unless you sign up.",
-      confirmLabel: "Continue without account",
-      onConfirm
-    });
-  }
-
   document.addEventListener("onboarding-auth-changed", () => {
     if (currentOnboardingStep === 11) renderOnboardingStep();
   });
@@ -4589,14 +4554,10 @@ let currentRange = "week";
             <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Save your progress.</div>
             <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:2rem;line-height:1.6;">Create an account so today's setup (tasks, goals, streaks) is backed up and available on any device.</div>
             <button id="obCreateAccountBtn" class="start-focus-btn">Create account</button>
-            <button id="obContinue" class="auth-mode-toggle" style="margin-top:1rem;">Skip for now</button>
           </div>
         `;
         document.getElementById("obCreateAccountBtn").addEventListener("click", () => {
           if (typeof window.openOnboardingAuthModal === "function") window.openOnboardingAuthModal();
-        });
-        document.getElementById("obContinue").addEventListener("click", () => {
-          showSkipAccountWarning(() => goToOnboardingStep(12));
         });
       }
 

@@ -15,6 +15,19 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import { runMigrationIfNeeded } from "./migrate.js";
 
+// Fixed, not window.location.origin — using the current origin here
+// previously broke verification sends outright on preview/newly-deployed
+// domains that weren't yet in Firebase's authorized-domains allowlist
+// (auth/unauthorized-continue-uri). This project's own default Hosting
+// domain is authorized for every Firebase project automatically, so it's
+// the one continue URL that's always safe regardless of where the app
+// itself is actually being served from when the email gets sent. Routes to
+// auth-action.html, the app's styled verification-link landing page —
+// requires that page to actually be deployed there (firebase deploy
+// --only hosting) for the link to resolve.
+export const AUTH_ACTION_URL = "https://flit-96c38.web.app/auth-action.html";
+const VERIFICATION_ACTION_SETTINGS = { url: AUTH_ACTION_URL };
+
 export function signInWithGoogle() {
   const provider = new GoogleAuthProvider();
   // Without this, Google silently re-signs-in with whichever account was
@@ -26,12 +39,8 @@ export function signInWithGoogle() {
 
 export async function signUpWithEmail(email, password) {
   const cred = await createUserWithEmailAndPassword(auth, email, password);
-  // Do not provide a custom continue URL here. Firebase only permits URLs
-  // whose domains are explicitly allow-listed in its console; using the
-  // current origin made the send fail on preview and newly deployed sites.
-  // Firebase's default verification handler still verifies the account.
   try {
-    await sendEmailVerification(cred.user);
+    await sendEmailVerification(cred.user, VERIFICATION_ACTION_SETTINGS);
     return { credential: cred, verificationError: null };
   } catch (verificationError) {
     // The account already exists at this point. Keep the user signed in so
@@ -67,7 +76,7 @@ export function hasGoogleProvider() {
 export function sendVerificationEmail() {
   const user = auth.currentUser;
   if (!user) return Promise.reject(new Error("Not signed in"));
-  return sendEmailVerification(user);
+  return sendEmailVerification(user, VERIFICATION_ACTION_SETTINGS);
 }
 
 // Refreshes auth.currentUser's cached fields (emailVerified, metadata, etc.)

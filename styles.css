@@ -94,6 +94,20 @@
   .settings-corner { position: fixed; top: 1.5rem; right: 1.5rem; z-index: 1; }
   .app-header-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem; }
   .app-header-row .view-tabs { flex: 1; }
+
+  /* Below ~520px the .container (max-width: 480px, centered) stops being
+     inset from the viewport, so .settings-corner's viewport-fixed position
+     lands directly over .view-tabs' right edge instead of past it. Since
+     .view-tabs sits at z-index 6 (needed to clear other content) and
+     .settings-corner deliberately stays low (z-index 1, so #focusView's
+     overlay can cover it during Deep Work — see below), raising
+     .settings-corner's z-index isn't an option; reserving room on the row
+     instead keeps the tabs from ever extending underneath the fixed gear
+     button. Width below is .cat-add's 34px plus the icon's own 1.5rem
+     right offset plus a small gap. */
+  @media (max-width: 520px) {
+    .app-header-row { padding-right: calc(34px + 1.5rem + 0.5rem); }
+  }
   .view-tabs { display: flex; gap: 0.4rem; background: var(--border); padding: 0.3rem; border-radius: var(--radius-md); position: relative; z-index: 6; }
   .view-tab { flex: 1; text-align: center; padding: 0.55rem; border-radius: 10px; border: 1px solid transparent; background: transparent; cursor: pointer; font-family: inherit; font-size: var(--text-sm); font-weight: 500; color: var(--text-secondary); transition: background 300ms ease, color 300ms ease, box-shadow 300ms ease, border-color 300ms ease; }
   .view-tab.active { background: var(--bg-card); color: var(--text-primary); box-shadow: var(--shadow-card); }
@@ -132,7 +146,11 @@
 
   .task-list-toolbar { display: flex; justify-content: flex-end; gap: 0.5rem; margin-bottom: 0.75rem; }
 
-  #taskList, #goalsList { list-style: none; margin-bottom: 5rem; }
+  /* Bottom clearance sized off the floating buttons' own metrics (fab-bottom
+     offset + fab-size + a buffer), not a hand-picked value, so the last row
+     always scrolls fully clear of the .fab/.mic-fab cluster instead of
+     ducking under it. */
+  #taskList, #goalsList { list-style: none; margin-bottom: calc(var(--fab-bottom) + var(--fab-size) + 1.5rem); }
   .task-item {
     background: var(--bg-card); border-radius: var(--radius-md); padding: 1rem 1.1rem; margin-bottom: 0.55rem;
     display: flex; align-items: center; gap: 0.75rem; cursor: grab;
@@ -272,17 +290,6 @@
   .settings-verify-banner button { background: none; border: none; color: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; font-family: inherit; font-size: inherit; padding: 0; flex-shrink: 0; }
   .settings-inline-link { display: block; background: none; border: none; padding: 0; margin-top: 0.3rem; color: var(--accent); font-size: var(--text-sm); text-decoration: underline; cursor: pointer; font-family: inherit; }
 
-  /* Dismissible, non-blocking — same "toggle display, persist a
-     localStorage flag on dismiss" pattern as #lockedBanner/the weekly
-     recap banner, not a new mechanism. */
-  .account-nudge-banner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem; background: color-mix(in srgb, var(--accent) 10%, var(--bg-card)); border-radius: var(--radius-sm); padding: 0.75rem 0.9rem; font-size: var(--text-sm); margin-bottom: 1rem; box-shadow: var(--shadow-card); }
-  .account-nudge-text { display: flex; align-items: center; gap: 0.5rem; color: var(--text-primary); flex: 1; min-width: 200px; line-height: 1.4; }
-  .account-nudge-text .icon { color: var(--accent); flex-shrink: 0; }
-  .account-nudge-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
-  .account-nudge-create-btn { background: var(--accent); color: var(--on-accent); border: none; border-radius: 999px; padding: 0.4rem 0.9rem; font-size: var(--text-sm); font-weight: 600; font-family: inherit; cursor: pointer; white-space: nowrap; transition: transform 0.15s, background-color 0.3s ease; }
-  .account-nudge-create-btn:active { transform: scale(0.95); }
-  .account-nudge-dismiss-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0.2rem; display: flex; align-items: center; }
-  .account-nudge-dismiss-btn .icon { width: 16px; height: 16px; color: inherit; }
   .confirm-text-input { margin-top: 0.9rem; }
   .auth-google-btn { display: flex; align-items: center; justify-content: center; gap: 0.6rem; width: 100%; padding: 0.7rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font-family: inherit; font-size: var(--text-base); font-weight: 500; cursor: pointer; transition: background-color 300ms ease, transform 0.1s; }
   .auth-google-btn:active { transform: scale(0.98); }
@@ -472,6 +479,21 @@
   .session-complete-affirmation { font-size: var(--text-base); font-weight: 500; color: var(--accent); margin-bottom: 0.5rem; text-align: center; }
   .session-complete-text { font-size: var(--text-xl); font-weight: 700; letter-spacing: -0.03em; color: var(--text-primary); text-align: center; }
   .session-complete-continue { margin-top: 1.75rem; width: 220px; max-width: 80vw; }
+
+  /* Standalone Firebase email-action-handler page (auth-action.html) —
+     not part of the SPA, so it gets its own small centered-card layout
+     rather than reusing #sealScreen/#sessionCompleteScreen's full-viewport
+     takeover styles, but pulls the same tokens/components (--bg-card,
+     --radius-lg, --shadow-elevated, .start-focus-btn, .auth-mode-toggle,
+     .field-error) so it still reads as part of the app, not a bare
+     Firebase default. */
+  .auth-action-body { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .auth-action-card { background: var(--bg-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-elevated); padding: 2.25rem 1.75rem; max-width: 380px; width: 100%; text-align: center; }
+  .auth-action-icon { width: 48px; height: 48px; color: var(--accent); stroke-width: 1.75; display: block; margin: 0 auto 1.25rem; }
+  .auth-action-icon-danger { color: var(--danger); }
+  .auth-action-title { font-weight: 700; font-size: var(--text-xl); letter-spacing: -0.03em; margin-bottom: 0.5rem; }
+  .auth-action-text { font-size: var(--text-base); color: var(--text-secondary); line-height: 1.6; margin-bottom: 1.5rem; }
+  .auth-action-card .field-error { margin-bottom: 1rem; }
 
   /* Shareable milestone card (roadmap #6) — same fixed full-screen
      takeover pattern as #sealScreen/#sessionCompleteScreen above, but the

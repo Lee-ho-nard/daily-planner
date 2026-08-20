@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400..800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="auth-action-body">
+  <div class="auth-action-card">
+    <div id="authActionIconWrap"></div>
+    <div class="auth-action-title" id="authActionTitle">Checking your link</div>
+    <div class="auth-action-text" id="authActionText">One moment.</div>
+    <div class="field-error" id="authActionError"></div>
+    <button type="button" id="authActionPrimaryBtn" class="start-focus-btn" style="display:none;"></button>
+    <button type="button" id="authActionResendBtn" class="auth-mode-toggle" style="display:none;margin-top:1rem;">Resend verification email</button>
+  </div>
+  <script type="module" src="auth-action.js"></script>
+</body>
+</html>
