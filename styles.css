@@ -86,6 +86,24 @@
   button, input, select, textarea { font-family: inherit; }
   .container { max-width: 480px; margin: 0 auto; }
 
+  /* Shared press-feedback class for tappable rows/cards that don't already
+     have their own bespoke :active rule (checkbox/date-nav/cat-pill/
+     modal-actions/swatch keep their existing scale values, untouched).
+     0.97 is the one standard squash for everything using this class.
+     Elements that already declare their own `transition` shorthand merge
+     this transform entry directly into that list instead of relying on the
+     rule below — a second same-specificity `transition` declaration would
+     replace the whole shorthand rather than combine with it, silently
+     dropping that element's other transitions (background-color, opacity,
+     box-shadow, etc). See .task-item, .ob-row, .ob-row.selected,
+     .reflection-search-result, .focus-session for those merged versions. */
+  .pressable {
+    transition: transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .pressable:active {
+    transform: scale(0.97);
+  }
+
   /* z-index below #focusView's (5), not above it like .timer-icon-controls —
      this is what actually hides it throughout Deep Work, the same way
      export/themes are hidden: they're unpositioned, so #focusView's fixed,
@@ -161,7 +179,7 @@
        border here on every card was purely decorative. */
     border-left: 4px solid transparent;
     box-shadow: var(--shadow-card);
-    transition: opacity 0.4s ease, box-shadow 0.2s, transform 0.15s, border-color 0.2s ease;
+    transition: opacity 0.4s ease, box-shadow 0.2s, transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1), border-color 0.2s ease;
   }
   .task-item:hover { box-shadow: var(--shadow-elevated); transform: translateY(-1px); }
   .task-item.sortable-ghost { opacity: 0.3; }
@@ -305,7 +323,7 @@
   .swatch.selected { border-color: var(--text-primary); }
 
   #reflectionSearchResults { margin-top: 1rem; max-height: 50vh; overflow-y: auto; }
-  .reflection-search-result { display: block; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--border); padding: 0.75rem 0.25rem; cursor: pointer; font-family: inherit; transition: background 0.15s; }
+  .reflection-search-result { display: block; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--border); padding: 0.75rem 0.25rem; cursor: pointer; font-family: inherit; transition: background 0.15s, transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1); }
   .reflection-search-result:last-child { border-bottom: none; }
   .reflection-search-result:hover { background: var(--bg-page); }
   .reflection-search-result-date { font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); margin-bottom: 0.2rem; }
@@ -329,8 +347,8 @@
      transparent. box-shadow (below) already separates cards; the
      category color moved to .goal-category-dot next to the name instead. */
   .goal-card { background: var(--bg-card); border-radius: var(--radius-md); padding: 1.1rem; margin-bottom: 0.7rem; box-shadow: var(--shadow-card); }
-  .goal-category-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 0.45rem; vertical-align: middle; }
-  .goal-card-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.3rem; }
+  .goal-category-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 0.45rem; vertical-align: 0; }
+  .goal-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem; }
   .goal-name { font-weight: 700; font-size: var(--text-md); letter-spacing: -0.03em; }
   .goal-pct { font-size: var(--text-base); color: var(--text-secondary); font-weight: 500; }
   .goal-sub { font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: 0.7rem; }
@@ -401,7 +419,7 @@
   .focus-title{ font-size:var(--text-2xl); font-weight:700; letter-spacing:-0.035em; margin-top:1.25rem; margin-bottom:0.5rem; }
   .focus-subtitle{ color: var(--text-secondary); line-height:1.6; margin-bottom:2rem; font-size: var(--text-md); }
   .focus-session-grid{ display:grid; grid-template-columns:1fr 1fr; gap:0.7rem; margin-bottom:2rem; }
-  .focus-session{ position:relative; background: var(--bg-card); border:1.5px solid transparent; border-radius:var(--radius-md); padding:1.1rem; cursor:pointer; color: var(--text-primary); transition: transform 0.2s, border-color 0.2s, background 0.4s ease, color 0.4s ease; font-family: inherit; text-align: left; }
+  .focus-session{ position:relative; background: var(--bg-card); border:1.5px solid transparent; border-radius:var(--radius-md); padding:1.1rem; cursor:pointer; color: var(--text-primary); transition: transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1), border-color 0.2s, background 0.4s ease, color 0.4s ease; font-family: inherit; text-align: left; }
   .focus-session:hover{ transform:translateY(-2px); }
   .focus-session.selected{ border-color: var(--accent); background: var(--accent-bg); }
   .session-name{ font-size:var(--text-md); font-weight:500; margin-bottom:0.4rem; }
@@ -581,9 +599,9 @@
   .onboarding-hook-subtext { font-size: var(--text-md); color: var(--text-secondary); line-height: 1.6; margin-bottom: 2.5rem; opacity: 0; transform: translateY(10px); transition: opacity 250ms ease, transform 250ms ease; }
   .onboarding-hook-subtext.ob-in { opacity: 1; transform: translateY(0); }
   .ob-row-list { display: flex; flex-direction: column; margin-bottom: 2rem; }
-  .ob-row { display: flex; align-items: center; gap: 1rem; width: 100%; padding: 1rem 0.5rem; border: none; border-bottom: 1px solid var(--border); border-radius: var(--radius-sm); background: transparent; font-family: inherit; text-align: left; cursor: pointer; transition: background-color 300ms ease; }
+  .ob-row { display: flex; align-items: center; gap: 1rem; width: 100%; padding: 1rem 0.5rem; border: none; border-bottom: 1px solid var(--border); border-radius: var(--radius-sm); background: transparent; font-family: inherit; text-align: left; cursor: pointer; transition: background-color 300ms ease, transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1); }
   .ob-row:last-child { border-bottom: none; }
-  .ob-row.selected { background: var(--accent-bg); transition: background-color 300ms ease; }
+  .ob-row.selected { background: var(--accent-bg); transition: background-color 300ms ease, transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1); }
   .ob-row-swatch { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 300ms ease; }
   .ob-row-icon { width: 28px; height: 28px; border-radius: var(--radius-sm); background: var(--accent-bg); flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 300ms ease; }
   .ob-row-icon .icon { width: 16px; height: 16px; color: var(--accent); }

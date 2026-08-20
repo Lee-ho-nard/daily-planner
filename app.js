@@ -128,7 +128,92 @@
     openModal(confirmOverlayEl);
   }
 
-  function openModal(el) { el.classList.add("open"); }
+  // Reusable spring-physics animator (vanilla JS, no deps) for a single
+  // numeric value. Unlike a fixed CSS cubic-bezier, the overshoot here comes
+  // from real velocity, so it scales with how fast the value was already
+  // moving instead of replaying the same curve every time.
+  //
+  // Pass options.key (any stable object, typically the element being
+  // animated) to make repeat calls interruptible: a new call sharing a key
+  // with a still-running spring picks up from that spring's live
+  // position/velocity instead of restarting cold.
+  //
+  // onUpdate(value) fires every frame; onComplete() fires once velocity and
+  // displacement both settle under `precision`. Returns a controller with
+  // stop() to cancel early.
+  const springRegistry = new WeakMap();
+  function spring(from, to, options, onUpdate, onComplete) {
+    options = options || {};
+    const stiffness = options.stiffness != null ? options.stiffness : 300;
+    const damping = options.damping != null ? options.damping : 20;
+    const mass = options.mass != null ? options.mass : 1;
+    const precision = options.precision != null ? options.precision : 0.01;
+    const key = options.key;
+
+    const prior = key ? springRegistry.get(key) : null;
+    if (prior) prior.stop();
+
+    let position = prior ? prior.position : from;
+    let velocity = prior ? prior.velocity : 0;
+    let rafId = null;
+    let lastTime = null;
+
+    const controller = {
+      position,
+      velocity,
+      stop() {
+        if (rafId != null) cancelAnimationFrame(rafId);
+        rafId = null;
+        if (key && springRegistry.get(key) === controller) springRegistry.delete(key);
+      }
+    };
+    if (key) springRegistry.set(key, controller);
+
+    function tick(now) {
+      if (lastTime == null) lastTime = now;
+      const dt = Math.min((now - lastTime) / 1000, 1 / 30);
+      lastTime = now;
+
+      const displacement = position - to;
+      const acceleration = (-stiffness * displacement - damping * velocity) / mass;
+      velocity += acceleration * dt;
+      position += velocity * dt;
+      controller.position = position;
+      controller.velocity = velocity;
+
+      onUpdate(position);
+
+      if (Math.abs(velocity) < precision && Math.abs(position - to) < precision) {
+        position = to;
+        controller.position = position;
+        onUpdate(position);
+        if (key && springRegistry.get(key) === controller) springRegistry.delete(key);
+        rafId = null;
+        if (onComplete) onComplete();
+        return;
+      }
+      rafId = requestAnimationFrame(tick);
+    }
+
+    rafId = requestAnimationFrame(tick);
+    return controller;
+  }
+
+  function openModal(el) {
+    el.classList.add("open");
+    const modal = el.querySelector(".modal");
+    if (!modal) return;
+    // Spring drives the open scale directly, so keep CSS out of the way for
+    // transform (opacity still transitions via CSS as before); restored on
+    // completion so the existing CSS transition handles the close animation.
+    modal.style.transitionProperty = "opacity";
+    modal.style.transform = "scale(0.96)";
+    spring(0.96, 1, { key: modal }, (v) => {
+      modal.style.transform = `scale(${v})`;
+    }, () => {
+      modal.style.transitionProperty = "";
+    });
+  }
   function closeModal(el) { el.classList.remove("open"); }
   function closeModalInstant(el) {
     el.style.transition = "none";
@@ -647,6 +732,8 @@
 
   // --- View switching ---
   const CROSSFADE_VIEW_IDS = { planner: "plannerView", goals: "goalsView", analysis: "analysisView", reflection: "reflectionView" };
+  const VIEW_FADE_SPRING_KEY = {};
+  const VIEW_SLIDE_SPRING_KEY = {};
 
   function switchView(view) {
     if (pendingLockDate && view !== "reflection") {
@@ -683,9 +770,28 @@
 
     function showNextView() {
       if (nextEl) {
+        // Spring drives opacity/translateY directly, so keep CSS out of the
+        // way for this element's entrance; restored once both springs settle
+        // so this same element's *exit* fade (prevEl.style.opacity above)
+        // still goes through the normal CSS transition next time around.
+        nextEl.style.transitionProperty = "none";
         nextEl.style.display = "block";
         nextEl.style.opacity = "0";
-        requestAnimationFrame(() => { nextEl.style.opacity = "1"; });
+        nextEl.style.transform = "translateY(8px)";
+        // A caller can ask for a slower, more ceremonial reveal (the "End
+        // Day" flow does this for reflectionView) by setting this element's
+        // transitionDuration before calling switchView — that used to drive
+        // the old CSS transition directly; it now just picks a softer spring.
+        const ceremonial = !!nextEl.style.transitionDuration;
+        const stiffness = ceremonial ? 300 : 600;
+        const damping = ceremonial ? 20 : 34;
+        let settledCount = 0;
+        function onSettled() {
+          settledCount++;
+          if (settledCount === 2) nextEl.style.transitionProperty = "";
+        }
+        spring(0, 1, { stiffness, damping, key: VIEW_FADE_SPRING_KEY }, (v) => { nextEl.style.opacity = v; }, onSettled);
+        spring(8, 0, { stiffness, damping, key: VIEW_SLIDE_SPRING_KEY }, (v) => { nextEl.style.transform = `translateY(${v}px)`; }, onSettled);
       }
       renderNewView();
     }
@@ -770,7 +876,7 @@
       const freezesAvailable = applyStreakFreezes(goal).freezesAvailable;
 
       const card = document.createElement("li");
-      card.className = "goal-card";
+      card.className = "goal-card pressable";
 
       const top = document.createElement("div");
       top.className = "goal-card-top";
@@ -851,18 +957,20 @@
           consecutiveDone = 0;
         }
         dot.title = isFrozen ? `${ds}: streak freeze used` : ds;
+        // Spring drives the entrance scale/opacity directly; keep CSS only
+        // for background (dots are discarded and rebuilt on every render, so
+        // there's no need to restore the dropped transform/opacity here).
+        dot.style.transition = "background 200ms";
         dot.style.opacity = "0";
         dot.style.transform = "scale(0.7)";
         dots.appendChild(dot);
 
-        const targetOpacity = (isFuture && !isDone) ? "0.4" : "1";
+        const targetOpacity = (isFuture && !isDone) ? 0.4 : 1;
         const delay = Math.min(idx * 12, 300);
-        requestAnimationFrame(() => {
-          setTimeout(() => {
-            dot.style.opacity = targetOpacity;
-            dot.style.transform = "scale(1)";
-          }, delay);
-        });
+        setTimeout(() => {
+          spring(0, targetOpacity, {}, (v) => { dot.style.opacity = v; });
+          spring(0.7, 1, {}, (v) => { dot.style.transform = `scale(${v})`; });
+        }, delay);
       });
 
       card.appendChild(top);
@@ -920,7 +1028,7 @@
     if (localStorage.getItem(DAILY_COMPLETION_CELEBRATED_KEY) === todayStr) return;
     localStorage.setItem(DAILY_COMPLETION_CELEBRATED_KEY, todayStr);
 
-    showToast("🎉 All done for today. Nice work.", "success", 3200);
+    showToast("All done for today. Nice work.", "success", 3200);
     const wrap = document.getElementById("progressWrap");
     if (wrap) {
       wrap.classList.add("celebrate-pulse");
@@ -1050,7 +1158,7 @@
     dayTasks.forEach(task => {
       const li = document.createElement("li");
       const isSelected = selectedTaskIds.has(task.id);
-      li.className = "task-item" + (task.occurrenceDone ? " done" : "") + (task.id === lastAddedTaskId ? " entering" : "") + (selectMode ? " select-mode" : "") + (isSelected ? " item-selected" : "");
+      li.className = "task-item pressable" + (task.occurrenceDone ? " done" : "") + (task.id === lastAddedTaskId ? " entering" : "") + (selectMode ? " select-mode" : "") + (isSelected ? " item-selected" : "");
       // No inline border-left-color here — an inline style would outrank
       // the .item-selected CSS rule's border-left-color (inline beats any
       // class selector), silently breaking the selection-state color.
@@ -1089,8 +1197,17 @@
         }
 
         checkbox.classList.toggle("checked", nowDone);
-        checkbox.style.transform = "scale(1.08)";
-        setTimeout(() => { checkbox.style.transform = "scale(1)"; }, 200);
+        // Spring drives the pop scale directly; keep CSS transitions for
+        // background/border-color (the checked-state color change) but not
+        // transform, mirroring .checkbox's rule in styles.css minus transform.
+        checkbox.style.transition = "background 300ms ease, border-color 300ms ease";
+        spring(1, 1.08, { key: checkbox }, (v) => {
+          checkbox.style.transform = `scale(${v})`;
+        }, () => {
+          spring(1.08, 1, { key: checkbox }, (v) => {
+            checkbox.style.transform = `scale(${v})`;
+          });
+        });
 
         if (nowDone) {
           checkbox.innerHTML = '<i data-lucide="check" class="icon" style="opacity:0;transform:scale(0.5);transition:opacity 200ms cubic-bezier(0.34,1.56,0.64,1), transform 200ms cubic-bezier(0.34,1.56,0.64,1);"></i>';
@@ -1175,7 +1292,9 @@
           return;
         }
         if (e.target === checkbox || e.target === del) return;
-        openEditModal(task.id);
+        // Delayed so the row's .pressable press-squash is visible before
+        // the modal covers it, instead of the tap looking like it did nothing.
+        setTimeout(() => openEditModal(task.id), 100);
       });
 
       li.appendChild(selectCheckbox);
@@ -1703,7 +1822,7 @@
       const theme = THEMES[key];
       const row = document.createElement("button");
       row.type = "button";
-      row.className = "ob-row" + (key === current ? " selected" : "");
+      row.className = "ob-row pressable" + (key === current ? " selected" : "");
       const swatch = document.createElement("span");
       swatch.className = "ob-row-swatch";
       swatch.style.background = theme.light.accent;
@@ -3095,7 +3214,7 @@ let currentRange = "week";
     options.forEach((s, i) => {
       const card = document.createElement("button");
       card.type = "button";
-      card.className = "focus-session" + (i === selectedSession ? " selected" : "");
+      card.className = "focus-session pressable" + (i === selectedSession ? " selected" : "");
       card.innerHTML = `<div class="session-name"><i data-lucide="${s.icon}" class="icon"></i> ${s.name}</div><div class="session-time">${s.time}</div>`;
       card.addEventListener("click", () => { selectedSession = i; renderFocus(); });
       if (s.isCustomPreset) {
@@ -3143,7 +3262,7 @@ let currentRange = "week";
     if (isPremiumUser()) {
       const addCard = document.createElement("button");
       addCard.type = "button";
-      addCard.className = "focus-session focus-session-add";
+      addCard.className = "focus-session focus-session-add pressable";
       addCard.innerHTML = `<div class="session-name"><i data-lucide="plus" class="icon"></i> Add preset</div><div class="session-time">Create your own</div>`;
       addCard.addEventListener("click", () => openAddPresetModal());
       grid.appendChild(addCard);
@@ -3824,7 +3943,7 @@ let currentRange = "week";
     results.forEach(r => {
       const row = document.createElement("button");
       row.type = "button";
-      row.className = "reflection-search-result";
+      row.className = "reflection-search-result pressable";
       row.innerHTML = `
         <div class="reflection-search-result-date">${formatReflectionDate(r.dateStr)}</div>
         <div class="reflection-search-result-snippet">${r.snippet}</div>
@@ -4028,7 +4147,7 @@ let currentRange = "week";
     options.forEach(option => {
       const row = document.createElement("button");
       row.type = "button";
-      row.className = "ob-row";
+      row.className = "ob-row pressable";
       const iconWrap = document.createElement("span");
       iconWrap.className = "ob-row-icon";
       iconWrap.innerHTML = `<i data-lucide="${ONBOARDING_OPTION_ICONS[option] || "circle"}" class="icon"></i>`;
@@ -4241,7 +4360,7 @@ let currentRange = "week";
         const color = onboardingCategoryColor(name);
         const row = document.createElement("button");
         row.type = "button";
-        row.className = "ob-row";
+        row.className = "ob-row pressable";
         const swatch = document.createElement("span");
         swatch.className = "ob-row-swatch";
         swatch.style.background = color;
@@ -4292,7 +4411,7 @@ let currentRange = "week";
         const color = onboardingCategoryColor(name);
         const row = document.createElement("button");
         row.type = "button";
-        row.className = "ob-row";
+        row.className = "ob-row pressable";
         const swatch = document.createElement("span");
         swatch.className = "ob-row-swatch";
         swatch.style.background = color;
