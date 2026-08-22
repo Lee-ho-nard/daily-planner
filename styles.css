@@ -94,6 +94,13 @@
   body { overflow-y: hidden; }
   body { font-family: var(--font-family); font-weight: 400; background: var(--bg-page); color: var(--text-primary); padding: 1.75rem 1.25rem; transition: background 0.5s ease, color 0.5s ease; -webkit-font-smoothing: antialiased; }
   button, input, select, textarea { font-family: inherit; }
+  /* Without this, Chrome on Windows can apply its own native Fluent button
+     chrome on top of custom styling in certain interaction states (hover
+     in particular) — square corners bleeding through a rounded button is
+     exactly that, not anything in this stylesheet actively overriding
+     border-radius. appearance: none opts every button fully out of native
+     rendering so only this stylesheet's own styles ever apply. */
+  button { appearance: none; -webkit-appearance: none; }
   /* Same overflow-x/overflow-y auto-flip as body above: .container's
      content briefly gets 8px taller than itself on every tab-entrance (the
      incoming view's translateY 8px->0 spring counts as scrollable overflow
@@ -455,8 +462,14 @@
   .focus-heading{ font-size:var(--text-base); font-weight:500; margin-bottom:0.9rem; color: var(--text-primary); }
   .focus-top3{ background: var(--bg-card); border-radius:var(--radius-md); padding:1.3rem; margin-bottom:1.75rem; }
   .focus-empty{ color: var(--text-muted); font-size: var(--text-base); }
-  .start-focus-btn{ width:100%; padding:0.9rem; border:none; border-radius:var(--radius-sm); font-size:var(--text-md); font-weight:600; cursor:pointer; background: var(--accent); color: var(--on-accent); font-family: inherit; transition: transform 0.2s, opacity 0.2s, background-color 300ms ease, color 300ms ease; }
-  .start-focus-btn:hover{ transform:scale(1.02); }
+  .start-focus-btn{ width:100%; padding:0.9rem; border:none; border-radius:var(--radius-sm); font-size:var(--text-md); font-weight:600; cursor:pointer; background: var(--accent); color: var(--on-accent); font-family: inherit; transition: transform 0.2s, opacity 0.2s, background-color 300ms ease, color 300ms ease; will-change: transform; backface-visibility: hidden; }
+  /* border-radius redeclared here, not just inherited from the base rule
+     above — on hover this button was rendering square corners despite
+     nothing here ever setting border-radius to 0, which neither the
+     will-change fix nor appearance: none actually resolved. Restating it
+     explicitly on :hover directly overrides whatever's clearing it,
+     regardless of the exact cause. */
+  .start-focus-btn:hover{ transform:scale(1.02); border-radius: var(--radius-sm); }
   .start-focus-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .start-focus-btn:disabled:hover { transform: none; }
 

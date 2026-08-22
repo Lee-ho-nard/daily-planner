@@ -263,6 +263,140 @@
     el.addEventListener("mouseleave", pressUp);
   }
 
+  // Spring-driven reveal for onboarding's .onboarding-reveal elements
+  // (opacity 0->1, translateY 8px->0), replacing the flat CSS
+  // "transition: opacity 250ms ease, transform 250ms ease" those used to
+  // rely on — same category of motion upgrade as the view-transition/Deep
+  // Work entrance work. .ob-in is still toggled (not removed) since the
+  // CSS rule also drives pointer-events: auto/none, which this doesn't
+  // duplicate; only opacity/transform are taken over here, so
+  // transitionProperty is neutralized to stop CSS fighting the spring's
+  // every-frame writes. Two dedicated keys per element (opacity and
+  // translateY animate different value spaces — sharing one key between
+  // them would corrupt each other's inherited position) that persist for
+  // that element's lifetime, so a reveal interrupted by a hide (or vice
+  // versa, see obRevealOut) correctly continues from its live position
+  // instead of jumping.
+  const obRevealSpringKeys = new WeakMap();
+  function getObRevealSpringKeys(el) {
+    let keys = obRevealSpringKeys.get(el);
+    if (!keys) { keys = { fade: {}, slide: {} }; obRevealSpringKeys.set(el, keys); }
+    return keys;
+  }
+  function obRevealIn(el) {
+    const keys = getObRevealSpringKeys(el);
+    el.classList.add("ob-in");
+    el.style.transitionProperty = "none";
+    let settledCount = 0;
+    function onSettled() {
+      settledCount++;
+      if (settledCount === 2) el.style.transitionProperty = "";
+    }
+    spring(0, 1, { key: keys.fade }, (v) => { el.style.opacity = v; }, onSettled);
+    spring(8, 0, { key: keys.slide }, (v) => { el.style.transform = `translateY(${v}px)`; }, onSettled);
+  }
+  function obRevealOut(el) {
+    const keys = getObRevealSpringKeys(el);
+    el.style.transitionProperty = "none";
+    let settledCount = 0;
+    function onSettled() {
+      settledCount++;
+      if (settledCount === 2) {
+        el.classList.remove("ob-in");
+        el.style.transitionProperty = "";
+      }
+    }
+    spring(1, 0, { key: keys.fade }, (v) => { el.style.opacity = v; }, onSettled);
+    spring(0, 8, { key: keys.slide }, (v) => { el.style.transform = `translateY(${v}px)`; }, onSettled);
+  }
+
+  // Spring-driven pop-in for the seal/session-complete/milestone takeover
+  // screens' central content (.seal-icon/.session-complete-icon/
+  // .milestone-card) — same category of upgrade as obRevealIn above,
+  // replacing each element's flat "opacity 400ms ease-out, transform 400ms
+  // cubic-bezier(...)" CSS transition. That cubic-bezier already overshot
+  // past 1 on the way in, so spring()'s own default (underdamped) feel is
+  // the direct physical equivalent, not a departure from it. These
+  // elements are static (not recreated per-show like onboarding's), so the
+  // starting opacity/scale must be reset explicitly on every call — without
+  // it, a second reveal would find the spring already resting at 1 and not
+  // animate at all. Two dedicated keys per element, same reasoning as
+  // obRevealIn's fade/slide split.
+  const scaleRevealSpringKeys = new WeakMap();
+  function getScaleRevealSpringKeys(el) {
+    let keys = scaleRevealSpringKeys.get(el);
+    if (!keys) { keys = { fade: {}, scale: {} }; scaleRevealSpringKeys.set(el, keys); }
+    return keys;
+  }
+  function springScaleReveal(el, fromScale) {
+    const keys = getScaleRevealSpringKeys(el);
+    el.style.transitionProperty = "none";
+    el.style.opacity = "0";
+    el.style.transform = `scale(${fromScale})`;
+    let settledCount = 0;
+    function onSettled() {
+      settledCount++;
+      if (settledCount === 2) el.style.transitionProperty = "";
+    }
+    spring(0, 1, { key: keys.fade }, (v) => { el.style.opacity = v; }, onSettled);
+    spring(fromScale, 1, { key: keys.scale }, (v) => { el.style.transform = `scale(${v})`; }, onSettled);
+  }
+
+  // Spring-driven entrance for the .fab-guide-arrow/.catadd-guide-arrow
+  // nudge arrows, layered in front of their existing infinite CSS
+  // @keyframes loop (guideArrowDiag/guideArrowRight) rather than replacing
+  // it — a continuous ambient pulse is exactly what @keyframes is for, not
+  // something a settle-to-target spring should try to do. CSS animations
+  // out-rank inline styles in the cascade, so simply pausing the loop
+  // wouldn't let the spring's own opacity/transform writes show through —
+  // el.style.animation is set to "none" to fully detach it for the
+  // entrance's duration (same "take CSS out of the way" pattern as
+  // transitionProperty elsewhere), then cleared once settled so the loop
+  // reattaches and plays from its own 0% keyframe.
+  const guideArrowSpringKeys = new WeakMap();
+  function getGuideArrowSpringKeys(el) {
+    let keys = guideArrowSpringKeys.get(el);
+    if (!keys) { keys = { fade: {}, scale: {} }; guideArrowSpringKeys.set(el, keys); }
+    return keys;
+  }
+  function springArrowIn(el) {
+    // Doesn't touch display — #fabGuideArrow's caller sets "flex" itself
+    // (its existing toggle), while .catadd-guide-arrow is a freshly
+    // created element whose CSS class already provides the right default
+    // (display: inline-flex, for correct inline flow next to the category
+    // pills) — forcing "flex" here would override that and break its
+    // layout.
+    const keys = getGuideArrowSpringKeys(el);
+    el.style.animation = "none";
+    el.style.opacity = "0";
+    el.style.transform = "scale(0.7)";
+    let settledCount = 0;
+    function onSettled() {
+      settledCount++;
+      if (settledCount === 2) {
+        el.style.animation = "";
+        el.style.opacity = "";
+        el.style.transform = "";
+      }
+    }
+    spring(0, 1, { key: keys.fade }, (v) => { el.style.opacity = v; }, onSettled);
+    spring(0.7, 1, { key: keys.scale }, (v) => { el.style.transform = `scale(${v})`; }, onSettled);
+  }
+  function fadeArrowOut(el) {
+    const keys = getGuideArrowSpringKeys(el);
+    const currentOpacity = parseFloat(getComputedStyle(el).opacity) || 1;
+    el.style.animation = "none";
+    el.style.opacity = String(currentOpacity);
+    spring(currentOpacity, 0, { key: keys.fade, stiffness: 400, damping: 40 }, (v) => {
+      el.style.opacity = v;
+    }, () => {
+      el.style.display = "none";
+      el.style.animation = "";
+      el.style.opacity = "";
+      el.style.transform = "";
+    });
+  }
+
   function openModal(el) {
     el.classList.add("open");
     const modal = el.querySelector(".modal");
@@ -561,6 +695,7 @@
     }
     lucide.createIcons();
     document.getElementById("milestoneScreen").classList.add("visible");
+    springScaleReveal(document.getElementById("milestoneCard"), 0.92);
   }
 
   document.getElementById("milestoneCloseBtn").addEventListener("click", () => {
@@ -870,6 +1005,13 @@
       // 150ms gap, before snapping back down to 0 and re-fading in. Prime
       // it now; showFocusView() just starts the springs from here later.
       focusEl.style.transition = "opacity 0s linear, background 0s linear, color 0s linear";
+      // Clears any inline visibility: hidden / pointer-events: none left by
+      // a prior exit (see hideFocusView()) — .visible's own CSS already
+      // sets visibility: visible with 0 delay and the base rule has no
+      // pointer-events restriction, but both are shadowed by a leftover
+      // inline value, which always wins over a class/base rule.
+      focusEl.style.visibility = "";
+      focusEl.style.pointerEvents = "";
       focusEl.style.opacity = "0";
       focusEl.style.transform = "translateY(8px)";
       focusEl.style.backgroundColor = FOCUS_BG_LIGHT;
@@ -952,6 +1094,27 @@
         if (settledCount === 2) {
           focusTransitioning = false;
           el.classList.remove("visible");
+          // el.style.transition is cleared in this same synchronous tick as
+          // the class removal above, so the browser's single resulting
+          // style recalc sees the RESTORED base-rule transition (which
+          // delays visibility:hidden by 0.5s) rather than the inline
+          // override that was active a moment ago — the class-removal
+          // doesn't get to use the override at all, since both changes
+          // land in the same recalc. #focusView has no pointer-events rule,
+          // so for that real 0.5s it stays fully hit-testable — invisible,
+          // but still intercepting every click across the whole viewport
+          // (position:fixed, inset:0, z-index:5) — which is exactly what
+          // made Settings (or anything else) look stuck/unclickable right
+          // after leaving Deep Work. Set visibility directly so it's
+          // immediate, not dependent on CSS transition timing at all. Also
+          // set pointer-events: none as a second, independent guarantee —
+          // unlike visibility, it has no transition/delay semantics to get
+          // caught by the same-tick issue above in the first place, so it
+          // can't be subject to whatever timing quirk affects the other
+          // property, whether that's this exact mechanism or something else
+          // still misfiring the same way.
+          el.style.visibility = "hidden";
+          el.style.pointerEvents = "none";
           el.style.transition = "";
           el.style.backgroundColor = "";
           el.style.color = "";
@@ -1288,6 +1451,12 @@
   // on Planner, #openAddGoal on Goals — never both visible at once, so one
   // arrow element serves both). Purely a visibility toggle; never disables
   // or hides the .fab itself.
+  // Tracked separately from the DOM (rather than reading el.style.display
+  // back) because this function runs on every render, not just when the
+  // shown/hidden state actually changes — without it, springArrowIn() would
+  // re-fire the entrance on every single render while the arrow stays
+  // visible, not just the one time it actually appears.
+  let fabArrowVisible = false;
   function updateFabArrow() {
     const el = document.getElementById("fabGuideArrow");
     if (!el) return;
@@ -1297,9 +1466,23 @@
     } else if (currentView === "goals") {
       show = tasks.filter(t => t.isGoal).length === 0;
     }
-    el.style.display = show ? "flex" : "none";
+    if (show === fabArrowVisible) return;
+    fabArrowVisible = show;
+    if (show) {
+      el.style.display = "flex";
+      springArrowIn(el);
+    } else {
+      fadeArrowOut(el);
+    }
   }
 
+  // .catadd-guide-arrow is a fresh element every renderCategoryTabs() call
+  // (the whole wrap is wiped and rebuilt each time), so unlike
+  // #fabGuideArrow there's no persistent element to read prior visibility
+  // off of — this flag is the only record of whether it was already
+  // showing, so the entrance spring only fires the one time it actually
+  // appears, not on every re-render while categories stay empty.
+  let catAddArrowVisible = false;
   function renderCategoryTabs() {
     const wrap = document.getElementById("categoryTabs");
     wrap.innerHTML = "";
@@ -1334,6 +1517,10 @@
       catAddArrow.className = "guide-arrow catadd-guide-arrow";
       catAddArrow.innerHTML = '<i data-lucide="arrow-right" class="icon"></i>';
       wrap.appendChild(catAddArrow);
+      if (!catAddArrowVisible) springArrowIn(catAddArrow);
+      catAddArrowVisible = true;
+    } else {
+      catAddArrowVisible = false;
     }
 
     const addBtn = document.createElement("button");
@@ -2067,12 +2254,34 @@
       // handoff — not at settle.
       const offscreenThreshold = window.innerHeight - restingTop;
       let closed = false;
+      let flySpring = null;
       function fireClose() {
         if (closed) return;
         closed = true;
-        // No further cleanup needed: openModal() unconditionally resets
-        // both transitionProperty and transform the next time this modal
-        // opens, regardless of what's left here.
+        // Firing early (as soon as it's offscreen) means this spring is
+        // usually still coasting toward flyDistance in the background —
+        // stopping it here, not just resetting transform once, matters
+        // because otherwise it keeps ticking and keeps overwriting
+        // modalEl.style.transform on every subsequent frame. A reopen
+        // (this same overlay, or any overlay reusing dragSpringKey) that
+        // happens before it would've naturally settled landed its fresh
+        // "" reset first, then watched this leftover spring immediately
+        // clobber it again, frame by frame, walking the freshly-reopened
+        // modal back off-screen — invisible, with only the backdrop (and
+        // its blur) showing. That's what actually made a fast reopen after
+        // a drag-dismiss look permanently stuck.
+        if (flySpring) flySpring.stop();
+        // Reset transitionProperty/transform here rather than counting on
+        // the next open() to do it — that assumption held for app.js's own
+        // openModal() (which unconditionally resets both), but several of
+        // this function's overlays (Settings, Change Password, Reauth,
+        // Auth) are opened by auth-ui.js's own separate, simpler
+        // openModal() (just el.classList.add("open"), no reset). Without
+        // this, reopening one of those after a drag-dismiss left the modal
+        // box permanently transformed off-screen — the backdrop (and its
+        // blur) reopened normally, but the dialog itself stayed invisible.
+        modalEl.style.transitionProperty = "";
+        modalEl.style.transform = "";
         modalEl.style.touchAction = "";
         // closeModal()'s shared 200ms backdrop fade is tuned for a modal
         // shrinking/fading in place — but by now it's already flown fully
@@ -2096,7 +2305,7 @@
           overlayEl.style.transitionDelay = "";
         }, 150);
       }
-      spring(visual, flyDistance, { key: dragSpringKey, stiffness: 300, damping: 30 }, (v) => {
+      flySpring = spring(visual, flyDistance, { key: dragSpringKey, stiffness: 300, damping: 30 }, (v) => {
         modalEl.style.transform = `translateY(${v}px)`;
         if (v >= offscreenThreshold) fireClose();
       }, fireClose);
@@ -2473,6 +2682,10 @@
   // just the one field that was clicked — only that field is shown, and
   // Save only ever writes that single field to the selected tasks.
   const bulkEditOverlay = document.getElementById("bulkEditModalOverlay");
+  // Same drag-to-dismiss as the Add Task modal — enableModalDragDismiss()
+  // is written against a generic overlay/modal pair, so this is just
+  // another call, no changes to the function itself.
+  enableModalDragDismiss(bulkEditOverlay);
   const bulkEditTitle = document.getElementById("bulkEditModalTitle");
   const BULK_EDIT_FIELDS = {
     date: { input: "bulkEditDateInput", clear: "bulkEditDateClear", group: "bulkFieldGroupDate", label: "Date" },
@@ -2625,6 +2838,10 @@
   let editingCategoryName = null;
   let editingCategoryColor = null;
   const editCatOverlay = document.getElementById("editCatModalOverlay");
+  // Same drag-to-dismiss as the Add Task modal — enableModalDragDismiss()
+  // is written against a generic overlay/modal pair, so this is just
+  // another call, no changes to the function itself.
+  enableModalDragDismiss(editCatOverlay);
 
   function openEditCategoryModal(catName) {
     const cat = categories.find(c => c.name === catName);
@@ -2711,6 +2928,10 @@
   }
 
   const themesOverlay = document.getElementById("themesModalOverlay");
+  // Same drag-to-dismiss as the Add Task modal — enableModalDragDismiss()
+  // is written against a generic overlay/modal pair, so this is just
+  // another call, no changes to the function itself.
+  enableModalDragDismiss(themesOverlay);
 
   function renderThemeOptions() {
     const wrap = document.getElementById("themeOptionList");
@@ -2821,6 +3042,10 @@
   }
 
   const exportOverlay = document.getElementById("exportModalOverlay");
+  // Same drag-to-dismiss as the Add Task modal — enableModalDragDismiss()
+  // is written against a generic overlay/modal pair, so this is just
+  // another call, no changes to the function itself.
+  enableModalDragDismiss(exportOverlay);
   document.getElementById("exportDataBtn").addEventListener("click", () => {
     if (!isPremiumUser()) return;
     openModal(exportOverlay);
@@ -3076,6 +3301,10 @@
     document.getElementById("goalFormError").classList.remove("show");
   });
   const goalViewOverlay = document.getElementById("goalViewModalOverlay");
+  // Same drag-to-dismiss as the Add Task modal — enableModalDragDismiss()
+  // is written against a generic overlay/modal pair, so this is just
+  // another call, no changes to the function itself.
+  enableModalDragDismiss(goalViewOverlay);
 
 function openGoalViewModal(goalId) {
   const g = tasks.find(t => t.id === goalId);
@@ -4345,6 +4574,7 @@ let currentRange = "week";
     document.getElementById("sessionCompleteInfo").textContent = `${session.name} session, ${workMinutes} minutes`;
     document.getElementById("sessionCompleteAffirmation").textContent = computeAffirmation(workMinutes);
     screen.classList.add("visible");
+    springScaleReveal(screen.querySelector(".session-complete-icon"), 0.8);
     document.getElementById("sessionCompleteContinueBtn").addEventListener("click", () => {
       screen.classList.remove("visible");
       if (isPremiumUser()) {
@@ -4563,6 +4793,10 @@ let currentRange = "week";
   document.getElementById("addPresetBreakInput").addEventListener("keydown", blockNonWholeNumberKeys);
 
   const addPresetOverlay = document.getElementById("addPresetModalOverlay");
+  // Same drag-to-dismiss as the Add Task modal — enableModalDragDismiss()
+  // is written against a generic overlay/modal pair, so this is just
+  // another call, no changes to the function itself.
+  enableModalDragDismiss(addPresetOverlay);
   // null while creating a new preset; set to the preset's id while the modal
   // is open in edit mode, so the shared save handler knows which path to take.
   let editingPresetId = null;
@@ -4857,6 +5091,10 @@ let currentRange = "week";
   }
 
   const reflectionSearchOverlay = document.getElementById("reflectionSearchModalOverlay");
+  // Same drag-to-dismiss as the Add Task modal — enableModalDragDismiss()
+  // is written against a generic overlay/modal pair, so this is just
+  // another call, no changes to the function itself.
+  enableModalDragDismiss(reflectionSearchOverlay);
   document.getElementById("searchReflectionsBtn").addEventListener("click", () => {
     if (!isPremiumUser()) return;
     const input = document.getElementById("reflectionSearchInput");
@@ -4885,6 +5123,7 @@ let currentRange = "week";
     document.getElementById("sealDate").textContent = `${weekday}, ${fulldate}`;
 
     sealScreen.classList.add("visible");
+    springScaleReveal(sealScreen.querySelector(".seal-icon"), 0.8);
     setTimeout(() => {
       sealScreen.classList.remove("visible");
       onDone();
@@ -5156,21 +5395,24 @@ let currentRange = "week";
           <button id="obContinue" class="start-focus-btn onboarding-reveal">Continue</button>
         </div>
       `;
+      // obHookLine1 (.onboarding-hook-headline) and obHookLine3
+      // (.onboarding-hook-subtext) are a different, out-of-scope category
+      // of reveal — left on their existing CSS .ob-in transition, untouched.
       requestAnimationFrame(() => { document.getElementById("obHookLine1").classList.add("ob-in"); });
       setTimeout(() => {
-        document.getElementById("obHookLine2").classList.add("ob-in");
-        document.getElementById("obHookLine2Caption").classList.add("ob-in");
+        obRevealIn(document.getElementById("obHookLine2"));
+        obRevealIn(document.getElementById("obHookLine2Caption"));
       }, 900);
       setTimeout(() => {
-        document.getElementById("obHookPrompt").classList.add("ob-in");
+        obRevealIn(document.getElementById("obHookPrompt"));
       }, 3000);
       document.getElementById("obHookYeah").addEventListener("click", () => {
         const prompt = document.getElementById("obHookPrompt");
-        prompt.classList.remove("ob-in");
+        obRevealOut(prompt);
         setTimeout(() => {
           prompt.style.display = "none";
           document.getElementById("obHookLine3").classList.add("ob-in");
-          document.getElementById("obContinue").classList.add("ob-in");
+          obRevealIn(document.getElementById("obContinue"));
         }, 250);
       });
       document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(2));
@@ -5307,8 +5549,8 @@ let currentRange = "week";
           <button id="obContinue" class="start-focus-btn" ${onboardingCategories.length ? "" : "disabled"}>Continue</button>
         </div>
       `;
-      requestAnimationFrame(() => { document.getElementById("obTrackLeadIn").classList.add("ob-in"); });
-      setTimeout(() => { document.getElementById("obTrackHeadline").classList.add("ob-in"); }, 200);
+      requestAnimationFrame(() => { obRevealIn(document.getElementById("obTrackLeadIn")); });
+      setTimeout(() => { obRevealIn(document.getElementById("obTrackHeadline")); }, 200);
       const chipsWrap = document.getElementById("obCategoryChips");
       const btn = document.getElementById("obContinue");
       ONBOARDING_CATEGORY_PRESETS.forEach(name => {
@@ -5420,8 +5662,8 @@ let currentRange = "week";
           <button id="obContinue" class="start-focus-btn">Continue</button>
         </div>
       `;
-      requestAnimationFrame(() => { document.getElementById("obSolvesHeader").classList.add("ob-in"); });
-      setTimeout(() => { document.getElementById("obSolvesLines").classList.add("ob-in"); }, 200);
+      requestAnimationFrame(() => { obRevealIn(document.getElementById("obSolvesHeader")); });
+      setTimeout(() => { obRevealIn(document.getElementById("obSolvesLines")); }, 200);
       const genericLines = [
         "The streak shows what actually happened. Not what you meant to do.",
         "Deep Work locks out everything but one task.",
@@ -5741,6 +5983,20 @@ let currentRange = "week";
   document.addEventListener("firestore-data-changed", () => {
     hydrateFromFirestore();
   });
+
+  // These four overlays' own open/close/field logic lives entirely in
+  // auth-ui.js, which deliberately stays self-contained from app.js's
+  // globals (see its own top-of-file comment) — so this drag-dismiss
+  // wiring lives here instead of adding a new app.js dependency into that
+  // file. enableModalDragDismiss() only needs the overlay element itself
+  // (the shared .modal-overlay/.modal/h3 structure and .open class
+  // convention), so this is safe without touching auth-ui.js at all. Same
+  // generic overlay/modal pair the function is already written against, no
+  // changes to the function itself.
+  enableModalDragDismiss(document.getElementById("settingsModalOverlay"));
+  enableModalDragDismiss(document.getElementById("changePasswordModalOverlay"));
+  enableModalDragDismiss(document.getElementById("reauthModalOverlay"));
+  enableModalDragDismiss(document.getElementById("authModalOverlay"));
 
   if (localStorage.getItem("onboardingComplete") !== "true" && categories.length === 0) {
     document.body.classList.add("onboarding-active");
