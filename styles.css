@@ -82,9 +82,25 @@
   :root[data-selected-theme="ocean"][data-theme="dark"] { --accent: #6FA5AB; --accent-hover: #84B4B9; --accent-bg: #24393B; --on-accent: #12211F; }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { overflow-x: hidden; }
+  /* Setting overflow-x alone silently flips the OTHER axis's used value to
+     auto per the CSS spec, whenever that axis is left at its default
+     "visible" — even an explicit "overflow-y: visible" still gets flipped,
+     since the rule keys off the computed value, not how it got there. Only
+     a non-visible overflow-y (hidden here — no scrollbar wanted on either)
+     avoids the flip, so body doesn't quietly become its own second scroll
+     container alongside html's own (already permanent, gutter-stabilized)
+     one — same fix as .container below, for the same reason. */
+  body { overflow-y: hidden; }
   body { font-family: var(--font-family); font-weight: 400; background: var(--bg-page); color: var(--text-primary); padding: 1.75rem 1.25rem; transition: background 0.5s ease, color 0.5s ease; -webkit-font-smoothing: antialiased; }
   button, input, select, textarea { font-family: inherit; }
-  .container { max-width: 480px; margin: 0 auto; }
+  /* Same overflow-x/overflow-y auto-flip as body above: .container's
+     content briefly gets 8px taller than itself on every tab-entrance (the
+     incoming view's translateY 8px->0 spring counts as scrollable overflow
+     while non-zero), and with overflow-y flipped to auto that flashed in a
+     real, if tiny, scrollbar on every switch. overflow-y: hidden (not
+     "visible" — see above) is what actually stops the flip. */
+  .container { max-width: 480px; margin: 0 auto; overflow-x: hidden; overflow-y: hidden; }
 
   /* Shared press-feedback class for tappable rows/cards that don't already
      have their own bespoke :active rule (checkbox/date-nav/cat-pill/
@@ -130,7 +146,7 @@
   .view-tab { flex: 1; text-align: center; padding: 0.55rem; border-radius: 10px; border: 1px solid transparent; background: transparent; cursor: pointer; font-family: inherit; font-size: var(--text-sm); font-weight: 500; color: var(--text-secondary); transition: background 300ms ease, color 300ms ease, box-shadow 300ms ease, border-color 300ms ease; }
   .view-tab.active { background: var(--bg-card); color: var(--text-primary); box-shadow: var(--shadow-card); }
 
-  .date-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; }
+  .date-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; touch-action: pan-y; }
   .date-nav button { background: var(--bg-card); border: none; box-shadow: var(--shadow-card); border-radius: 50%; width: 38px; height: 38px; font-size: var(--text-lg); cursor: pointer; color: var(--text-primary); transition: transform 0.15s; }
   .date-nav button:active { transform: scale(0.92); }
   .date-display { text-align: center; }
@@ -225,9 +241,8 @@
   .empty-msg .big { font-size: var(--text-lg); color: var(--text-primary); font-weight: 500; margin-bottom: 0.3rem; }
   .empty-msg .empty-msg-instruction { display: block; margin-top: 0.6rem; font-weight: 500; color: var(--text-primary); }
 
-  .fab { position: fixed; bottom: var(--fab-bottom); right: var(--fab-right); width: var(--fab-size); height: var(--fab-size); border-radius: 50%; background: var(--accent); color: var(--on-accent); border: none; cursor: pointer; box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 35%, transparent); transition: transform 0.15s, background-color 0.3s ease, box-shadow 0.3s ease; display: grid; place-items: center; padding-top: 1px; }
+  .fab { position: fixed; bottom: var(--fab-bottom); right: var(--fab-right); width: var(--fab-size); height: var(--fab-size); border-radius: 50%; background: var(--accent); color: var(--on-accent); border: none; cursor: pointer; box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 35%, transparent); transition: background-color 0.3s ease, box-shadow 0.3s ease; display: grid; place-items: center; padding-top: 1px; }
   .fab:hover { transform: scale(1.06); }
-  .fab:active { transform: scale(0.94); }
 
   /* First-time guidance arrows — nudge toward the persistent .fab / .cat-add
      buttons rather than duplicating what they do. Small translate + opacity
@@ -268,12 +283,18 @@
     opacity: 0; visibility: hidden;
     transition: opacity 200ms ease, visibility 0s linear 200ms;
   }
-  .modal-overlay.open {
+  /* .backdrop-visible: lets openAddTaskModalMorphed() show just the dim/blur
+     backdrop early, decoupled from .modal's own reveal below — the FAB
+     morph shape can then travel across an already-dimming background
+     instead of a fully bright one. Every other modal only ever uses .open,
+     where both still happen together exactly as before. */
+  .modal-overlay.open, .modal-overlay.backdrop-visible {
     opacity: 1; visibility: visible;
     transition: opacity 200ms ease, visibility 0s linear 0s;
   }
-  .modal { background: var(--bg-card); border-radius: var(--radius-lg); padding: 1.75rem; width: 100%; max-width: 360px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.25); transform: scale(0.96); opacity: 0; transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease; }
-  .modal-overlay.open .modal { transform: scale(1); opacity: 1; }
+  .modal { background: var(--bg-card); border-radius: var(--radius-lg); padding: 1.75rem; width: 100%; max-width: 360px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.25); transform: scale(0.96); opacity: 0; pointer-events: none; transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease; scrollbar-width: none; }
+  .modal::-webkit-scrollbar { display: none; }
+  .modal-overlay.open .modal { transform: scale(1); opacity: 1; pointer-events: auto; }
   .modal h3 { margin-bottom: 1rem; font-weight: 700; letter-spacing: -0.03em; }
   .modal label { display: block; font-size: var(--text-sm); color: var(--text-secondary); margin: 0.8rem 0 0.3rem; font-weight: 500; }
   .modal input, .modal select { width: 100%; padding: 0.65rem 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-page); color: var(--text-primary); font-size: var(--text-base); font-family: inherit; transition: border-color 0.15s, box-shadow 0.15s, background 0.15s; }

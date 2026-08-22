@@ -138,6 +138,15 @@
   // with a still-running spring picks up from that spring's live
   // position/velocity instead of restarting cold.
   //
+  // Pass options.position and/or options.velocity to explicitly seed the
+  // starting position/velocity instead of the normal from-argument-unless-a-
+  // prior-spring-is-live behavior — for handing off into a *different*
+  // position than where a same-key prior spring left off while still
+  // carrying its momentum, e.g. a teleporting transition that shouldn't
+  // visibly decelerate to zero right at the handoff point. Without
+  // options.position, a same-key call still inherits the prior's actual
+  // position as always (options.velocity alone doesn't change that).
+  //
   // onUpdate(value) fires every frame; onComplete() fires once velocity and
   // displacement both settle under `precision`. Returns a controller with
   // stop() to cancel early.
@@ -153,15 +162,17 @@
     const prior = key ? springRegistry.get(key) : null;
     if (prior) prior.stop();
 
-    let position = prior ? prior.position : from;
-    let velocity = prior ? prior.velocity : 0;
+    let position = options.position != null ? options.position : (prior ? prior.position : from);
+    let velocity = options.velocity != null ? options.velocity : (prior ? prior.velocity : 0);
     let rafId = null;
     let lastTime = null;
+    let stopped = false;
 
     const controller = {
       position,
       velocity,
       stop() {
+        stopped = true;
         if (rafId != null) cancelAnimationFrame(rafId);
         rafId = null;
         if (key && springRegistry.get(key) === controller) springRegistry.delete(key);
@@ -170,6 +181,7 @@
     if (key) springRegistry.set(key, controller);
 
     function tick(now) {
+      if (stopped) return;
       if (lastTime == null) lastTime = now;
       const dt = Math.min((now - lastTime) / 1000, 1 / 30);
       lastTime = now;
@@ -182,6 +194,12 @@
       controller.velocity = velocity;
 
       onUpdate(position);
+      // onUpdate may have synchronously called this same controller's
+      // stop() (e.g. a caller handing off to a different spring mid-flight)
+      // — without this check, this function would ignore that and just
+      // re-arm itself for another frame regardless, since cancelling an
+      // already-fired rAF id has nothing left to cancel.
+      if (stopped) return;
 
       if (Math.abs(velocity) < precision && Math.abs(position - to) < precision) {
         position = to;
@@ -197,6 +215,52 @@
 
     rafId = requestAnimationFrame(tick);
     return controller;
+  }
+
+  // CSS transitions can't interpolate a plain (unregistered) custom
+  // property like --bg-page — without @property, a change to it is instant,
+  // not eased, no matter what transition rule is sitting on the element
+  // that reads it. Same category of problem as the FAB clone's rect/
+  // border-radius interpolation elsewhere: animate it by hand in JS instead.
+  function lerpHexColor(hexA, hexB, progress) {
+    const a = parseInt(hexA.slice(1), 16);
+    const b = parseInt(hexB.slice(1), 16);
+    const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+    const br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+    const r = Math.round(ar + (br - ar) * progress);
+    const g = Math.round(ag + (bg - ag) * progress);
+    const bl = Math.round(ab + (bb - ab) * progress);
+    return `rgb(${r}, ${g}, ${bl})`;
+  }
+
+  // Press-feedback squash for the FAB buttons (#openAdd/#openAddGoal),
+  // spring-driven so release has the same physical overshoot-past-1 quality
+  // as the checkbox's own completion pop, rather than the flat CSS
+  // transition this predates. Uses spring()'s default stiffness/damping
+  // (same as the checkbox pop, which doesn't override them either) for the
+  // same feel. Touch+mouse events, not Pointer Events — same reliability
+  // reason as the modal-drag-dismiss/date-nav-swipe gestures elsewhere in
+  // this file: older Safari (this app's actual target device) doesn't
+  // reliably fire pointer events at all. key: el keeps each FAB's spring
+  // independent and lets a fresh press correctly continue from wherever a
+  // still-settling release left off, instead of jumping back to 1 first.
+  function enableFabPressSpring(el) {
+    function pressDown() {
+      spring(1, 0.94, { key: el }, (v) => { el.style.transform = `scale(${v})`; }, () => {});
+    }
+    function pressUp() {
+      // Cleared to "" on settle (not left at the inline "scale(1)" the
+      // checkbox pop leaves behind) so .fab:hover's own CSS scale can take
+      // back over between presses instead of being permanently shadowed by
+      // a leftover inline transform.
+      spring(0.94, 1, { key: el }, (v) => { el.style.transform = `scale(${v})`; }, () => { el.style.transform = ""; });
+    }
+    el.addEventListener("touchstart", pressDown, { passive: true });
+    el.addEventListener("touchend", pressUp);
+    el.addEventListener("touchcancel", pressUp);
+    el.addEventListener("mousedown", pressDown);
+    el.addEventListener("mouseup", pressUp);
+    el.addEventListener("mouseleave", pressUp);
   }
 
   function openModal(el) {
@@ -734,12 +798,52 @@
   const CROSSFADE_VIEW_IDS = { planner: "plannerView", goals: "goalsView", analysis: "analysisView", reflection: "reflectionView" };
   const VIEW_FADE_SPRING_KEY = {};
   const VIEW_SLIDE_SPRING_KEY = {};
+  // #focusView isn't part of the prevEl/nextEl crossfade swap below (it's a
+  // separate fixed-position overlay, not one of the four swapped-in-place
+  // views) and its own entrance/exit can run concurrently with whichever of
+  // the four is animating underneath it — sharing VIEW_FADE_SPRING_KEY/
+  // VIEW_SLIDE_SPRING_KEY would let one call's spring silently steal the
+  // other's key mid-flight (this codebase's recurring key-collision bug).
+  // Dedicated keys avoid that.
+  const FOCUS_FADE_SPRING_KEY = {};
+  const FOCUS_SLIDE_SPRING_KEY = {};
+  // Deep Work is a full theme change (light view -> dark, timer-focused
+  // mode), not a same-weight peer switch like Planner<->Goals. The normal
+  // snappy 600/34 read as too fast/abrupt; the "ceremonial" 300/20 already
+  // used for the End Day reflection reveal was tried next but still read as
+  // too fast for a full-screen theme change specifically — lower stiffness
+  // still, for a slower, more deliberate settle.
+  const FOCUS_SPRING_STIFFNESS = 120;
+  const FOCUS_SPRING_DAMPING = 18;
+  // Mirrors enableDateNavSwipe()'s own `transitioning` guard: blocks a new
+  // switchView() call from starting while #focusView's own entrance/exit is
+  // still mid-flight, so rapid tab-tapping in/out of Deep Work can't stack
+  // a second transition on top of one still resolving.
+  let focusTransitioning = false;
+  // --bg-page is a plain (unregistered) custom property — without
+  // @property, CSS can't actually interpolate it, so the "transition:
+  // background 0.5s ease" sitting on body/#focusView never did anything for
+  // this specific value; the light->dark (or reverse) snap was instant.
+  // Hardcoded here rather than read from the custom property so the lerp
+  // has real hex to interpolate between regardless of that limitation.
+  const FOCUS_BG_LIGHT = "#FAFAF7";
+  const FOCUS_BG_DARK = "#1A211C";
+  // Same unregistered-custom-property limitation as --bg-page, confirmed
+  // directly this time (sampled body's computed color repeatedly across a
+  // real-time window after data-theme flipped — it never moved off the
+  // light value at all, not even part way, which is what a genuinely inert
+  // "transition" on a var()-sourced value looks like). --text-primary was
+  // left on its CSS transition when the background fix went in, deferred
+  // as a smaller-magnitude follow-up; this is that follow-up.
+  const FOCUS_TEXT_LIGHT = "#232520";
+  const FOCUS_TEXT_DARK = "#F2F1ED";
 
   function switchView(view) {
     if (pendingLockDate && view !== "reflection") {
       showToast("Finish your reflection to end the day.", "warning");
       return;
     }
+    if (focusTransitioning) return;
     const previousView = currentView;
     currentView = view;
 
@@ -748,7 +852,32 @@
     document.getElementById("tabAnalysis").classList.toggle("active", view === "analysis");
     document.getElementById("tabFocus").classList.toggle("active", view === "focus");
 
-    document.getElementById("focusView").classList.toggle("visible", view === "focus");
+    const enteringFocus = view === "focus" && previousView !== "focus";
+    const leavingFocus = previousView === "focus" && view !== "focus";
+    // Entering shows immediately, matching the old CSS's 0-delay "enter"
+    // case — leaving defers hiding until hideFocusView()'s exit spring
+    // actually settles (see below), so the fade-out stays visible for its
+    // full run instead of being cut off.
+    if (enteringFocus) {
+      const focusEl = document.getElementById("focusView");
+      focusEl.classList.add("visible");
+      // .visible's own CSS (opacity: 1) takes effect the instant the class
+      // lands — but showFocusView()'s spring doesn't actually start until
+      // 150ms later (after the old tab's own fade-out below), so without
+      // pinning it back to its pre-entrance state right here, in the same
+      // synchronous tick, #focusView flashed fully opaque and already dark
+      // (data-theme flips below, in this same tick too) for that whole
+      // 150ms gap, before snapping back down to 0 and re-fading in. Prime
+      // it now; showFocusView() just starts the springs from here later.
+      focusEl.style.transition = "opacity 0s linear, background 0s linear, color 0s linear";
+      focusEl.style.opacity = "0";
+      focusEl.style.transform = "translateY(8px)";
+      focusEl.style.backgroundColor = FOCUS_BG_LIGHT;
+      focusEl.style.color = FOCUS_TEXT_LIGHT;
+      document.body.style.transition = "background 0s linear, color 0s linear";
+      document.body.style.backgroundColor = FOCUS_BG_LIGHT;
+      document.body.style.color = FOCUS_TEXT_LIGHT;
+    }
 
     document.getElementById("openAdd").style.display = view === "planner" ? "block" : "none";
     document.getElementById("openAddGoal").style.display = view === "goals" ? "block" : "none";
@@ -756,7 +885,125 @@
     document.getElementById("todayBtn").style.display = view === "planner" ? "block" : "none";
     updateFabArrow();
     document.body.classList.toggle("deep-work-mode", view === "focus");
-    document.documentElement.setAttribute("data-theme", view === "focus" ? "dark" : "light");
+    // data-theme itself is set further down, at the moment the outgoing
+    // view is actually hidden (not here, synchronously) — see the
+    // enteringFocus branch below. deep-work-mode stays synchronous/
+    // immediate on purpose: it only affects the shared, persistent tab
+    // bar's own styling, not the content that's fading out.
+    if (!enteringFocus) {
+      document.documentElement.setAttribute("data-theme", view === "focus" ? "dark" : "light");
+    }
+
+    const prevEl = CROSSFADE_VIEW_IDS[previousView] ? document.getElementById(CROSSFADE_VIEW_IDS[previousView]) : null;
+    const nextEl = CROSSFADE_VIEW_IDS[view] ? document.getElementById(CROSSFADE_VIEW_IDS[view]) : null;
+
+    // #focusView's entrance/exit, brought in line with the other four tabs'
+    // spring-driven opacity+translateY motion (same stiffness/damping) —
+    // it was intentionally left on a plain CSS fade when that work
+    // happened, flagged as a follow-up. Background AND text color are both
+    // driven by hand (see lerpHexColor()) piggybacked on this same fade
+    // spring's onUpdate, rather than the CSS "background/color 0.5s ease"
+    // that looked right but were actually no-ops — --bg-page/--text-primary
+    // are unregistered custom properties, which CSS can't interpolate at
+    // all, so those rules only ever produced an instant snap (confirmed
+    // directly for color: sampled repeatedly across a real 640ms window and
+    // it never moved off its starting value). Opacity/background/color are
+    // all taken out of CSS's hands (duration forced to 0 so CSS doesn't
+    // fight the spring's every-frame writes).
+    function showFocusView() {
+      const el = document.getElementById("focusView");
+      el.style.transition = "opacity 0s linear, background 0s linear, color 0s linear";
+      document.body.style.transition = "background 0s linear, color 0s linear";
+      el.style.opacity = "0";
+      el.style.transform = "translateY(8px)";
+      let settledCount = 0;
+      function onSettled() {
+        settledCount++;
+        if (settledCount === 2) {
+          focusTransitioning = false;
+          el.style.transition = "";
+          el.style.backgroundColor = "";
+          el.style.color = "";
+          document.body.style.transition = "";
+          document.body.style.backgroundColor = "";
+          document.body.style.color = "";
+        }
+      }
+      spring(0, 1, { stiffness: FOCUS_SPRING_STIFFNESS, damping: FOCUS_SPRING_DAMPING, key: FOCUS_FADE_SPRING_KEY }, (v) => {
+        el.style.opacity = v;
+        // v runs light(0)->dark(1) here, same direction as both lerps.
+        const bg = lerpHexColor(FOCUS_BG_LIGHT, FOCUS_BG_DARK, v);
+        const text = lerpHexColor(FOCUS_TEXT_LIGHT, FOCUS_TEXT_DARK, v);
+        el.style.backgroundColor = bg;
+        el.style.color = text;
+        document.body.style.backgroundColor = bg;
+        document.body.style.color = text;
+      }, onSettled);
+      spring(8, 0, { stiffness: FOCUS_SPRING_STIFFNESS, damping: FOCUS_SPRING_DAMPING, key: FOCUS_SLIDE_SPRING_KEY }, (v) => { el.style.transform = `translateY(${v}px)`; }, onSettled);
+    }
+    function hideFocusView() {
+      const el = document.getElementById("focusView");
+      el.style.transition = "opacity 0s linear, background 0s linear, color 0s linear";
+      document.body.style.transition = "background 0s linear, color 0s linear";
+      focusTransitioning = true;
+      let settledCount = 0;
+      function onSettled() {
+        settledCount++;
+        if (settledCount === 2) {
+          focusTransitioning = false;
+          el.classList.remove("visible");
+          el.style.transition = "";
+          el.style.backgroundColor = "";
+          el.style.color = "";
+          document.body.style.transition = "";
+          document.body.style.backgroundColor = "";
+          document.body.style.color = "";
+        }
+      }
+      spring(1, 0, { stiffness: FOCUS_SPRING_STIFFNESS, damping: FOCUS_SPRING_DAMPING, key: FOCUS_FADE_SPRING_KEY }, (v) => {
+        el.style.opacity = v;
+        // v runs dark(1)->light(0) here too, still the same "how much dark"
+        // meaning as the entrance case above.
+        const bg = lerpHexColor(FOCUS_BG_LIGHT, FOCUS_BG_DARK, v);
+        const text = lerpHexColor(FOCUS_TEXT_LIGHT, FOCUS_TEXT_DARK, v);
+        el.style.backgroundColor = bg;
+        el.style.color = text;
+        document.body.style.backgroundColor = bg;
+        document.body.style.color = text;
+      }, onSettled);
+      spring(0, 8, { stiffness: FOCUS_SPRING_STIFFNESS, damping: FOCUS_SPRING_DAMPING, key: FOCUS_SLIDE_SPRING_KEY }, (v) => { el.style.transform = `translateY(${v}px)`; }, onSettled);
+    }
+    if (enteringFocus) {
+      focusTransitioning = true;
+      // Old tab fully fades out first, then Deep Work fades in — the two
+      // used to overlap (prevEl stayed visible while focusView rose on top
+      // of it, revealed rather than replaced), which read as the outgoing
+      // tab's background/content briefly double-exposed with Deep Work's
+      // own session options as they appeared. Reuses the existing 150ms
+      // CSS opacity fade already on all four crossfade views (see
+      // "#plannerView, #goalsView, ..." below) for the exit half, kept
+      // short and undelayed on purpose so this reads as one quick clean
+      // handoff, not a second slow step stacked in front of the
+      // already-deliberately-slow (~960ms) entrance spring.
+      if (prevEl) {
+        prevEl.style.opacity = "0";
+        setTimeout(() => {
+          prevEl.style.display = "none";
+          // Flips only now, right as the outgoing view actually disappears
+          // — virtually every color in the app is a :root-scoped custom
+          // property keyed to data-theme, so flipping this any earlier (it
+          // used to be synchronous, at the very top of switchView()) made
+          // prevEl instantly repaint in the new theme's colors while still
+          // fully on screen for this entire 150ms window.
+          document.documentElement.setAttribute("data-theme", "dark");
+          showFocusView();
+        }, 150);
+      } else {
+        document.documentElement.setAttribute("data-theme", "dark");
+        showFocusView();
+      }
+    }
+    if (leavingFocus) hideFocusView();
 
     function renderNewView() {
       if (view === "goals") renderGoals();
@@ -764,9 +1011,6 @@
       if (view === "reflection") renderReflection();
       if (view === "focus") renderFocus();
     }
-
-    const prevEl = CROSSFADE_VIEW_IDS[previousView] ? document.getElementById(CROSSFADE_VIEW_IDS[previousView]) : null;
-    const nextEl = CROSSFADE_VIEW_IDS[view] ? document.getElementById(CROSSFADE_VIEW_IDS[view]) : null;
 
     function showNextView() {
       if (nextEl) {
@@ -803,7 +1047,11 @@
         showNextView();
       }, 120);
     } else {
-      if (prevEl && prevEl !== nextEl) {
+      // Entering focus is the one case here with nextEl falsy but prevEl
+      // real: skip the instant hide, since showFocusView() above already
+      // owns hiding prevEl once its own entrance spring settles (so it
+      // stays visible underneath the fade instead of vanishing first).
+      if (prevEl && prevEl !== nextEl && !enteringFocus) {
         prevEl.style.opacity = "";
         prevEl.style.display = "none";
       }
@@ -1210,6 +1458,7 @@
         });
 
         if (nowDone) {
+          triggerHaptic("light");
           checkbox.innerHTML = '<i data-lucide="check" class="icon" style="opacity:0;transform:scale(0.5);transition:opacity 200ms cubic-bezier(0.34,1.56,0.64,1), transform 200ms cubic-bezier(0.34,1.56,0.64,1);"></i>';
           lucide.createIcons();
           const checkIcon = checkbox.querySelector(".icon");
@@ -1321,6 +1570,7 @@
           if (t) t.order = index;
         });
         save();
+        triggerHaptic("light");
       }
     });
 
@@ -1381,6 +1631,266 @@
   document.getElementById("nextDay").addEventListener("click", () => { currentDate.setDate(currentDate.getDate() + 1); renderAll(); });
   function goToToday() { currentDate = new Date(); renderAll(); }
 
+  // Swipeable day navigation on the Planner's date header — adapts the same
+  // gesture-quality patterns already built and debugged in
+  // enableModalDragDismiss() (spring physics, touch-action, velocity-based
+  // commit, cancel-always-safe). Touch + Mouse events rather than literally
+  // Pointer Events, for the same reason as that function: Pointer Events
+  // don't reliably fire at all on older Safari, which is the actual target
+  // device here — see that function's own comment for the fuller story.
+  // "pointercancel" below means touchcancel (mouse has no equivalent, same
+  // as the modal).
+  function enableDateNavSwipe(navEl, extraStartEls, plannerViewEl) {
+    extraStartEls = (extraStartEls || []).filter(Boolean);
+    const DIRECTION_LOCK_DISTANCE = 10; // px of total movement sampled before committing to a direction
+    const RUBBER_START = 100;
+    const RUBBER_RANGE = 80;
+    const RUBBER_CONSTANT = 0.55;
+    const COMMIT_DISTANCE = 60;
+    const COMMIT_VELOCITY = 0.5; // px/ms
+    // See enableModalDragDismiss()'s identical constant for why this isn't
+    // shorter: a held-still drag produces zero move events, indistinguishable
+    // from a stuck one by inactivity alone. visibilitychange/blur below are
+    // the real, event-based triggers; this is only a last-resort fallback.
+    const STALL_TIMEOUT = 5000;
+
+    // idle: nothing happening. sampling: pointer down, direction not yet
+    // decided. horizontal: locked in, this drag owns the gesture. aborted:
+    // decided vertical — hands off entirely, browser's native scroll owns it.
+    let phase = "idle";
+    let startX = 0, startY = 0;
+    let dx = 0;
+    let lastX = 0, lastT = 0, velocity = 0;
+    let stallTimer = null;
+    // True from the moment a commit is decided until the enter-spring for
+    // the new day settles — covers the gap phase alone can't, since phase
+    // itself goes back to "idle" as soon as the exit/enter sequence starts
+    // (the live drag is over; what's left is an auto-driven animation, not
+    // a gesture in progress). Blocks a new swipe from starting mid-sequence.
+    let transitioning = false;
+    // Dedicated key, separate from any other spring usage on this page —
+    // same lesson as enableModalDragDismiss()'s dragSpringKey: sharing a
+    // key across springs animating different value spaces corrupts the
+    // inherited starting position when one interrupts the other. Reused
+    // across the live drag, cancel, exit, and enter springs here since all
+    // of them animate the same value space (horizontal pixel offset).
+    const navSpringKey = {};
+
+    function rubberBand(d, range, c) {
+      return (d * range * c) / (range + c * d);
+    }
+
+    function visualDxFor(rawDx) {
+      const abs = Math.abs(rawDx);
+      if (abs <= RUBBER_START) return rawDx;
+      const sign = rawDx < 0 ? -1 : 1;
+      return sign * (RUBBER_START + rubberBand(abs - RUBBER_START, RUBBER_RANGE, RUBBER_CONSTANT));
+    }
+
+    function armStallTimer() {
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => { if (phase === "horizontal") cancelSwipe(); }, STALL_TIMEOUT);
+    }
+
+    // Mouse-dragging across text (the date, the progress line) would
+    // otherwise trigger the browser's native text-selection while horizontal
+    // lock is active — set only for the drag's duration rather than via
+    // preventDefault() on every event, which would risk swallowing other
+    // default behavior too.
+    function setSwipeZoneUserSelect(value) {
+      navEl.style.userSelect = value;
+      extraStartEls.forEach((el) => { el.style.userSelect = value; });
+    }
+
+    function begin(clientX, clientY, targetEl) {
+      if (phase !== "idle" || transitioning) return;
+      if (targetEl.closest("button, a, input, select, textarea")) return;
+      // Mutual exclusion with switchView()'s own entrance spring, which
+      // also drives #plannerView's transform (translateY, on tab-switch
+      // crossfade) via this same key. Day-swipe only makes sense while
+      // already on Planner, so if that's still mid-flight, just don't
+      // start tracking rather than risk both writing to transform at once.
+      if (springRegistry.has(VIEW_SLIDE_SPRING_KEY)) return;
+      phase = "sampling";
+      startX = clientX;
+      startY = clientY;
+      dx = 0;
+      lastX = clientX;
+      lastT = performance.now();
+      velocity = 0;
+    }
+
+    function move(clientX, clientY) {
+      if (phase === "idle" || phase === "aborted") return;
+      const rawDx = clientX - startX;
+      const rawDy = clientY - startY;
+
+      if (phase === "sampling") {
+        if (Math.hypot(rawDx, rawDy) < DIRECTION_LOCK_DISTANCE) return;
+        if (Math.abs(rawDx) <= Math.abs(rawDy)) {
+          // Vertical or ambiguous — hand this gesture entirely back to the
+          // browser (page scroll) and never touch it again this gesture.
+          phase = "aborted";
+          return;
+        }
+        phase = "horizontal";
+        // Seize this gesture's own key, in case a previous release's
+        // cancel spring is still settling.
+        spring(0, 0, { key: navSpringKey }, () => {}, () => {});
+        navEl.style.touchAction = "none";
+        setSwipeZoneUserSelect("none");
+        armStallTimer();
+      }
+
+      armStallTimer();
+      dx = rawDx;
+      const now = performance.now();
+      const dt = now - lastT;
+      if (dt > 0) velocity = (clientX - lastX) / dt;
+      lastX = clientX;
+      lastT = now;
+      // The drag-start zone stays .date-nav/#progressWrap (navEl/
+      // extraStartEls, for touch-action/user-select above) but what
+      // actually moves is the whole page — plannerViewEl.
+      plannerViewEl.style.transform = `translateX(${visualDxFor(dx)}px)`;
+    }
+
+    // Same principle as the modal: anything that isn't a clean, deliberate
+    // release (an interrupted gesture, or the stall watchdog) always springs
+    // back rather than acting on possibly-stale data.
+    function cancelSwipe() {
+      if (phase !== "horizontal") { phase = "idle"; return; }
+      phase = "idle";
+      clearTimeout(stallTimer);
+      const visual = visualDxFor(dx);
+      spring(visual, 0, { key: navSpringKey }, (v) => {
+        plannerViewEl.style.transform = `translateX(${v}px)`;
+      }, () => {
+        plannerViewEl.style.transform = "";
+        navEl.style.touchAction = "";
+        setSwipeZoneUserSelect("");
+      });
+    }
+
+    function end() {
+      if (phase !== "horizontal") { phase = "idle"; return; } // tap, or already handed off to the browser
+      clearTimeout(stallTimer);
+
+      const shouldCommit = Math.abs(dx) > COMMIT_DISTANCE || Math.abs(velocity) > COMMIT_VELOCITY;
+      if (!shouldCommit) { cancelSwipe(); return; }
+
+      phase = "idle";
+      transitioning = true;
+      navEl.style.touchAction = "";
+      setSwipeZoneUserSelect("");
+      // Nothing should be tappable/draggable (including #taskList's
+      // Sortable.js reordering) while content is mid-transition and not
+      // actually where the user's finger is anymore.
+      plannerViewEl.style.pointerEvents = "none";
+
+      // Drag right (dx>0) mirrors reaching for the left/prev chevron, and
+      // continuing further right is "the old day exits right, the previous
+      // day enters from the left" — the reverse for a left drag/next day.
+      const dir = dx > 0 ? 1 : -1;
+      const exitTarget = dir * window.innerWidth;
+      const enterStart = -dir * window.innerWidth;
+      const visual = visualDxFor(dx);
+      // Once the exiting content has moved past its own rendered width,
+      // it's fully clear of where it started on screen — safe to swap and
+      // teleport it without that being visible. translateX doesn't affect
+      // layout, so this stays accurate throughout regardless of the
+      // current offset.
+      const offscreenThreshold = plannerViewEl.getBoundingClientRect().width;
+
+      let handedOff = false;
+      // Swap on threshold-crossing while the exit spring is still moving,
+      // not on settle — waiting for it to fully stop (velocity ~0) before
+      // launching a second spring from a standstill is what made this read
+      // as two animations stapled together, a visible "stop", rather than
+      // one continuous flow. Handing off here carries the live velocity
+      // into the enter spring below instead.
+      const exitController = spring(visual, exitTarget, { key: navSpringKey, stiffness: 1800, damping: 75 }, (v) => {
+        plannerViewEl.style.transform = `translateX(${v}px)`;
+        if (handedOff || Math.abs(v) < offscreenThreshold) return;
+        handedOff = true;
+        const carriedVelocity = exitController.velocity;
+        // Old day is fully off-screen now — safe to swap content. Click
+        // the real buttons rather than duplicating their day-math +
+        // renderAll() here, so this can never drift out of sync with them.
+        // (renderTasks() inside renderAll() destroys/recreates Sortable on
+        // every call already — nothing extra needed here for that.)
+        document.getElementById(dir > 0 ? "prevDay" : "nextDay").click();
+        // Instant, no transition: place the newly-rendered new day just
+        // off the opposite edge, ready to enter from there.
+        plannerViewEl.style.transform = `translateX(${enterStart}px)`;
+        // Same key as the exit spring, which stops it (see spring()'s own
+        // stopped-flag handling for why that's now safe to do from inside
+        // this still-running onUpdate); explicit velocity carries the
+        // exit's momentum through the teleport instead of relaunching from
+        // a standstill, which is the actual "flow, not a stop" fix.
+        spring(enterStart, 0, { key: navSpringKey, position: enterStart, velocity: carriedVelocity, stiffness: 1800, damping: 75 }, (v2) => {
+          plannerViewEl.style.transform = `translateX(${v2}px)`;
+        }, () => {
+          plannerViewEl.style.transform = "";
+          plannerViewEl.style.pointerEvents = "";
+          transitioning = false;
+        });
+      }, () => {
+        // Only reached if the exit spring fully settles without ever
+        // crossing the threshold — shouldn't normally happen, since
+        // exitTarget is always farther out than offscreenThreshold, but
+        // guards against ending up stuck mid-exit if it somehow did.
+        if (handedOff) return;
+        document.getElementById(dir > 0 ? "prevDay" : "nextDay").click();
+        plannerViewEl.style.transform = "";
+        plannerViewEl.style.pointerEvents = "";
+        transitioning = false;
+      });
+    }
+
+    // Bound to both navEl and extraStartEls below — begin()/move()/end()
+    // don't care which element a gesture started on, only where the
+    // pointer is; navEl alone still owns the visual transform throughout.
+    function bindStart(el) {
+      el.addEventListener("touchstart", (e) => {
+        const t = e.touches[0];
+        begin(t.clientX, t.clientY, e.target);
+      }, { passive: true }); // sampling phase never preventDefaults, so this can stay passive
+      el.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        begin(e.clientX, e.clientY, e.target);
+      });
+    }
+
+    bindStart(navEl);
+    extraStartEls.forEach(bindStart);
+
+    document.addEventListener("touchmove", (e) => {
+      if (phase === "idle" || phase === "aborted") return;
+      move(e.touches[0].clientX, e.touches[0].clientY);
+      if (phase === "horizontal") e.preventDefault();
+    }, { passive: false });
+    document.addEventListener("touchend", end);
+    document.addEventListener("touchcancel", cancelSwipe);
+
+    document.addEventListener("mousemove", (e) => {
+      if (phase === "idle" || phase === "aborted") return;
+      move(e.clientX, e.clientY);
+    });
+    document.addEventListener("mouseup", end);
+
+    // Same reasoning as enableModalDragDismiss(): tab/window losing focus is
+    // a real interruption signal, unlike mere inactivity while the user
+    // holds still deciding.
+    document.addEventListener("visibilitychange", () => { if (document.hidden) cancelSwipe(); });
+    window.addEventListener("blur", cancelSwipe);
+  }
+  // Planner only — #plannerView disambiguates from reflection's own,
+  // separate .date-nav, which this deliberately does not touch. progressWrap
+  // widens the drag-start hit area (purely visual, no buttons/handlers of
+  // its own); #plannerView itself is what actually moves.
+  enableDateNavSwipe(document.querySelector("#plannerView .date-nav"), [document.getElementById("progressWrap")], document.getElementById("plannerView"));
+
   document.addEventListener("keydown", (e) => {
     if (e.key.toLowerCase() === "t" && !overlay.classList.contains("open") && !goalOverlay.classList.contains("open")) {
       goToToday();
@@ -1388,6 +1898,249 @@
   });
 
   const overlay = document.getElementById("modalOverlay");
+
+  // Drag-to-dismiss, piloted on this one modal only (see enableModalDragDismiss
+  // call below) before considering a wider rollout — written against a
+  // generic overlay/modal pair so extending it later is just another call,
+  // not a rewrite.
+  //
+  // Drag only starts from the top handle zone (near the title) and only
+  // when the modal's own content is scrolled to the top, so it can't hijack
+  // a scroll or a tap on a form field. Downward drag follows the finger
+  // 1:1 up to FREE_DRAG, then rubber-bands (iOS-style) so it never feels
+  // like it's about to fly off; upward drag is fully ignored. On release,
+  // a real distance-or-velocity threshold decides whether to spring the
+  // modal off-screen and hand off to the existing closeModal() (same CSS
+  // fade every other modal close already uses) or spring back to rest.
+  function enableModalDragDismiss(overlayEl) {
+    const modalEl = overlayEl.querySelector(".modal");
+    if (!modalEl) return;
+
+    const HANDLE_HEIGHT = 56;
+    const FREE_DRAG = 160;
+    const RUBBER_RANGE = 80;
+    const RUBBER_CONSTANT = 0.55;
+    const CLOSE_DISTANCE = 130;
+    const CLOSE_VELOCITY = 0.5; // px/ms
+    // A held-still drag (finger down, deciding, not yet released) produces
+    // zero move events — indistinguishable from a genuinely stuck gesture by
+    // inactivity alone, so that can't be the trigger. visibilitychange/blur
+    // below catch the real failure mode (something actually interrupted the
+    // gesture) instantly; this is only a last-resort fallback, long enough
+    // to never plausibly fire during a normal paused hold.
+    const STALL_TIMEOUT = 5000;
+
+    let dragging = false;
+    let startY = 0;
+    let rawDy = 0;
+    let lastY = 0;
+    let lastT = 0;
+    let velocity = 0;
+    let stallTimer = null;
+    let restingTop = 0;
+    // Dedicated key for this drag's own translateY springs (cancel/commit),
+    // deliberately separate from openModal()'s own `key: modalEl` scale
+    // spring. spring()'s key-based continuation inherits the PRIOR spring's
+    // raw numeric position when a new call shares a key — fine within one
+    // value space, but openModal() animates a scale factor (~0.96-1) while
+    // this drag animates a pixel offset (0-600+), so sharing modalEl as the
+    // key here would let a still-mid-flight open animation hand its scale
+    // number off as this drag's starting pixel position — exactly the
+    // "jumps to a nonsense position, then vanishes" bug this key avoids.
+    const dragSpringKey = {};
+
+    function rubberBand(d, range, c) {
+      return (d * range * c) / (range + c * d);
+    }
+
+    function visualDyFor(dy) {
+      if (dy <= 0) return 0;
+      if (dy <= FREE_DRAG) return dy;
+      return FREE_DRAG + rubberBand(dy - FREE_DRAG, RUBBER_RANGE, RUBBER_CONSTANT);
+    }
+
+    function canStartDrag(clientY, targetEl) {
+      if (dragging) return false;
+      if (!overlayEl.classList.contains("open")) return false;
+      if (targetEl.closest("input, select, textarea, button, a")) return false;
+      const rect = modalEl.getBoundingClientRect();
+      const inHandleZone = clientY - rect.top <= HANDLE_HEIGHT;
+      // The handle zone (title area) can always start a dismiss, regardless
+      // of scroll position — it's not part of the scrollable content, so
+      // there's nothing to "finish scrolling" there. The scrollTop gate
+      // only matters below it, bottom-sheet style: don't hijack a scroll
+      // that's still mid-flight, only pick up a drag once it's already at
+      // the top.
+      if (inHandleZone) return true;
+      return modalEl.scrollTop === 0;
+    }
+
+    function armStallTimer() {
+      clearTimeout(stallTimer);
+      // Real hardware can hijack a touch mid-drag (its own scroll/gesture
+      // recognition taking over) without ever delivering a terminal event
+      // to us at all — no touchend, no touchcancel, nothing. Without this,
+      // that leaves `dragging` stuck true and the modal frozen wherever the
+      // last touchmove left it, forever. This guarantees an outcome even
+      // when the browser never tells us the gesture ended. Kept as a
+      // fallback only — see STALL_TIMEOUT's comment.
+      stallTimer = setTimeout(() => { if (dragging) cancelDrag(); }, STALL_TIMEOUT);
+    }
+
+    function startDrag(clientY) {
+      dragging = true;
+      startY = clientY;
+      rawDy = 0;
+      lastY = clientY;
+      lastT = performance.now();
+      velocity = 0;
+      // Captured once, up front, while the modal is still at its natural
+      // resting position — endDrag()'s fly-away target is computed from
+      // this, not a live re-measurement, since by release time the modal's
+      // own rect is already offset by the drag and would under-shoot.
+      restingTop = modalEl.getBoundingClientRect().top;
+      // Seize the modal's transform key from openModal()'s own scale
+      // spring, in case a drag starts before that's settled — otherwise
+      // its rAF loop would keep overwriting the translateY this drives.
+      spring(1, 1, { key: modalEl }, () => {}, () => {});
+      // Also seize this drag's own key, in case a fresh grab starts while a
+      // previous release's cancel/commit spring (dragSpringKey) is still
+      // settling — otherwise that spring's rAF loop would fight this drag's
+      // direct transform writes on alternating frames.
+      spring(0, 0, { key: dragSpringKey }, () => {}, () => {});
+      modalEl.style.transitionProperty = "none";
+      // Belt-and-suspenders against the page's own bounce/pull-to-reload
+      // winning the gesture instead of this drag; touch-action alone isn't
+      // reliably honored on older Safari, hence also preventDefault() below
+      // on every touchmove, not just once at the start.
+      modalEl.style.touchAction = "none";
+      armStallTimer();
+    }
+
+    function moveDrag(clientY) {
+      if (!dragging) return;
+      armStallTimer(); // real movement is still arriving — push the stall deadline out
+      rawDy = clientY - startY;
+      const now = performance.now();
+      const dt = now - lastT;
+      if (dt > 0) velocity = (clientY - lastY) / dt;
+      lastY = clientY;
+      lastT = now;
+      modalEl.style.transform = `translateY(${visualDyFor(rawDy)}px)`;
+    }
+
+    // The safe outcome for anything that isn't a clean, deliberate release:
+    // an interrupted gesture (touchcancel) or a stalled one (the watchdog
+    // above) always springs back to rest rather than running the distance/
+    // velocity decision on data that may be stale or mid-hijack — committing
+    // to a full close on ambiguous input is the riskier failure mode here.
+    function cancelDrag() {
+      if (!dragging) return;
+      dragging = false;
+      clearTimeout(stallTimer);
+      const visual = visualDyFor(rawDy);
+      spring(visual, 0, { key: dragSpringKey }, (v) => {
+        modalEl.style.transform = `translateY(${v}px)`;
+      }, () => {
+        modalEl.style.transitionProperty = "";
+        modalEl.style.transform = "";
+        modalEl.style.touchAction = "";
+      });
+    }
+
+    function endDrag() {
+      if (!dragging) return;
+      const shouldClose = rawDy > CLOSE_DISTANCE || velocity > CLOSE_VELOCITY;
+      if (!shouldClose) { cancelDrag(); return; }
+
+      dragging = false;
+      clearTimeout(stallTimer);
+      const visual = visualDyFor(rawDy);
+      const flyDistance = window.innerHeight - restingTop + 40;
+      // A damped spring settles asymptotically — it doesn't actually reach
+      // "stopped" at flyDistance until well after the modal has already
+      // scrolled fully below the visible viewport, so waiting for onComplete
+      // to fire the backdrop close left the blurred overlay visibly stuck on
+      // screen for a beat after the modal itself was already gone. Fire the
+      // close as soon as it crosses fully offscreen instead — same
+      // early-trigger-inside-onUpdate pattern as the day-swipe's exit/enter
+      // handoff — not at settle.
+      const offscreenThreshold = window.innerHeight - restingTop;
+      let closed = false;
+      function fireClose() {
+        if (closed) return;
+        closed = true;
+        // No further cleanup needed: openModal() unconditionally resets
+        // both transitionProperty and transform the next time this modal
+        // opens, regardless of what's left here.
+        modalEl.style.touchAction = "";
+        // closeModal()'s shared 200ms backdrop fade is tuned for a modal
+        // shrinking/fading in place — but by now it's already flown fully
+        // off-screen (and closes early, the instant it does, rather than at
+        // spring settle), so the full 200ms would just be a needless extra
+        // beat before the backdrop catches up. The base CSS also delays
+        // visibility:hidden by 200ms (so the fade has time to play out
+        // normally) — overriding only the duration leaves that delay in
+        // place, so the blurred backdrop would stay rendered for up to
+        // 200ms after the modal is already gone. Zero the delay too, but
+        // keep the duration short-and-real (not near-zero) — 50ms compresses
+        // to under 3 frames, which reads as an abrupt cut rather than a
+        // fade. Scoped to only this close path (override, then restore once
+        // it's done) — Cancel/Escape/tap-outside all keep the normal 200ms
+        // fade untouched.
+        overlayEl.style.transitionDuration = "140ms";
+        overlayEl.style.transitionDelay = "0s";
+        closeModal(overlayEl);
+        setTimeout(() => {
+          overlayEl.style.transitionDuration = "";
+          overlayEl.style.transitionDelay = "";
+        }, 150);
+      }
+      spring(visual, flyDistance, { key: dragSpringKey, stiffness: 300, damping: 30 }, (v) => {
+        modalEl.style.transform = `translateY(${v}px)`;
+        if (v >= offscreenThreshold) fireClose();
+      }, fireClose);
+    }
+
+    // Touch events, not Pointer Events — Pointer Events support on Safari
+    // has historically been incomplete/late (full support only from iOS 13
+    // on), so on an older phone they can simply never fire at all, silently
+    // leaving every touch to the page's native scroll. Touch events have
+    // been supported since the very first iPhoneOS, so this is the more
+    // reliable choice for the actual target device here.
+    modalEl.addEventListener("touchstart", (e) => {
+      const t = e.touches[0];
+      if (!canStartDrag(t.clientY, e.target)) return;
+      startDrag(t.clientY);
+      e.preventDefault();
+    }, { passive: false });
+    document.addEventListener("touchmove", (e) => {
+      if (!dragging) return;
+      moveDrag(e.touches[0].clientY);
+      e.preventDefault();
+    }, { passive: false });
+    document.addEventListener("touchend", endDrag);
+    document.addEventListener("touchcancel", cancelDrag);
+
+    // The real signals something interrupted the gesture (tab backgrounded,
+    // app switched away, window lost focus) — unlike inactivity, these can't
+    // fire just because the user is holding still deciding whether to
+    // commit, so they're safe to treat as "recover now" rather than a guess.
+    document.addEventListener("visibilitychange", () => { if (document.hidden) cancelDrag(); });
+    window.addEventListener("blur", cancelDrag);
+
+    // Mouse events for desktop (the pilot's already-verified click-drag path).
+    modalEl.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      if (!canStartDrag(e.clientY, e.target)) return;
+      startDrag(e.clientY);
+      e.preventDefault();
+    });
+    document.addEventListener("mousemove", (e) => moveDrag(e.clientY));
+    document.addEventListener("mouseup", endDrag);
+  }
+  enableModalDragDismiss(overlay);
+
   const repeatSelect = document.getElementById("modalRepeat");
   const repeatExtra = document.getElementById("repeatExtra");
   const weekdayPicker = document.getElementById("weekdayPicker");
@@ -1443,6 +2196,146 @@
     setTimeout(() => document.getElementById("modalName").focus(), 50);
   }
 
+  // FAB-to-modal shape morph for the Add Task modal specifically. Deliberately
+  // NOT routed through openModal() — that shared function drives ~15 other
+  // modals and stays untouched. The setup block below duplicates
+  // openAddModal()'s guard checks and form reset (rather than factoring out
+  // a shared helper) so openAddModal() itself can stay completely
+  // unmodified for its other callers. Close still goes through the
+  // ordinary closeModal(overlay) — this pass only replaces how the modal
+  // becomes visible on open.
+  function openAddTaskModalMorphed() {
+    if (isDayLocked(toDateStr(currentDate))) { showToast("This day is locked. You can't add tasks to a day you've already reflected on.", "warning"); return; }
+    if (categories.length === 0) { showToast("Add a category first using the + next to the category tabs.", "warning"); return; }
+    editingTaskId = null;
+    document.getElementById("modalTitle").textContent = "Add Task";
+    document.getElementById("modalName").value = "";
+    document.getElementById("modalTime").value = "";
+    document.getElementById("modalDuration").value = "";
+    document.getElementById("modalDate").value = toDateStr(currentDate);
+    document.getElementById("modalEndDate").value = "";
+    document.getElementById("modalInterval").value = 1;
+    if (activeCategory !== "All") {
+      document.getElementById("modalCategory").value = activeCategory;
+    }
+    document.getElementById("modalIsGoal").checked = false;
+    document.getElementById("modalGoalFields").classList.remove("show");
+    document.getElementById("modalGoalWhy").value = "";
+    document.getElementById("modalGoalPlan").value = "";
+    repeatSelect.value = "none";
+    repeatExtra.classList.remove("show");
+    selectedWeekdays = [currentDate.getDay()];
+    buildWeekdayPicker();
+    document.getElementById("copiesRow").style.display = "block";
+    document.getElementById("modalCopies").value = 1;
+
+    const fab = document.getElementById("openAdd");
+    const modal = overlay.querySelector(".modal");
+    const fabRect = fab.getBoundingClientRect();
+
+    // Measure .modal's natural centered target rect (with this modal's real,
+    // just-reset content) without actually revealing it yet.
+    overlay.style.visibility = "visible";
+    overlay.style.opacity = "0";
+    const modalRect = modal.getBoundingClientRect();
+    const modalRadius = parseFloat(getComputedStyle(modal).borderRadius) || 0;
+    overlay.style.visibility = "";
+    overlay.style.opacity = "";
+
+    // Pin the real modal at its final scale up front (silently, no
+    // transition) so later, when .open triggers its CSS transition, only
+    // opacity actually changes — the clone owns all the shape/size motion.
+    modal.style.transitionProperty = "none";
+    modal.style.transform = "scale(1)";
+    void modal.offsetWidth;
+    modal.style.transitionProperty = "";
+
+    const clone = document.createElement("div");
+    clone.style.position = "fixed";
+    clone.style.top = fabRect.top + "px";
+    clone.style.left = fabRect.left + "px";
+    clone.style.width = fabRect.width + "px";
+    clone.style.height = fabRect.height + "px";
+    clone.style.borderRadius = (fabRect.width / 2) + "px";
+    clone.style.background = "var(--accent)";
+    clone.style.zIndex = "21"; // just under .modal-overlay's 22, so the real modal ends up on top once it fades in
+    clone.style.pointerEvents = "none";
+    document.body.appendChild(clone);
+
+    // Fade the real FAB out from under the clone so there's no visible
+    // duplicate at progress 0, where the clone exactly overlaps it.
+    fab.style.transitionProperty = "opacity";
+    fab.style.transitionDuration = "80ms";
+    void fab.offsetWidth;
+    fab.style.opacity = "0";
+
+    // Dim/blur the backdrop early — a fixed real-time delay (reacting to
+    // the tap itself), not tied to shape progress, so the clone spends most
+    // of its journey traveling across an already-dimming background instead
+    // of a fully bright one. Decoupled from .modal's own reveal below,
+    // which still gates on the later crossover via .open.
+    setTimeout(() => overlay.classList.add("backdrop-visible"), 80);
+
+    let revealed = false;
+    spring(0, 1, { stiffness: 260, damping: 26 }, (progress) => {
+      clone.style.top = (fabRect.top + (modalRect.top - fabRect.top) * progress) + "px";
+      clone.style.left = (fabRect.left + (modalRect.left - fabRect.left) * progress) + "px";
+      clone.style.width = (fabRect.width + (modalRect.width - fabRect.width) * progress) + "px";
+      clone.style.height = (fabRect.height + (modalRect.height - fabRect.height) * progress) + "px";
+      clone.style.borderRadius = (fabRect.width / 2 + (modalRadius - fabRect.width / 2) * progress) + "px";
+
+      if (!revealed && progress >= 0.8) {
+        revealed = true;
+        // Real modal/backdrop crossfade in on top of the still-settling
+        // clone, timed to the modal's own normal 200ms open transition.
+        overlay.style.transitionDuration = "200ms";
+        modal.style.transitionDuration = "200ms";
+        // Force a reflow between committing the duration and flipping the
+        // opacity target (.open) — otherwise the browser can collapse both
+        // into the same frame and the fade never visibly plays, same
+        // gotcha as showNextView()'s void nextEl.offsetWidth.
+        void overlay.offsetWidth;
+        // Reset the modal's pinned scale down to a real starting point so
+        // .modal's own CSS transition (transform ... -> scale(1) via
+        // .modal-overlay.open .modal) has something to visibly animate,
+        // giving the reveal a subtle scale-up alongside the opacity fade
+        // instead of only opacity moving. Silent (no transition) via the
+        // same forced-reflow pattern used earlier in this function.
+        modal.style.transitionProperty = "none";
+        modal.style.transform = "scale(0.95)";
+        void modal.offsetWidth;
+        modal.style.transitionProperty = "";
+        // Release the inline pin entirely (rather than leaving it at
+        // scale(0.95)) so .modal-overlay.open .modal's scale(1) can
+        // actually win the cascade and transition — an inline transform,
+        // at any value, always outranks a class rule and would otherwise
+        // freeze the modal at 0.95 forever.
+        modal.style.transform = "";
+        overlay.classList.add("open");
+        setTimeout(() => {
+          overlay.style.transitionDuration = "";
+          modal.style.transitionDuration = "";
+          // The now-opaque overlay backdrop already covers the FAB (it sits
+          // above it, z-index 22 vs auto), so restoring it here is invisible.
+          fab.style.opacity = "";
+          fab.style.transitionProperty = "";
+          fab.style.transitionDuration = "";
+        }, 210);
+      }
+    }, () => {
+      clone.remove();
+      // Defensive: guarantee the modal is open even if a frame skipped past
+      // the 0.55 threshold check somehow.
+      if (!overlay.classList.contains("open")) overlay.classList.add("open");
+      // .open now covers the backdrop too, so this was only ever needed to
+      // bridge the early-dim gap — drop it so it can't leak into a later,
+      // unrelated normal open of this same shared overlay (e.g. Edit Task).
+      overlay.classList.remove("backdrop-visible");
+    });
+
+    setTimeout(() => document.getElementById("modalName").focus(), 50);
+  }
+
   function openEditModal(taskId) {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
@@ -1482,6 +2375,7 @@
   }
 
   document.getElementById("openAdd").addEventListener("click", openAddModal);
+  enableFabPressSpring(document.getElementById("openAdd"));
   document.getElementById("cancelAdd").addEventListener("click", () => closeModal(overlay));
 
   function submitTaskForm() {
@@ -1673,6 +2567,10 @@
   });
 
   const catOverlay = document.getElementById("catModalOverlay");
+  // Same drag-to-dismiss as the Add Task modal — enableModalDragDismiss()
+  // is written against a generic overlay/modal pair, so this is just
+  // another call, no changes to the function itself.
+  enableModalDragDismiss(catOverlay);
 
   function buildColorSwatches(wrap, currentColor, onSelect) {
     wrap.innerHTML = "";
@@ -2074,6 +2972,10 @@
  let goalSelectedWeekdays = [];
   let editingGoalId = null;
   const goalOverlay = document.getElementById("goalModalOverlay");
+  // Same drag-to-dismiss as the Add Task modal — enableModalDragDismiss()
+  // is written against a generic overlay/modal pair, so this is just
+  // another call, no changes to the function itself.
+  enableModalDragDismiss(goalOverlay);
   const goalWeekdayPicker = document.getElementById("goalWeekdayPicker");
 
   function buildGoalWeekdayPicker() {
@@ -2115,6 +3017,7 @@
     openModal(goalOverlay);
     setTimeout(() => document.getElementById("goalName").focus(), 50);
   });
+  enableFabPressSpring(document.getElementById("openAddGoal"));
 
   document.getElementById("goalCancel").addEventListener("click", () => closeModal(goalOverlay));
 
@@ -4012,6 +4915,7 @@ let currentRange = "week";
         return;
       }
       document.getElementById("reflFormError").classList.remove("show");
+      triggerHaptic();
       lockedDays.push(dateStr);
       saveLockedDays();
       startTrialOnDayOneSeal();
