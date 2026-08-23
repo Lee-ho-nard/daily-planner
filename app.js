@@ -5320,7 +5320,7 @@ let currentRange = "week";
     const stepIndicator = document.getElementById("onboardingStepIndicator");
     // The streak preview deliberately remains presentation-only, without a
     // progress indicator; all other setup steps show their real position.
-    const PROGRESS_STEPS = [3, 4, 5, 6, 7, 8, 10];
+    const PROGRESS_STEPS = [3, 4, 5, 6, 7, 8, 9, 11];
     const currentStepNum = PROGRESS_STEPS.indexOf(currentOnboardingStep) + 1;
     const showProgress = currentStepNum > 0;
     wrap.style.display = showProgress ? "block" : "none";
@@ -5367,17 +5367,17 @@ let currentRange = "week";
       renderOnboardingStep();
       return;
     }
-    goToOnboardingStep(12);
+    goToOnboardingStep(13);
   }
 
   document.addEventListener("onboarding-auth-changed", () => {
-    if (currentOnboardingStep === 11) renderOnboardingStep();
+    if (currentOnboardingStep === 12) renderOnboardingStep();
   });
 
   function renderOnboardingStep() {
     updateOnboardingProgress();
     updateOnboardingBackButton();
-    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1 || currentOnboardingStep === 9);
+    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1 || currentOnboardingStep === 10);
     const content = document.getElementById("onboardingContent");
     const step = currentOnboardingStep;
 
@@ -5389,7 +5389,7 @@ let currentRange = "week";
           <div class="onboarding-reveal" id="obHookLine2Caption" style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:2.5rem;">A finding repeated across multiple independent workplace studies (Acuity Training and others).</div>
           <div class="onboarding-reveal" id="obHookPrompt">
             <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;">Feel like that's you?</div>
-            <button type="button" id="obHookYeah" class="cat-pill">Come with us.</button>
+            <button type="button" id="obHookYeah" class="cat-pill">Let's fix that.</button>
           </div>
           <div class="onboarding-hook-subtext" id="obHookLine3">You're building something real. Most days, there's no system keeping track of it.</div>
           <button id="obContinue" class="start-focus-btn onboarding-reveal">Continue</button>
@@ -5485,18 +5485,11 @@ let currentRange = "week";
           <label style="display:block;font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:0.5rem;font-weight:500;">What will you check off each day?</label>
           <input type="text" id="obGoalCheckoff" placeholder="e.g. Watch one episode" value="${onboardingGoalCheckoff}" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:1.5rem;">
           <div id="obGoalCategoryChips" class="ob-row-list"></div>
-          <label style="display:block;font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:0.5rem;font-weight:500;">Why does this goal matter to you?</label>
-          <input type="text" id="obGoalWhy" placeholder="Be specific" value="${onboardingGoalWhy}" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:1.5rem;">
-          <label style="display:block;font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:0.5rem;font-weight:500;">How do you plan on achieving it?</label>
-          <input type="text" id="obGoalPlan" placeholder="Be specific" value="${onboardingGoalPlan}" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:1.5rem;">
-          <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:1.5rem;">This becomes your first tracked goal, a daily repeat you can adjust anytime in the Goals tab.</div>
           <button id="obContinue" class="start-focus-btn">${onboardingGoalName ? "Continue" : "Skip for now"}</button>
         </div>
       `;
       const goalNameInput = document.getElementById("obGoalName");
       const goalCheckoffInput = document.getElementById("obGoalCheckoff");
-      const goalWhyInput = document.getElementById("obGoalWhy");
-      const goalPlanInput = document.getElementById("obGoalPlan");
       const catChipsWrap = document.getElementById("obGoalCategoryChips");
       const goalContinueBtn = document.getElementById("obContinue");
       goalNameInput.addEventListener("input", () => {
@@ -5534,13 +5527,31 @@ let currentRange = "week";
       goalContinueBtn.addEventListener("click", () => {
         onboardingGoalName = goalNameInput.value.trim();
         onboardingGoalCheckoff = onboardingGoalName ? goalCheckoffInput.value.trim() : "";
-        onboardingGoalWhy = onboardingGoalName ? goalWhyInput.value.trim() : "";
-        onboardingGoalPlan = onboardingGoalName ? goalPlanInput.value.trim() : "";
         if (!onboardingGoalName) onboardingGoalCategory = "";
         goToOnboardingStep(6);
       });
 
     } else if (step === 6) {
+      content.innerHTML = `
+        <div class="onboarding-container" style="padding-top:4rem;">
+          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">A couple more details.</div>
+          <label style="display:block;font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:0.5rem;font-weight:500;">Why does this goal matter to you?</label>
+          <input type="text" id="obGoalWhy" placeholder="Be specific" value="${onboardingGoalWhy}" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:1.5rem;">
+          <label style="display:block;font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:0.5rem;font-weight:500;">How do you plan on achieving it?</label>
+          <input type="text" id="obGoalPlan" placeholder="Be specific" value="${onboardingGoalPlan}" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:1.5rem;">
+          <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:1.5rem;">This becomes your first tracked goal, a daily repeat you can adjust anytime in the Goals tab.</div>
+          <button id="obContinue" class="start-focus-btn">Continue</button>
+        </div>
+      `;
+      const goalWhyInput = document.getElementById("obGoalWhy");
+      const goalPlanInput = document.getElementById("obGoalPlan");
+      document.getElementById("obContinue").addEventListener("click", () => {
+        onboardingGoalWhy = onboardingGoalName ? goalWhyInput.value.trim() : "";
+        onboardingGoalPlan = onboardingGoalName ? goalPlanInput.value.trim() : "";
+        goToOnboardingStep(7);
+      });
+
+    } else if (step === 7) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div class="onboarding-reveal" id="obTrackLeadIn" style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:0.5rem;">Now let's set up a few tasks.</div>
@@ -5585,10 +5596,10 @@ let currentRange = "week";
         chipsWrap.appendChild(row);
       });
       btn.addEventListener("click", () => {
-        if (onboardingCategories.length) goToOnboardingStep(7);
+        if (onboardingCategories.length) goToOnboardingStep(8);
       });
 
-    } else if (step === 7) {
+    } else if (step === 8) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.5rem;">Let's get specific.</div>
@@ -5645,10 +5656,10 @@ let currentRange = "week";
           const val = input.value.trim();
           if (val) onboardingSeedTasks.push({ category: row.dataset.cat, taskName: val });
         });
-        goToOnboardingStep(8);
+        goToOnboardingStep(9);
       });
 
-    } else if (step === 8) {
+    } else if (step === 9) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;line-height:1.8;margin-bottom:2.5rem;">
@@ -5665,7 +5676,7 @@ let currentRange = "week";
       requestAnimationFrame(() => { obRevealIn(document.getElementById("obSolvesHeader")); });
       setTimeout(() => { obRevealIn(document.getElementById("obSolvesLines")); }, 200);
       const genericLines = [
-        "The streak shows what actually happened. Not what you meant to do.",
+        "The streak reflects what you actually complete, a real record, not a plan.",
         "Deep Work locks out everything but one task.",
         "Reflection ends the day. No editing after."
       ];
@@ -5691,9 +5702,9 @@ let currentRange = "week";
       document.getElementById("obSolvesLine1").textContent = lines[0];
       document.getElementById("obSolvesLine2").textContent = lines[1];
       document.getElementById("obSolvesLine3").textContent = lines[2];
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(9));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(10));
 
-    } else if (step === 9) {
+    } else if (step === 10) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Your first streak starts tonight.</div>
@@ -5713,9 +5724,9 @@ let currentRange = "week";
         dot.className = i === 0 ? "goal-dot today-ready" : "goal-dot future";
         dotsWrap.appendChild(dot);
       }
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(10));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(11));
 
-    } else if (step === 10) {
+    } else if (step === 11) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
           <div id="obSynthesisHeading" style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;"></div>
@@ -5751,20 +5762,20 @@ let currentRange = "week";
       });
       document.getElementById("obContinue").addEventListener("click", () => {
         finalizeOnboardingData();
-        goToOnboardingStep(11);
+        goToOnboardingStep(12);
       });
 
-    } else if (step === 11) {
+    } else if (step === 12) {
       // Reuses the exact same #authModalOverlay/openAuthModal("signup")
       // Settings already uses (window.openOnboardingAuthModal, exposed by
       // auth-ui.js) rather than rebuilding a Google/email form here.
       // finalizeOnboardingData() already wrote this session's tasks/
-      // categories to localStorage back at step 10 — signing up here runs
+      // categories to localStorage back at step 11 — signing up here runs
       // straight into the existing runMigrationIfNeeded() path, so that
       // local data gets imported into the new account automatically.
       const authUser = window.authBridge && window.authBridge.getCurrentUser ? window.authBridge.getCurrentUser() : null;
       if (authUser && !onboardingAccountNeedsEmailVerification()) {
-        goToOnboardingStep(12);
+        goToOnboardingStep(13);
         return;
       }
       if (authUser && onboardingAccountNeedsEmailVerification()) {
@@ -5787,7 +5798,7 @@ let currentRange = "week";
             const fresh = await window.authBridge.reloadCurrentUser();
             if (fresh && fresh.emailVerified) {
               showToast("Email verified. You're all set.", "success");
-              goToOnboardingStep(12);
+              goToOnboardingStep(13);
             } else {
               statusEl.textContent = "Not verified yet. Check your inbox (and spam), click the link, then try again.";
             }
@@ -5826,7 +5837,7 @@ let currentRange = "week";
         });
       }
 
-    } else if (step === 12) {
+    } else if (step === 13) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Your first 7 days are on us.</div>
@@ -5920,13 +5931,13 @@ let currentRange = "week";
 
     const wasOnboarding = document.body.classList.contains("onboarding-active");
     if (wasOnboarding && categories.length > 0) {
-      // Signing up on the account-creation step (11) migrates this
+      // Signing up on the account-creation step (12) migrates this
       // session's local data in, landing right here with categories now
-      // populated. Let step 11's own logic decide whether that means
-      // advancing to the trial-explainer step (12) or showing the
+      // populated. Let step 12's own logic decide whether that means
+      // advancing to the trial-explainer step (13) or showing the
       // verification screen first, instead of the general case below,
       // which would otherwise skip past both.
-      if (currentOnboardingStep === 11) {
+      if (currentOnboardingStep === 12) {
         advanceOnboardingAfterAccountStep();
       } else {
         localStorage.setItem("onboardingComplete", "true");
