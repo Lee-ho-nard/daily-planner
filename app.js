@@ -5320,7 +5320,10 @@ let currentRange = "week";
     const stepIndicator = document.getElementById("onboardingStepIndicator");
     // The streak preview deliberately remains presentation-only, without a
     // progress indicator; all other setup steps show their real position.
-    const PROGRESS_STEPS = [3, 4, 5, 6, 7, 8, 9, 11];
+    // Step 6 ("A couple more details") is itself skipped entirely when no
+    // goal was entered on step 5, so it's dropped from the count too —
+    // those users see "Step X of 7" instead of "Step X of 8".
+    const PROGRESS_STEPS = onboardingGoalName ? [3, 4, 5, 6, 7, 8, 9, 11] : [3, 4, 5, 7, 8, 9, 11];
     const currentStepNum = PROGRESS_STEPS.indexOf(currentOnboardingStep) + 1;
     const showProgress = currentStepNum > 0;
     wrap.style.display = showProgress ? "block" : "none";
@@ -5351,7 +5354,9 @@ let currentRange = "week";
 
   document.getElementById("onboardingBackBtn").addEventListener("click", () => {
     if (currentOnboardingStep <= 1) return;
-    goToOnboardingStep(currentOnboardingStep - 1);
+    let target = currentOnboardingStep - 1;
+    if (target === 6 && !onboardingGoalName) target = 5;
+    goToOnboardingStep(target);
   });
 
   function onboardingAccountNeedsEmailVerification() {
@@ -5393,6 +5398,7 @@ let currentRange = "week";
           </div>
           <div class="onboarding-hook-subtext" id="obHookLine3">You're building something real. Most days, there's no system keeping track of it.</div>
           <button id="obContinue" class="start-focus-btn onboarding-reveal">Continue</button>
+          <button type="button" id="obSignInEscape" style="display:block;margin:1.25rem auto 0;background:none;border:none;color:var(--text-muted);font-size:var(--text-xs);text-decoration:underline;cursor:pointer;font-family:inherit;">Already have an account? Sign in</button>
         </div>
       `;
       // obHookLine1 (.onboarding-hook-headline) and obHookLine3
@@ -5416,6 +5422,9 @@ let currentRange = "week";
         }, 250);
       });
       document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(2));
+      document.getElementById("obSignInEscape").addEventListener("click", () => {
+        if (typeof window.openOnboardingSignInModal === "function") window.openOnboardingSignInModal();
+      });
 
     } else if (step === 2) {
       content.innerHTML = `
@@ -5528,7 +5537,7 @@ let currentRange = "week";
         onboardingGoalName = goalNameInput.value.trim();
         onboardingGoalCheckoff = onboardingGoalName ? goalCheckoffInput.value.trim() : "";
         if (!onboardingGoalName) onboardingGoalCategory = "";
-        goToOnboardingStep(6);
+        goToOnboardingStep(onboardingGoalName ? 6 : 7);
       });
 
     } else if (step === 6) {
@@ -5888,12 +5897,24 @@ let currentRange = "week";
     }
 
     localStorage.setItem("userIdentity", onboardingIdentity);
+    // Marks that categories/tasks below were just written by an onboarding
+    // draft, not a real account — save() below is only here to feed the
+    // account-creation migration path (runMigrationIfNeeded() reads these
+    // same keys), not to make this data durable yet. Without this flag, a
+    // refresh at the still-to-come create-account step reads these
+    // now-non-empty categories back at bootstrap and skips straight past
+    // onboarding into the main app with no account ever created — see the
+    // bootstrap gate at the bottom of this file. Cleared once onboarding
+    // actually finishes (completeOnboarding()) or exits via a real signed-in
+    // session (hydrateFromFirestore()).
+    localStorage.setItem("onboardingDraftPending", "true");
 
     save();
   }
 
   function completeOnboarding() {
     localStorage.setItem("onboardingComplete", "true");
+    localStorage.removeItem("onboardingDraftPending");
     document.getElementById("onboardingView").classList.remove("visible");
     document.body.classList.remove("onboarding-active");
     renderAll();
@@ -5941,6 +5962,7 @@ let currentRange = "week";
         advanceOnboardingAfterAccountStep();
       } else {
         localStorage.setItem("onboardingComplete", "true");
+        localStorage.removeItem("onboardingDraftPending");
         document.getElementById("onboardingView").classList.remove("visible");
         document.body.classList.remove("onboarding-active");
         switchView("planner");
@@ -5983,8 +6005,24 @@ let currentRange = "week";
     rerenderCurrentView();
   }
 
+  // Set by auth-ui.js immediately before calling signInWithGoogle() on the
+  // onboarding create-account screen, cleared right after it determines
+  // whether the resulting account is actually new. Firestore's onSnapshot
+  // listeners can resolve (often from local cache, near-instantly for an
+  // account that's been signed into on this device before) and dispatch
+  // firestore-data-changed — repeatedly, once per collection, well before
+  // auth-ui.js's own await chain gets a chance to react to the same sign-in
+  // — without this guard on BOTH listeners below, an existing-account
+  // collision could hydrate real account data and advance/exit onboarding
+  // before auth-ui.js's isNewUser check and sign-out ever run. Guarding only
+  // firestore-auth-ready isn't enough: firestore-data-changed fires first
+  // and far more often (once per collection, up to 8 times), so it wins
+  // this race every time if left unguarded.
+  window.pendingGoogleAccountCheck = false;
+
   document.addEventListener("firestore-auth-ready", (e) => {
     if (e.detail.signedIn) {
+      if (window.pendingGoogleAccountCheck) return;
       hydrateFromFirestore();
     } else if (hasBeenSignedInThisSession) {
       hasBeenSignedInThisSession = false;
@@ -5992,6 +6030,7 @@ let currentRange = "week";
     }
   });
   document.addEventListener("firestore-data-changed", () => {
+    if (window.pendingGoogleAccountCheck) return;
     hydrateFromFirestore();
   });
 
@@ -6009,7 +6048,17 @@ let currentRange = "week";
   enableModalDragDismiss(document.getElementById("reauthModalOverlay"));
   enableModalDragDismiss(document.getElementById("authModalOverlay"));
 
-  if (localStorage.getItem("onboardingComplete") !== "true" && categories.length === 0) {
+  // categories.length === 0 alone isn't a safe "needs onboarding" signal:
+  // finalizeOnboardingData() (step 11 -> 12) deliberately writes the
+  // onboarding draft into these same categories/tasks keys early, purely so
+  // the account-creation step's migration path has local data to import —
+  // not because onboarding is actually done. onboardingDraftPending catches
+  // that case so a refresh mid-onboarding (e.g. sitting on the
+  // create-account step with no account yet) lands back in onboarding
+  // instead of straight into the main app on an unauthenticated, half-
+  // finished draft.
+  const onboardingDraftPending = localStorage.getItem("onboardingDraftPending") === "true";
+  if (localStorage.getItem("onboardingComplete") !== "true" && (categories.length === 0 || onboardingDraftPending)) {
     document.body.classList.add("onboarding-active");
     document.getElementById("onboardingView").classList.add("visible");
     renderOnboardingStep();

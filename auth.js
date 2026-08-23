@@ -11,8 +11,11 @@ import {
   deleteUser,
   EmailAuthProvider,
   reauthenticateWithCredential,
-  reauthenticateWithPopup
+  reauthenticateWithPopup,
+  getAdditionalUserInfo
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+
+export { getAdditionalUserInfo };
 import { runMigrationIfNeeded } from "./migrate.js";
 
 // Fixed, not window.location.origin — using the current origin here
@@ -124,19 +127,40 @@ export function onAuthChange(callback) {
 
 let migrationRanForUid = null;
 
+// Bumped on every single onAuthStateChanged firing, regardless of branch.
+// The migration branch below awaits a Firestore read (runMigrationIfNeeded)
+// before notifying authStateListeners — if a newer auth event (e.g. a
+// sign-out fired by our own code reacting to that same sign-in) happens
+// while that read is still in flight, this lets the now-stale invocation
+// recognize it's been superseded and discard its result instead of calling
+// authStateListeners.forEach() with a stale user object. Without this, a
+// stale, delayed "signed in" notification can re-trigger firestore-sync's
+// startListening(uid) for an account that's no longer actually signed in,
+// making firestoreBridge.isSignedIn() lie about the real auth state.
+let authGeneration = 0;
+
 onAuthStateChanged(auth, async (user) => {
+  authGeneration += 1;
+  const myGeneration = authGeneration;
+
   if (user && migrationRanForUid !== user.uid) {
     migrationRanForUid = user.uid;
     try {
       const result = await runMigrationIfNeeded(user.uid);
+      if (myGeneration !== authGeneration) return; // superseded by a newer auth event
       authStateListeners.forEach(cb => cb(user, result));
       return;
     } catch (err) {
       console.error("Migration failed:", err);
+      if (myGeneration !== authGeneration) return; // superseded by a newer auth event
       authStateListeners.forEach(cb => cb(user, { imported: false, reason: "error", error: err }));
       return;
     }
   }
+  // Reached synchronously (no await before it in this branch), so there's
+  // no window for a newer event to interleave — no generation check needed
+  // here, but the counter above still advances so it does its job when a
+  // later event like this one needs to invalidate an earlier in-flight one.
   if (!user) migrationRanForUid = null;
   authStateListeners.forEach(cb => cb(user, null));
 });

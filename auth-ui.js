@@ -12,7 +12,8 @@ import {
   reauthenticateWithPassword,
   reauthenticateWithGoogle,
   changePassword,
-  deleteCurrentUser
+  deleteCurrentUser,
+  getAdditionalUserInfo
 } from "./auth.js";
 
 // Local open/close helpers matching app.js's .modal-overlay "open" class
@@ -104,6 +105,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const emailInput = document.getElementById("authEmailInput");
   const passwordInput = document.getElementById("authPasswordInput");
   const errorEl = document.getElementById("authError");
+  const existingAccountLink = document.getElementById("authExistingAccountSignIn");
   const submitBtn = document.getElementById("authSubmitBtn");
   const modeToggleBtn = document.getElementById("authModeToggle");
   const titleEl = document.getElementById("authModalTitle");
@@ -148,18 +150,26 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   let mode = "signin";
+  let modeLocked = false;
+  let requireNewGoogleAccount = false;
+  let existingAccountDetected = false;
   let currentUser = null;
 
   function renderMode() {
     titleEl.textContent = mode === "signin" ? "Sign in" : "Create account";
     submitBtn.textContent = mode === "signin" ? "Sign in" : "Create account";
+    modeToggleBtn.style.display = modeLocked ? "none" : "";
     modeToggleBtn.textContent = mode === "signin" ? "New here? Create an account" : "Already have an account? Sign in";
     errorEl.classList.remove("show");
+    existingAccountLink.style.display = "none";
+    existingAccountDetected = false;
   }
 
-  function openAuthModal(initialMode) {
+  function openAuthModal(initialMode, opts) {
     closeModal(settingsOverlay);
     mode = initialMode || "signin";
+    modeLocked = !!(opts && opts.lockMode);
+    requireNewGoogleAccount = !!(opts && opts.requireNewAccount);
     emailInput.value = "";
     passwordInput.value = "";
     renderMode();
@@ -167,11 +177,27 @@ document.addEventListener("DOMContentLoaded", () => {
     setTimeout(() => emailInput.focus(), 50);
   }
 
-  // Lets onboarding's account-creation step open this same modal (in signup
-  // mode) rather than app.js rebuilding its own Google/email form — the
-  // one thing onboarding needs from this file that isn't already an event
-  // listener on markup app.js doesn't own.
-  window.openOnboardingAuthModal = () => openAuthModal("signup");
+  // Lets onboarding's account-creation step (the final step, reached only
+  // after completing onboarding as a new user) open this same modal rather
+  // than app.js rebuilding its own Google/email form. Locked to signup —
+  // anyone reaching that step has already gone through onboarding as a new
+  // user, so there's no legitimate "sign in" path from there; an existing
+  // user who ends up on that screen should use the separate escape hatch on
+  // step 1 (window.openOnboardingSignInModal) instead, which exits
+  // onboarding first. requireNewAccount additionally guards the Google
+  // button: Google sign-in bypasses the toggle entirely (picking an
+  // already-registered Google account signs straight into it), so that
+  // path is checked separately after the OAuth popup resolves.
+  window.openOnboardingAuthModal = () => openAuthModal("signup", { lockMode: true, requireNewAccount: true });
+
+  // The step-1 "Already have an account? Sign in" escape hatch — opens this
+  // same modal locked to signin. Onboarding itself is left running behind
+  // the modal (app.js doesn't exit it beforehand): cancel returns to
+  // onboarding untouched, while a successful sign-in is picked up by
+  // hydrateFromFirestore()'s existing "signed in while onboarding-active"
+  // branch, which exits onboarding to the planner once real account data
+  // is confirmed.
+  window.openOnboardingSignInModal = () => openAuthModal("signin", { lockMode: true });
 
   function renderAccountDetails(user) {
     if (!user) return;
@@ -203,10 +229,24 @@ document.addEventListener("DOMContentLoaded", () => {
   settingsOverlay.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(settingsOverlay); });
 
   signInBtn.addEventListener("click", () => openAuthModal());
-  document.getElementById("authCancelBtn").addEventListener("click", () => closeModal(overlay));
-  overlay.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(overlay); });
+
+  // Cancelling out of the "already have a Flit account" state (surfaced
+  // when a Google sign-in during onboarding turns out to belong to an
+  // existing user) must leave Firebase Auth itself signed out, not just
+  // the UI reset — otherwise the background session from that Google
+  // pick stays live even though the modal looks like a fresh form again.
+  async function dismissAuthModal() {
+    if (existingAccountDetected) {
+      existingAccountDetected = false;
+      try { await signOutUser(); } catch (err) { /* best-effort */ }
+    }
+    closeModal(overlay);
+  }
+  document.getElementById("authCancelBtn").addEventListener("click", dismissAuthModal);
+  overlay.addEventListener("keydown", (e) => { if (e.key === "Escape") dismissAuthModal(); });
 
   modeToggleBtn.addEventListener("click", () => {
+    if (modeLocked) return;
     mode = mode === "signin" ? "signup" : "signin";
     renderMode();
   });
@@ -218,14 +258,68 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   document.getElementById("authGoogleBtn").addEventListener("click", async () => {
+    // Firestore's own onSnapshot-driven "signed in" event can fire (often
+    // from local cache, near-instantly for an account previously used on
+    // this device) before this handler even gets to inspect isNewUser below
+    // — that race is what let an existing-account collision hydrate real
+    // data and advance onboarding ahead of the sign-out further down. This
+    // flag tells app.js's listener to hold off until this handler has made
+    // its determination; see the "firestore-auth-ready" listener in app.js.
+    if (requireNewGoogleAccount) window.pendingGoogleAccountCheck = true;
     try {
-      await signInWithGoogle();
+      const result = await signInWithGoogle();
+      if (requireNewGoogleAccount) {
+        const info = getAdditionalUserInfo(result);
+        if (!info || !info.isNewUser) {
+          // This Google account already has a Flit account behind it —
+          // signInWithPopup just silently signed into it instead of
+          // creating a new one. Onboarding is new-users-only, so back out
+          // immediately rather than letting them land in the app as if
+          // they'd just finished setup on someone else's account.
+          try { await signOutUser(); } catch (signOutErr) { /* best-effort */ }
+          window.pendingGoogleAccountCheck = false;
+          const stillSignedIn = getCurrentUser();
+          if (stillSignedIn) {
+            console.error("Sign-out after existing-account Google collision did not take effect — still signed in as", stillSignedIn.uid);
+          }
+          errorEl.textContent = "Looks like you already have a Flit account.";
+          errorEl.classList.add("show");
+          existingAccountLink.style.display = "block";
+          existingAccountDetected = true;
+          return;
+        }
+        // Genuinely new account: the "firestore-auth-ready" event above was
+        // held back (or hadn't fired yet) while the check above was
+        // pending. Clear the guard and, since that event only ever
+        // dispatches once per uid, explicitly run the hydrate it would
+        // have triggered — later "firestore-data-changed" events (e.g.
+        // once the onboarding-data migration lands) keep it in sync from
+        // here same as any other sign-up.
+        window.pendingGoogleAccountCheck = false;
+        if (typeof window.hydrateFromFirestore === "function") window.hydrateFromFirestore();
+      }
       closeModal(overlay);
       notifyOnboardingAuthChanged();
     } catch (err) {
+      window.pendingGoogleAccountCheck = false;
       const msg = friendlyAuthError(err);
       if (msg) { errorEl.textContent = msg; errorEl.classList.add("show"); }
     }
+  });
+
+  existingAccountLink.addEventListener("click", async () => {
+    // Same guarantee as the Cancel path: don't carry the rejected Google
+    // session forward into the sign-in flow, even though it was already
+    // signed out once at detection time above — belt and suspenders.
+    existingAccountDetected = false;
+    try { await signOutUser(); } catch (err) { /* best-effort */ }
+    // Reroute through step 1's own sign-in escape hatch: jump onboarding
+    // back to step 1 first so a real sign-in from here is treated the same
+    // as that entry point (hydrateFromFirestore() exits to the planner),
+    // rather than being mistaken for just having finished the create-
+    // account step.
+    if (typeof window.goToOnboardingStep === "function") window.goToOnboardingStep(1);
+    openAuthModal("signin", { lockMode: true });
   });
 
   submitBtn.addEventListener("click", async () => {
