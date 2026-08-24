@@ -235,6 +235,28 @@
      "darkened 48% toward black". */
   .task-category { font-size: var(--text-xs); font-weight: 500; padding: 0.18rem 0.55rem; border-radius: 999px; background: color-mix(in srgb, var(--task-cat-color) 22%, transparent); color: color-mix(in srgb, var(--task-cat-color) 52%, black); }
   :root[data-theme="dark"] .task-category { color: var(--task-cat-color); }
+
+  /* Reusable status-badge pattern for task states beyond .task-item.done's
+     strikethrough — same tinted-pill technique as .checkbox.frozen/
+     .goal-dot.frozen and (per that fix) .task-category: low-opacity tinted
+     background + darkened/lightened-for-legibility text in the status
+     color, small dot marker via currentColor so it never drifts out of
+     sync with the text. Prep only — not wired to any task-item yet. If/
+     when overdue-task detection is built, it'd hook into renderTasks()'s
+     per-task <li> construction in app.js (~line 1593, where .task-category
+     itself is created) — there's no "overdue" concept in the data model
+     yet, only date/done, so detection logic itself still needs to be
+     written, not just the badge's markup insertion. */
+  .status-badge { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: var(--text-xs); font-weight: 600; }
+  .status-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .status-badge.overdue { background: color-mix(in srgb, var(--danger) 22%, transparent); color: color-mix(in srgb, var(--danger) 52%, black); }
+  :root[data-theme="dark"] .status-badge.overdue { color: color-mix(in srgb, var(--danger) 60%, white); }
+  /* Fixed ice-blue, not a --variable — matches .checkbox.frozen/
+     .goal-dot.frozen's existing #6FA8DC exactly, same color in both modes,
+     only the text darken/lighten treatment differs per mode. */
+  .status-badge.frozen { background: color-mix(in srgb, #6FA8DC 22%, transparent); color: color-mix(in srgb, #6FA8DC 52%, black); }
+  :root[data-theme="dark"] .status-badge.frozen { color: color-mix(in srgb, #6FA8DC 60%, white); }
+
   .delete-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: var(--text-lg); transition: color 0.15s; }
   .delete-btn:hover { color: var(--danger); }
 
