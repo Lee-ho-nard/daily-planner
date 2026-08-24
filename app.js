@@ -5733,22 +5733,28 @@ let currentRange = "week";
     } else if (step === 10) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
-          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">What's one thing you want to do every day?</div>
-          <input type="text" id="obDailyTask" placeholder="e.g. Read for 20 minutes" value="${onboardingDailyTaskName}" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:1.5rem;">
-          <button id="obContinue" class="start-focus-btn">Continue</button>
-          <button id="obDailyTaskSkip" type="button" style="display:block;margin:1rem auto 0;background:none;border:none;color:var(--text-muted);font-size:var(--text-xs);text-decoration:underline;cursor:pointer;font-family:inherit;">Skip</button>
+          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Build your first habit.</div>
+          <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1.5rem;line-height:1.6;">Pick one thing to do every day. Completing it keeps your streak alive.</div>
+          <input type="text" id="obDailyTask" placeholder="e.g. Read for 20 minutes" value="${onboardingDailyTaskName}" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:0.5rem;">
+          <div class="field-error" id="obDailyTaskError">Enter something. Even one small habit counts.</div>
+          <button id="obContinue" class="start-focus-btn" style="margin-top:1rem;">Continue</button>
         </div>
       `;
       const dailyInput = document.getElementById("obDailyTask");
       const dailyContinueBtn = document.getElementById("obContinue");
-      dailyInput.addEventListener("input", () => { onboardingDailyTaskName = dailyInput.value; });
+      const dailyError = document.getElementById("obDailyTaskError");
+      dailyInput.addEventListener("input", () => {
+        onboardingDailyTaskName = dailyInput.value;
+        if (dailyInput.value.trim()) dailyError.classList.remove("show");
+      });
       dailyInput.addEventListener("keydown", (e) => { if (e.key === "Enter") dailyContinueBtn.click(); });
       dailyContinueBtn.addEventListener("click", () => {
-        onboardingDailyTaskName = dailyInput.value.trim();
-        goToOnboardingStep(11);
-      });
-      document.getElementById("obDailyTaskSkip").addEventListener("click", () => {
-        onboardingDailyTaskName = "";
+        const trimmed = dailyInput.value.trim();
+        if (!trimmed) {
+          dailyError.classList.add("show");
+          return;
+        }
+        onboardingDailyTaskName = trimmed;
         goToOnboardingStep(11);
       });
       setTimeout(() => dailyInput.focus(), 50);
