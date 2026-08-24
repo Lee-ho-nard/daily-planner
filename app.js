@@ -1687,7 +1687,7 @@
 
       const cat = document.createElement("span");
       cat.className = "task-category";
-      cat.style.background = categoryColor(task.category);
+      cat.style.setProperty("--task-cat-color", categoryColor(task.category));
       cat.textContent = task.category;
 
       const del = document.createElement("button");

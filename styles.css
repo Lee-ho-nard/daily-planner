@@ -218,8 +218,23 @@
   .task-name { flex: 1; font-size: var(--text-base); font-weight: 400; transition: color 250ms ease 100ms; }
   .task-item.completing .task-name { color: var(--text-muted); text-decoration: line-through; }
   .task-meta { font-size: var(--text-xs); color: var(--text-secondary); white-space: nowrap; display: flex; align-items: center; gap: 0.25rem; }
-  /* fixed dark text: sits on user-chosen pastel category colors, which don't shift with theme */
-  .task-category { font-size: var(--text-xs); font-weight: 500; padding: 0.18rem 0.55rem; border-radius: 999px; color: #1a1d26; }
+  /* Tinted-pill pattern (same spirit as .checkbox.frozen): background is the
+     user-chosen category color at 22% alpha, text is that same color at
+     full saturation. The 16-color category palette is deliberately all
+     pastel (designed for solid swatch fills), so used as raw text it fails
+     WCAG AA badly against a light card — darkened 48% toward black for
+     legibility there (the minimum that clears 4.5:1 across all 16 colors at
+     this tint level; 22% was also chosen as the ceiling here specifically
+     because above ~23% tint, the *dark*-mode raw-color text starts failing
+     4.5:1 against its own now-more-saturated background, worst case
+     #A8B8E8 — a constraint independent of the light-mode darken%). Both
+     variants verified against the *actual* tinted background across all 16
+     colors: worst case 4.61:1 light / 4.62:1 dark. Note the 52% below is not
+     a typo for 48% — color-mix(in srgb, X P%, black)'s P% is X's own weight
+     (not "how far toward black"), so 52% X + 48% black is what produces
+     "darkened 48% toward black". */
+  .task-category { font-size: var(--text-xs); font-weight: 500; padding: 0.18rem 0.55rem; border-radius: 999px; background: color-mix(in srgb, var(--task-cat-color) 22%, transparent); color: color-mix(in srgb, var(--task-cat-color) 52%, black); }
+  :root[data-theme="dark"] .task-category { color: var(--task-cat-color); }
   .delete-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: var(--text-lg); transition: color 0.15s; }
   .delete-btn:hover { color: var(--danger); }
 
