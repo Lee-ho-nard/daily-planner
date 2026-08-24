@@ -167,7 +167,9 @@ document.addEventListener("DOMContentLoaded", () => {
     reloadCurrentUser,
     sendVerificationEmail,
     hasPasswordProvider,
-    hasGoogleProvider
+    hasGoogleProvider,
+    deleteCurrentUser,
+    clearAuthCredentialFields
   };
 
   let mode = "signin";
@@ -196,6 +198,16 @@ document.addEventListener("DOMContentLoaded", () => {
     renderMode();
     openModal(overlay);
     setTimeout(() => emailInput.focus(), 50);
+  }
+
+  // Called by app.js's onboarding "Wrong email? Start over" handler right
+  // after deleting the just-created auth user, so the modal doesn't still
+  // hold the wrong email if something reads these fields before the user
+  // taps "Create account" again — openAuthModal() also resets them on open,
+  // this just closes the gap between deletion and that next open.
+  function clearAuthCredentialFields() {
+    emailInput.value = "";
+    passwordInput.value = "";
   }
 
   // Lets onboarding's account-creation step (the final step, reached only

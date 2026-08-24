@@ -5837,6 +5837,7 @@ let currentRange = "week";
             <div id="obVerifyStatus" style="font-size:var(--text-sm);color:var(--text-muted);margin-bottom:1rem;min-height:1.25rem;"></div>
             <button id="obCheckVerifiedBtn" class="start-focus-btn">I've verified my email</button>
             <button id="obResendVerifyBtn" class="auth-mode-toggle" style="margin-top:1rem;">Resend verification email</button>
+            <button id="obWrongEmailBtn" class="auth-mode-toggle" style="margin-top:0.5rem;color:var(--text-muted);font-size:var(--text-xs);">Wrong email? Start over</button>
           </div>
         `;
         document.getElementById("obVerifyEmail").textContent = authUser.email || "your email";
@@ -5872,6 +5873,31 @@ let currentRange = "week";
               ? "Too many attempts. Wait a few minutes, then try again."
               : "Couldn't send the email. Try again shortly.";
           } finally {
+            btn.disabled = false;
+          }
+        });
+        document.getElementById("obWrongEmailBtn").addEventListener("click", async () => {
+          const btn = document.getElementById("obWrongEmailBtn");
+          btn.disabled = true;
+          statusEl.textContent = "";
+          try {
+            // deleteCurrentUser() handles session cleanup itself (Firebase
+            // signs the user out as part of deleting them) — no explicit
+            // sign-out needed, and none should happen first, since that
+            // would leave the account behind undeleted.
+            await window.authBridge.deleteCurrentUser();
+            if (typeof window.authBridge.clearAuthCredentialFields === "function") {
+              window.authBridge.clearAuthCredentialFields();
+            }
+            // Only the auth credentials are reset here — onboardingDraft
+            // and every other in-memory onboarding field (name, identity,
+            // ageBracket, categories, tasks, goal/anchor task) are left
+            // exactly as finalizeOnboardingData() built them on step 12, so
+            // step 13 re-renders as a fresh account-creation prompt with the
+            // rest of onboarding untouched.
+            goToOnboardingStep(13);
+          } catch (err) {
+            statusEl.textContent = "Could not remove account, please try again.";
             btn.disabled = false;
           }
         });
