@@ -447,6 +447,17 @@
     localStorage.setItem("tasks", JSON.stringify(tasks));
     localStorage.setItem("categories", JSON.stringify(categories));
   }
+  // Signed-in users' identity now lives only on users/{uid} (written by
+  // onboarding's Firestore flush, never localStorage) — fall back to
+  // localStorage's "userIdentity" for signed-out/legacy users who still
+  // have it there from before this refactor.
+  function getUserIdentity() {
+    if (window.firestoreBridge && window.firestoreBridge.isSignedIn()) {
+      const account = window.firestoreBridge.getAccountInfo();
+      return (account && account.identity) || "";
+    }
+    return localStorage.getItem("userIdentity") || "";
+  }
   function categoryColor(name) {
     const cat = categories.find(c => c.name === name);
     return cat ? cat.color : "var(--border)";
@@ -1230,7 +1241,7 @@
   // --- Goals ---
   function renderGoalsIdentityCard(goalTasks) {
     const card = document.getElementById("goalsIdentityCard");
-    const identity = localStorage.getItem("userIdentity");
+    const identity = getUserIdentity();
     if (!identity) { card.innerHTML = ""; return; }
     let bestStreak = 0;
     let bestGoalName = "";
@@ -3796,7 +3807,7 @@ let currentRange = "week";
   }
 
   function identityInsight() {
-    const identity = localStorage.getItem("userIdentity");
+    const identity = getUserIdentity();
     if (!identity) return null;
     const goalTasks = tasks.filter(t => t.isGoal);
     let bestStreak = 0;
@@ -5243,6 +5254,7 @@ let currentRange = "week";
   let onboardingGoalCheckoff = "";
   let onboardingGoalWhy = "";
   let onboardingGoalPlan = "";
+  let onboardingDailyTaskName = "";
   // Guards finalizeOnboardingData() against running more than once. Without
   // it, going back from the account-creation/verification step to the
   // synthesis step ("here's what we set up") and pressing "Let's go" again
@@ -5250,6 +5262,11 @@ let currentRange = "week";
   // were already duplicate-guarded by name, tasks weren't) — real,
   // synced-to-Firestore duplicate data, not just a display glitch.
   let onboardingDataFinalized = false;
+  // Single in-memory bag for onboarding's Firestore payload, built by
+  // finalizeOnboardingData() and flushed by auth-ui.js right after account
+  // creation succeeds (writeOnboardingData() in migrate.js). Never touches
+  // localStorage.
+  let onboardingDraft = null;
 
   function setMainAppVisible(visible) {
     document.querySelector(".container").style.display = visible ? "" : "none";
@@ -5323,7 +5340,7 @@ let currentRange = "week";
     // Step 6 ("A couple more details") is itself skipped entirely when no
     // goal was entered on step 5, so it's dropped from the count too —
     // those users see "Step X of 7" instead of "Step X of 8".
-    const PROGRESS_STEPS = onboardingGoalName ? [3, 4, 5, 6, 7, 8, 9, 11] : [3, 4, 5, 7, 8, 9, 11];
+    const PROGRESS_STEPS = onboardingGoalName ? [3, 4, 5, 6, 7, 8, 9, 10, 12] : [3, 4, 5, 7, 8, 9, 10, 12];
     const currentStepNum = PROGRESS_STEPS.indexOf(currentOnboardingStep) + 1;
     const showProgress = currentStepNum > 0;
     wrap.style.display = showProgress ? "block" : "none";
@@ -5372,17 +5389,17 @@ let currentRange = "week";
       renderOnboardingStep();
       return;
     }
-    goToOnboardingStep(13);
+    goToOnboardingStep(14);
   }
 
   document.addEventListener("onboarding-auth-changed", () => {
-    if (currentOnboardingStep === 12) renderOnboardingStep();
+    if (currentOnboardingStep === 13) renderOnboardingStep();
   });
 
   function renderOnboardingStep() {
     updateOnboardingProgress();
     updateOnboardingBackButton();
-    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1 || currentOnboardingStep === 10);
+    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1 || currentOnboardingStep === 11);
     const content = document.getElementById("onboardingContent");
     const step = currentOnboardingStep;
 
@@ -5715,9 +5732,32 @@ let currentRange = "week";
 
     } else if (step === 10) {
       content.innerHTML = `
+        <div class="onboarding-container" style="padding-top:4rem;">
+          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;">What's one thing you want to do every day?</div>
+          <input type="text" id="obDailyTask" placeholder="e.g. Read for 20 minutes" value="${onboardingDailyTaskName}" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:1.5rem;">
+          <button id="obContinue" class="start-focus-btn">Continue</button>
+          <button id="obDailyTaskSkip" type="button" style="display:block;margin:1rem auto 0;background:none;border:none;color:var(--text-muted);font-size:var(--text-xs);text-decoration:underline;cursor:pointer;font-family:inherit;">Skip</button>
+        </div>
+      `;
+      const dailyInput = document.getElementById("obDailyTask");
+      const dailyContinueBtn = document.getElementById("obContinue");
+      dailyInput.addEventListener("input", () => { onboardingDailyTaskName = dailyInput.value; });
+      dailyInput.addEventListener("keydown", (e) => { if (e.key === "Enter") dailyContinueBtn.click(); });
+      dailyContinueBtn.addEventListener("click", () => {
+        onboardingDailyTaskName = dailyInput.value.trim();
+        goToOnboardingStep(11);
+      });
+      document.getElementById("obDailyTaskSkip").addEventListener("click", () => {
+        onboardingDailyTaskName = "";
+        goToOnboardingStep(11);
+      });
+      setTimeout(() => dailyInput.focus(), 50);
+
+    } else if (step === 11) {
+      content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Your first streak starts tonight.</div>
-          <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1.5rem;">Complete one task and write one reflection to earn Day 1.</div>
+          <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1.5rem;">Complete a task and write one reflection each day to keep your streak alive.</div>
           <div id="obDemoDots" style="display:flex;gap:6px;justify-content:center;margin-bottom:0.75rem;"></div>
           <div style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:2.5rem;">Day 1 unlocks after your first completed day.</div>
           <button id="obContinue" class="start-focus-btn">Continue</button>
@@ -5733,9 +5773,9 @@ let currentRange = "week";
         dot.className = i === 0 ? "goal-dot today-ready" : "goal-dot future";
         dotsWrap.appendChild(dot);
       }
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(11));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(12));
 
-    } else if (step === 11) {
+    } else if (step === 12) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
           <div id="obSynthesisHeading" style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;"></div>
@@ -5771,20 +5811,22 @@ let currentRange = "week";
       });
       document.getElementById("obContinue").addEventListener("click", () => {
         finalizeOnboardingData();
-        goToOnboardingStep(12);
+        goToOnboardingStep(13);
       });
 
-    } else if (step === 12) {
+    } else if (step === 13) {
       // Reuses the exact same #authModalOverlay/openAuthModal("signup")
       // Settings already uses (window.openOnboardingAuthModal, exposed by
       // auth-ui.js) rather than rebuilding a Google/email form here.
-      // finalizeOnboardingData() already wrote this session's tasks/
-      // categories to localStorage back at step 11 — signing up here runs
-      // straight into the existing runMigrationIfNeeded() path, so that
-      // local data gets imported into the new account automatically.
+      // auth-ui.js flushes finalizeOnboardingData()'s in-memory draft
+      // (getOnboardingDraft(), a window-exposed top-level function) straight
+      // to Firestore right after signup succeeds — runMigrationIfNeeded() is
+      // deliberately skipped for this sign-in (see auth.js's
+      // skipNextMigration()), since there's no localStorage draft for it to
+      // import.
       const authUser = window.authBridge && window.authBridge.getCurrentUser ? window.authBridge.getCurrentUser() : null;
       if (authUser && !onboardingAccountNeedsEmailVerification()) {
-        goToOnboardingStep(13);
+        goToOnboardingStep(14);
         return;
       }
       if (authUser && onboardingAccountNeedsEmailVerification()) {
@@ -5807,7 +5849,7 @@ let currentRange = "week";
             const fresh = await window.authBridge.reloadCurrentUser();
             if (fresh && fresh.emailVerified) {
               showToast("Email verified. You're all set.", "success");
-              goToOnboardingStep(13);
+              goToOnboardingStep(14);
             } else {
               statusEl.textContent = "Not verified yet. Check your inbox (and spam), click the link, then try again.";
             }
@@ -5846,7 +5888,7 @@ let currentRange = "week";
         });
       }
 
-    } else if (step === 13) {
+    } else if (step === 14) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Your first 7 days are on us.</div>
@@ -5862,59 +5904,64 @@ let currentRange = "week";
   function finalizeOnboardingData() {
     if (onboardingDataFinalized) return;
     onboardingDataFinalized = true;
-    onboardingCategories.forEach(catName => {
-      if (categories.some(c => c.name === catName)) return;
-      categories.push({ name: catName, color: onboardingCategoryColor(catName) });
-    });
 
+    const draftCategories = onboardingCategories.map(catName => (
+      { name: catName, color: onboardingCategoryColor(catName) }
+    ));
+
+    const draftTasks = [];
     const today = toDateStr(new Date());
     onboardingSeedTasks.forEach(({ category, taskName }) => {
-      const dateTasks = tasks.filter(t => t.date === today);
-      const maxOrder = dateTasks.length ? Math.max(...dateTasks.map(t => t.order ?? 0)) : -1;
-      tasks.push({
-        id: Date.now().toString() + Math.random().toString(36).slice(2, 7),
+      draftTasks.push({
         name: taskName, category, time: "", duration: "", date: today, endDate: "",
-        done: false, order: maxOrder + 1, recurrence: { type: "none" }, completedDates: [], isGoal: false
+        done: false, order: draftTasks.length, recurrence: { type: "none" }, completedDates: [], isGoal: false
       });
     });
 
     if (onboardingGoalName) {
-      if (onboardingGoalCategory && !categories.some(c => c.name === onboardingGoalCategory)) {
-        categories.push({ name: onboardingGoalCategory, color: onboardingCategoryColor(onboardingGoalCategory) });
+      if (onboardingGoalCategory && !draftCategories.some(c => c.name === onboardingGoalCategory)) {
+        draftCategories.push({ name: onboardingGoalCategory, color: onboardingCategoryColor(onboardingGoalCategory) });
       }
-      const goalCategory = onboardingGoalCategory || (categories[0] ? categories[0].name : "");
-      const dateTasks = tasks.filter(t => t.date === today);
-      const maxOrder = dateTasks.length ? Math.max(...dateTasks.map(t => t.order ?? 0)) : -1;
+      const goalCategory = onboardingGoalCategory || (draftCategories[0] ? draftCategories[0].name : "");
       const endD = new Date(today + "T00:00:00");
       endD.setDate(endD.getDate() + 30);
-      tasks.push({
-        id: Date.now().toString() + Math.random().toString(36).slice(2, 7),
+      draftTasks.push({
         name: onboardingGoalName, category: goalCategory, time: "", duration: "",
         date: today, endDate: toDateStr(endD),
-        done: false, order: maxOrder + 1, recurrence: { type: "daily" }, completedDates: [],
+        done: false, order: draftTasks.length, recurrence: { type: "daily" }, completedDates: [],
         isGoal: true, checkoffLabel: onboardingGoalCheckoff || onboardingGoalName, why: onboardingGoalWhy, plan: onboardingGoalPlan
       });
     }
 
-    localStorage.setItem("userIdentity", onboardingIdentity);
-    // Marks that categories/tasks below were just written by an onboarding
-    // draft, not a real account — save() below is only here to feed the
-    // account-creation migration path (runMigrationIfNeeded() reads these
-    // same keys), not to make this data durable yet. Without this flag, a
-    // refresh at the still-to-come create-account step reads these
-    // now-non-empty categories back at bootstrap and skips straight past
-    // onboarding into the main app with no account ever created — see the
-    // bootstrap gate at the bottom of this file. Cleared once onboarding
-    // actually finishes (completeOnboarding()) or exits via a real signed-in
-    // session (hydrateFromFirestore()).
-    localStorage.setItem("onboardingDraftPending", "true");
+    if (onboardingDailyTaskName && onboardingDailyTaskName.trim()) {
+      draftTasks.push({
+        name: onboardingDailyTaskName.trim(),
+        category: draftCategories[0] ? draftCategories[0].name : "",
+        time: "", duration: "", date: today, endDate: "",
+        done: false, order: draftTasks.length, recurrence: { type: "daily" }, completedDates: [], isGoal: false
+      });
+    }
 
-    save();
+    // Held in memory only. auth-ui.js reads this via getOnboardingDraft()
+    // and writes it straight to Firestore right after account creation
+    // succeeds (writeOnboardingData() in migrate.js) — nothing here ever
+    // touches localStorage.
+    onboardingDraft = {
+      name: onboardingName,
+      identity: onboardingIdentity,
+      ageBracket: onboardingAgeBracket,
+      categories: draftCategories,
+      tasks: draftTasks
+    };
+  }
+
+  function getOnboardingDraft() {
+    return onboardingDraft;
   }
 
   function completeOnboarding() {
     localStorage.setItem("onboardingComplete", "true");
-    localStorage.removeItem("onboardingDraftPending");
+    onboardingDraft = null;
     document.getElementById("onboardingView").classList.remove("visible");
     document.body.classList.remove("onboarding-active");
     renderAll();
@@ -5950,19 +5997,37 @@ let currentRange = "week";
     // still branches live off window.firestoreBridge, so there's nothing to
     // reassign here for it.
 
+    // A signed-in-but-unverified user must never reach the planner — not
+    // even via a stale currentOnboardingStep. That variable lives in memory
+    // only and resets to 1 on every page load/refresh, so a mid-verification
+    // refresh (or an existing unverified account signing in from step 1's
+    // escape hatch) would otherwise miss the `=== 13` check below entirely
+    // and fall straight into the "onboarding complete" branch, flipping
+    // onboardingComplete to true and routing to the planner while
+    // emailVerified is still false. Checking the real Firebase state here
+    // instead of the step counter closes that hole regardless of which step
+    // the in-memory counter happens to be on.
+    if (onboardingAccountNeedsEmailVerification()) {
+      document.body.classList.add("onboarding-active");
+      document.getElementById("onboardingView").classList.add("visible");
+      currentOnboardingStep = 13;
+      renderOnboardingStep();
+      return;
+    }
+
     const wasOnboarding = document.body.classList.contains("onboarding-active");
     if (wasOnboarding && categories.length > 0) {
-      // Signing up on the account-creation step (12) migrates this
+      // Signing up on the account-creation step (13) migrates this
       // session's local data in, landing right here with categories now
-      // populated. Let step 12's own logic decide whether that means
-      // advancing to the trial-explainer step (13) or showing the
+      // populated. Let step 13's own logic decide whether that means
+      // advancing to the trial-explainer step (14) or showing the
       // verification screen first, instead of the general case below,
       // which would otherwise skip past both.
-      if (currentOnboardingStep === 12) {
+      if (currentOnboardingStep === 13) {
         advanceOnboardingAfterAccountStep();
       } else {
         localStorage.setItem("onboardingComplete", "true");
-        localStorage.removeItem("onboardingDraftPending");
+        onboardingDraft = null;
         document.getElementById("onboardingView").classList.remove("visible");
         document.body.classList.remove("onboarding-active");
         switchView("planner");
@@ -6048,17 +6113,7 @@ let currentRange = "week";
   enableModalDragDismiss(document.getElementById("reauthModalOverlay"));
   enableModalDragDismiss(document.getElementById("authModalOverlay"));
 
-  // categories.length === 0 alone isn't a safe "needs onboarding" signal:
-  // finalizeOnboardingData() (step 11 -> 12) deliberately writes the
-  // onboarding draft into these same categories/tasks keys early, purely so
-  // the account-creation step's migration path has local data to import —
-  // not because onboarding is actually done. onboardingDraftPending catches
-  // that case so a refresh mid-onboarding (e.g. sitting on the
-  // create-account step with no account yet) lands back in onboarding
-  // instead of straight into the main app on an unauthenticated, half-
-  // finished draft.
-  const onboardingDraftPending = localStorage.getItem("onboardingDraftPending") === "true";
-  if (localStorage.getItem("onboardingComplete") !== "true" && (categories.length === 0 || onboardingDraftPending)) {
+  if (localStorage.getItem("onboardingComplete") !== "true" && categories.length === 0) {
     document.body.classList.add("onboarding-active");
     document.getElementById("onboardingView").classList.add("visible");
     renderOnboardingStep();

@@ -13,8 +13,11 @@ import {
   reauthenticateWithGoogle,
   changePassword,
   deleteCurrentUser,
-  getAdditionalUserInfo
+  getAdditionalUserInfo,
+  skipNextMigration,
+  cancelSkipMigration
 } from "./auth.js";
+import { writeOnboardingData } from "./migrate.js";
 
 // Local open/close helpers matching app.js's .modal-overlay "open" class
 // pattern (styles.css), kept self-contained rather than depending on
@@ -34,6 +37,24 @@ function closeModalInstant(el) {
 function notify(message, variant) {
   if (typeof window.showToast === "function") {
     window.showToast(message, variant);
+  }
+}
+
+// Flushes app.js's in-memory onboarding draft straight to Firestore, called
+// right after the onboarding account-creation step's signup succeeds (the
+// matching runMigrationIfNeeded() call was already skipped for this uid —
+// see skipNextMigration()). Firestore's own onSnapshot listeners
+// (firestore-sync.js) pick the write up from there, same as any other
+// change — nothing here touches localStorage.
+async function flushOnboardingDraft(uid) {
+  if (typeof window.getOnboardingDraft !== "function") return;
+  const draft = window.getOnboardingDraft();
+  if (!draft) return;
+  try {
+    await writeOnboardingData(uid, draft);
+  } catch (err) {
+    console.error("writeOnboardingData failed:", err);
+    notify("Account created, but we couldn't save your setup. You can rebuild it in the app.", "warning");
   }
 }
 
@@ -265,7 +286,10 @@ document.addEventListener("DOMContentLoaded", () => {
     // data and advance onboarding ahead of the sign-out further down. This
     // flag tells app.js's listener to hold off until this handler has made
     // its determination; see the "firestore-auth-ready" listener in app.js.
-    if (requireNewGoogleAccount) window.pendingGoogleAccountCheck = true;
+    if (requireNewGoogleAccount) {
+      window.pendingGoogleAccountCheck = true;
+      skipNextMigration();
+    }
     try {
       const result = await signInWithGoogle();
       if (requireNewGoogleAccount) {
@@ -276,6 +300,7 @@ document.addEventListener("DOMContentLoaded", () => {
           // creating a new one. Onboarding is new-users-only, so back out
           // immediately rather than letting them land in the app as if
           // they'd just finished setup on someone else's account.
+          cancelSkipMigration();
           try { await signOutUser(); } catch (signOutErr) { /* best-effort */ }
           window.pendingGoogleAccountCheck = false;
           const stillSignedIn = getCurrentUser();
@@ -288,19 +313,22 @@ document.addEventListener("DOMContentLoaded", () => {
           existingAccountDetected = true;
           return;
         }
-        // Genuinely new account: the "firestore-auth-ready" event above was
-        // held back (or hadn't fired yet) while the check above was
-        // pending. Clear the guard and, since that event only ever
-        // dispatches once per uid, explicitly run the hydrate it would
-        // have triggered — later "firestore-data-changed" events (e.g.
-        // once the onboarding-data migration lands) keep it in sync from
-        // here same as any other sign-up.
+        // Genuinely new account: flush onboarding's draft to Firestore
+        // before hydrating, so the mirror this pulls from already has real
+        // data instead of a still-empty collection. The "firestore-auth-
+        // ready" event above was held back (or hadn't fired yet) while the
+        // isNewUser check above was pending. Clear the guard and, since
+        // that event only ever dispatches once per uid, explicitly run the
+        // hydrate it would have triggered — later "firestore-data-changed"
+        // events keep it in sync from here same as any other sign-up.
+        await flushOnboardingDraft(result.user.uid);
         window.pendingGoogleAccountCheck = false;
         if (typeof window.hydrateFromFirestore === "function") window.hydrateFromFirestore();
       }
       closeModal(overlay);
       notifyOnboardingAuthChanged();
     } catch (err) {
+      if (requireNewGoogleAccount) cancelSkipMigration();
       window.pendingGoogleAccountCheck = false;
       const msg = friendlyAuthError(err);
       if (msg) { errorEl.textContent = msg; errorEl.classList.add("show"); }
@@ -332,18 +360,24 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     errorEl.classList.remove("show");
     submitBtn.disabled = true;
+    const fromOnboarding = document.body.classList.contains("onboarding-active");
     try {
       if (mode === "signin") {
         await signInWithEmail(email, password);
         closeModal(overlay);
         notifyOnboardingAuthChanged();
       } else {
+        if (fromOnboarding) skipNextMigration();
         const result = await signUpWithEmail(email, password);
         closeModal(overlay);
+        // The account exists at this point regardless of whether the
+        // verification email itself succeeded — flush now rather than
+        // waiting on verification, which is a separate concern.
+        if (fromOnboarding) await flushOnboardingDraft(result.credential.user.uid);
         if (result.verificationError) {
           notify("Account created, but the verification email could not be sent. Use Resend to try again.", "error");
           notifyOnboardingAuthChanged();
-        } else if (document.body.classList.contains("onboarding-active")) {
+        } else if (fromOnboarding) {
           notify("Verification email sent. Check your inbox.", "success");
           notifyOnboardingAuthChanged();
         } else {
@@ -351,6 +385,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
     } catch (err) {
+      if (fromOnboarding && mode !== "signin") cancelSkipMigration();
       const msg = friendlyAuthError(err);
       if (msg) { errorEl.textContent = msg; errorEl.classList.add("show"); }
     } finally {
@@ -566,7 +601,10 @@ document.addEventListener("DOMContentLoaded", () => {
       statusPill.style.display = "none";
     }
 
-    if (migrationResult && migrationResult.reason === "error") {
+    if (migrationResult && migrationResult.reason === "onboarding") {
+      // Skipped deliberately (skipNextMigration()) — the submit/Google
+      // handler above already showed its own toast for this sign-in.
+    } else if (migrationResult && migrationResult.reason === "error") {
       notify("Signed in, but syncing your data failed. It'll retry next time you sign in.", "warning");
     } else if (migrationResult && migrationResult.imported) {
       notify(`Signed in. Synced ${migrationResult.taskCount} task${migrationResult.taskCount === 1 ? "" : "s"} to your account.`, "success");

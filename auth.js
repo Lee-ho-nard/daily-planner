@@ -127,6 +127,19 @@ export function onAuthChange(callback) {
 
 let migrationRanForUid = null;
 
+// Set by auth-ui.js immediately before signUpWithEmail/signInWithGoogle on
+// onboarding's account-creation step, since that path writes its own draft
+// straight to Firestore (migrate.js's writeOnboardingData()) right after —
+// running runMigrationIfNeeded() too would race both writers over
+// users/{uid} (whichever's setDoc lands last wins, and migration's blank
+// name/identity/ageBracket must never be the one that lands last). Cleared
+// on the very next auth state change regardless of outcome, and also
+// defensively by auth-ui.js on any signup/Google error so it can never leak
+// into an unrelated later sign-in.
+let skipMigrationForNextSignIn = false;
+export function skipNextMigration() { skipMigrationForNextSignIn = true; }
+export function cancelSkipMigration() { skipMigrationForNextSignIn = false; }
+
 // Bumped on every single onAuthStateChanged firing, regardless of branch.
 // The migration branch below awaits a Firestore read (runMigrationIfNeeded)
 // before notifying authStateListeners — if a newer auth event (e.g. a
@@ -142,6 +155,13 @@ let authGeneration = 0;
 onAuthStateChanged(auth, async (user) => {
   authGeneration += 1;
   const myGeneration = authGeneration;
+
+  if (user && skipMigrationForNextSignIn) {
+    skipMigrationForNextSignIn = false;
+    migrationRanForUid = user.uid;
+    authStateListeners.forEach(cb => cb(user, { imported: false, reason: "onboarding" }));
+    return;
+  }
 
   if (user && migrationRanForUid !== user.uid) {
     migrationRanForUid = user.uid;

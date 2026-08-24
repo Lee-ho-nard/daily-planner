@@ -129,3 +129,36 @@ export async function runMigrationIfNeeded(uid) {
     customPresetCount: localCustomPresets.length
   };
 }
+
+// Called directly by auth-ui.js right after onboarding's account-creation
+// step succeeds, with the in-memory draft built by app.js's
+// finalizeOnboardingData() — this never reads localStorage. The matching
+// sign-in's runMigrationIfNeeded() call is skipped (auth.js's
+// skipNextMigration()) so the two writers can't race over users/{uid}.
+export async function writeOnboardingData(uid, draft) {
+  const ops = [{
+    ref: doc(db, "users", uid),
+    data: {
+      name: draft.name || "",
+      identity: draft.identity || "",
+      ageBracket: draft.ageBracket || "",
+      createdAt: serverTimestamp(),
+      onboardingComplete: true,
+      trialStartDate: null,
+      trialEndDate: null
+    }
+  }];
+
+  (draft.tasks || []).forEach(task => {
+    ops.push({
+      ref: doc(collection(db, "users", uid, "tasks")),
+      data: { ...task, frozenDates: task.frozenDates || [] }
+    });
+  });
+
+  (draft.categories || []).forEach(cat => {
+    ops.push({ ref: doc(collection(db, "users", uid, "categories")), data: cat });
+  });
+
+  await commitInBatches(ops);
+}
