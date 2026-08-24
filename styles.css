@@ -5,6 +5,7 @@
 
   :root {
     --bg-page: #FAFAF7;
+    --bg-page-alt: #F1F0EA;
     --bg-card: #FFFFFF;
     --border: #E8E6DE;
     --text-primary: #232520;
@@ -44,6 +45,7 @@
 
   :root[data-theme="dark"] {
     --bg-page: #1A211C;
+    --bg-page-alt: #1E251F;
     --bg-card: #232B25;
     --border: #323C34;
     --text-primary: #F2F1ED;
@@ -408,7 +410,7 @@
   .insight-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin: 0 3px; background: var(--border); }
   .insight-dot.active { background: var(--accent); }
 
-  .ring-section { display:flex; align-items:center; gap:1.5rem; background:var(--bg-card); border-radius:var(--radius-md); padding:1.4rem; margin-bottom:1.25rem; box-shadow: var(--shadow-card); }
+  .ring-section { display:flex; align-items:center; gap:1.5rem; background:var(--bg-page); border-radius:var(--radius-md); padding:1.4rem; margin-bottom:1.25rem; box-shadow: var(--shadow-card); }
   .ring-legend { flex:1; font-size:var(--text-sm); }
   .ring-legend-row { display:flex; align-items:center; gap:0.4rem; margin-bottom:0.45rem; }
   .ring-legend-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
