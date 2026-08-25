@@ -460,7 +460,7 @@
   }
   function categoryColor(name) {
     const cat = categories.find(c => c.name === name);
-    return cat ? cat.color : "var(--border)";
+    return (cat && cat.color) ? cat.color : "var(--border)";
   }
   function formatDuration(mins) {
     const m = parseInt(mins);
