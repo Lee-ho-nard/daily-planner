@@ -2950,7 +2950,7 @@
 
   function applySelectedTheme() {
     const stored = getSelectedTheme();
-    const themeName = (isPremiumUser() && stored && THEMES[stored]) ? stored : null;
+    const themeName = (stored && THEMES[stored]) ? stored : null;
     if (themeName && themeName !== "forest") {
       document.documentElement.setAttribute("data-selected-theme", themeName);
     } else {
@@ -2959,7 +2959,7 @@
   }
 
   function updateThemesBtnVisibility() {
-    document.getElementById("themesBtn").style.display = isPremiumUser() ? "flex" : "none";
+    document.getElementById("themesBtn").style.display = "flex";
   }
 
   const themesOverlay = document.getElementById("themesModalOverlay");
@@ -3004,7 +3004,6 @@
   }
 
   document.getElementById("themesBtn").addEventListener("click", () => {
-    if (!isPremiumUser()) return;
     renderThemeOptions();
     openModal(themesOverlay);
   });
