@@ -5775,7 +5775,7 @@ let currentRange = "week";
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Your first streak starts tonight.</div>
-          <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1.5rem;">Complete a task and write one reflection each day to keep your streak alive.</div>
+          <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1.5rem;">Complete at least one task each day to keep your streak alive.</div>
           <div id="obDemoDots" style="display:flex;gap:6px;justify-content:center;margin-bottom:0.75rem;"></div>
           <div style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:2.5rem;">Day 1 unlocks after your first completed day.</div>
           <button id="obContinue" class="start-focus-btn">Continue</button>
