@@ -5637,7 +5637,17 @@ let currentRange = "week";
       `;
       const goalWhyInput = document.getElementById("obGoalWhy");
       const goalPlanInput = document.getElementById("obGoalPlan");
-      document.getElementById("obContinue").addEventListener("click", () => {
+      const detailsContinueBtn = document.getElementById("obContinue");
+      // Label-only — tapping either variant always advances to step 7
+      // identically below. Neither field is required.
+      function updateDetailsContinueLabel() {
+        const hasContent = goalWhyInput.value.trim() || goalPlanInput.value.trim();
+        detailsContinueBtn.textContent = hasContent ? "Continue" : "Skip";
+      }
+      updateDetailsContinueLabel();
+      goalWhyInput.addEventListener("input", updateDetailsContinueLabel);
+      goalPlanInput.addEventListener("input", updateDetailsContinueLabel);
+      detailsContinueBtn.addEventListener("click", () => {
         onboardingGoalWhy = onboardingGoalName ? goalWhyInput.value.trim() : "";
         onboardingGoalPlan = onboardingGoalName ? goalPlanInput.value.trim() : "";
         goToOnboardingStep(7);
