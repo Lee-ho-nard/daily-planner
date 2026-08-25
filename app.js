@@ -5393,8 +5393,8 @@ let currentRange = "week";
     // progress indicator; all other setup steps show their real position.
     // Step 6 ("A couple more details") is itself skipped entirely when no
     // goal was entered on step 5, so it's dropped from the count too —
-    // those users see "Step X of 7" instead of "Step X of 8".
-    const PROGRESS_STEPS = onboardingGoalName ? [3, 4, 5, 6, 7, 8, 9, 10, 12] : [3, 4, 5, 7, 8, 9, 10, 12];
+    // those users see "Step X of 8" instead of "Step X of 9".
+    const PROGRESS_STEPS = onboardingGoalName ? [3, 4, 5, 6, 7, 8, 9, 10, 11, 13] : [3, 4, 5, 7, 8, 9, 10, 11, 13];
     const currentStepNum = PROGRESS_STEPS.indexOf(currentOnboardingStep) + 1;
     const showProgress = currentStepNum > 0;
     wrap.style.display = showProgress ? "block" : "none";
@@ -5455,17 +5455,17 @@ let currentRange = "week";
       renderOnboardingStep();
       return;
     }
-    goToOnboardingStep(14);
+    goToOnboardingStep(15);
   }
 
   document.addEventListener("onboarding-auth-changed", () => {
-    if (currentOnboardingStep === 13) renderOnboardingStep();
+    if (currentOnboardingStep === 14) renderOnboardingStep();
   });
 
   function renderOnboardingStep() {
     updateOnboardingProgress();
     updateOnboardingBackButton();
-    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1 || currentOnboardingStep === 11);
+    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1 || currentOnboardingStep === 12);
     const content = document.getElementById("onboardingContent");
     const step = currentOnboardingStep;
 
@@ -5835,6 +5835,39 @@ let currentRange = "week";
 
     } else if (step === 11) {
       content.innerHTML = `
+        <div class="onboarding-container" style="padding-top:4rem;">
+          <div style="font-size:var(--text-2xl);font-weight:600;color:var(--text-primary);line-height:1.15;margin-bottom:1.5rem;">You've planted your anchor.</div>
+          <div style="font-size:var(--text-md);font-weight:500;color:var(--text-secondary);margin-bottom:1.5rem;">Here's how your day unfolds:</div>
+          <div style="display:flex;gap:1rem;margin-bottom:1.5rem;">
+            <div style="font-size:var(--text-lg);font-weight:600;color:var(--accent);min-width:1.75rem;">1</div>
+            <div>
+              <div style="font-size:var(--text-md);font-weight:500;color:var(--text-primary);margin-bottom:0.25rem;">Morning</div>
+              <div style="font-size:var(--text-base);color:var(--text-secondary);line-height:1.5;">See today's tasks. Start with your anchor.</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:1rem;margin-bottom:1.5rem;">
+            <div style="font-size:var(--text-lg);font-weight:600;color:var(--accent);min-width:1.75rem;">2</div>
+            <div>
+              <div style="font-size:var(--text-md);font-weight:500;color:var(--text-primary);margin-bottom:0.25rem;">Work</div>
+              <div style="font-size:var(--text-base);color:var(--text-secondary);line-height:1.5;">Complete tasks throughout the day. Use Deep Work to lock in on focused sessions.</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:1rem;margin-bottom:1.5rem;">
+            <div style="font-size:var(--text-lg);font-weight:600;color:var(--accent);min-width:1.75rem;">3</div>
+            <div>
+              <div style="font-size:var(--text-md);font-weight:500;color:var(--text-primary);margin-bottom:0.25rem;">Evening</div>
+              <div style="font-size:var(--text-base);color:var(--text-secondary);line-height:1.5;">Reflect on your day. Your streak locks in. No editing after.</div>
+            </div>
+          </div>
+          <div style="height:1px;background:var(--border);margin:1.5rem 0;"></div>
+          <div style="font-size:var(--text-md);font-weight:500;color:var(--text-secondary);margin-bottom:1.5rem;">This rhythm compounds. Do it again tomorrow.</div>
+          <button id="obContinue" class="start-focus-btn">Continue</button>
+        </div>
+      `;
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(12));
+
+    } else if (step === 12) {
+      content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Your first streak starts tonight.</div>
           <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1.5rem;">Complete at least one task each day to keep your streak alive.</div>
@@ -5853,9 +5886,9 @@ let currentRange = "week";
         dot.className = i === 0 ? "goal-dot today-ready" : "goal-dot future";
         dotsWrap.appendChild(dot);
       }
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(12));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(13));
 
-    } else if (step === 12) {
+    } else if (step === 13) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
           <div id="obSynthesisHeading" style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;"></div>
@@ -5891,10 +5924,10 @@ let currentRange = "week";
       });
       document.getElementById("obContinue").addEventListener("click", () => {
         finalizeOnboardingData();
-        goToOnboardingStep(13);
+        goToOnboardingStep(14);
       });
 
-    } else if (step === 13) {
+    } else if (step === 14) {
       // Reuses the exact same #authModalOverlay/openAuthModal("signup")
       // Settings already uses (window.openOnboardingAuthModal, exposed by
       // auth-ui.js) rather than rebuilding a Google/email form here.
@@ -5906,7 +5939,7 @@ let currentRange = "week";
       // import.
       const authUser = window.authBridge && window.authBridge.getCurrentUser ? window.authBridge.getCurrentUser() : null;
       if (authUser && !onboardingAccountNeedsEmailVerification()) {
-        goToOnboardingStep(14);
+        goToOnboardingStep(15);
         return;
       }
       if (authUser && onboardingAccountNeedsEmailVerification()) {
@@ -5930,7 +5963,7 @@ let currentRange = "week";
             const fresh = await window.authBridge.reloadCurrentUser();
             if (fresh && fresh.emailVerified) {
               showToast("Email verified. You're all set.", "success");
-              goToOnboardingStep(14);
+              goToOnboardingStep(15);
             } else {
               statusEl.textContent = "Not verified yet. Check your inbox (and spam), click the link, then try again.";
             }
@@ -5972,10 +6005,10 @@ let currentRange = "week";
             // Only the auth credentials are reset here — onboardingDraft
             // and every other in-memory onboarding field (name, identity,
             // ageBracket, categories, tasks, goal/anchor task) are left
-            // exactly as finalizeOnboardingData() built them on step 12, so
-            // step 13 re-renders as a fresh account-creation prompt with the
+            // exactly as finalizeOnboardingData() built them on step 13, so
+            // step 14 re-renders as a fresh account-creation prompt with the
             // rest of onboarding untouched.
-            goToOnboardingStep(13);
+            goToOnboardingStep(14);
           } catch (err) {
             statusEl.textContent = "Could not remove account, please try again.";
             btn.disabled = false;
@@ -5994,7 +6027,7 @@ let currentRange = "week";
         });
       }
 
-    } else if (step === 14) {
+    } else if (step === 15) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Your first 7 days are on us.</div>
@@ -6107,7 +6140,7 @@ let currentRange = "week";
     // even via a stale currentOnboardingStep. That variable lives in memory
     // only and resets to 1 on every page load/refresh, so a mid-verification
     // refresh (or an existing unverified account signing in from step 1's
-    // escape hatch) would otherwise miss the `=== 13` check below entirely
+    // escape hatch) would otherwise miss the `=== 14` check below entirely
     // and fall straight into the "onboarding complete" branch, flipping
     // onboardingComplete to true and routing to the planner while
     // emailVerified is still false. Checking the real Firebase state here
@@ -6116,20 +6149,20 @@ let currentRange = "week";
     if (onboardingAccountNeedsEmailVerification()) {
       document.body.classList.add("onboarding-active");
       document.getElementById("onboardingView").classList.add("visible");
-      currentOnboardingStep = 13;
+      currentOnboardingStep = 14;
       renderOnboardingStep();
       return;
     }
 
     const wasOnboarding = document.body.classList.contains("onboarding-active");
     if (wasOnboarding && categories.length > 0) {
-      // Signing up on the account-creation step (13) migrates this
+      // Signing up on the account-creation step (14) migrates this
       // session's local data in, landing right here with categories now
-      // populated. Let step 13's own logic decide whether that means
-      // advancing to the trial-explainer step (14) or showing the
+      // populated. Let step 14's own logic decide whether that means
+      // advancing to the trial-explainer step (15) or showing the
       // verification screen first, instead of the general case below,
       // which would otherwise skip past both.
-      if (currentOnboardingStep === 13) {
+      if (currentOnboardingStep === 14) {
         advanceOnboardingAfterAccountStep();
       } else {
         localStorage.setItem("onboardingComplete", "true");
@@ -6220,7 +6253,7 @@ let currentRange = "week";
     if (onboardingAccountNeedsEmailVerification()) {
       document.body.classList.add("onboarding-active");
       document.getElementById("onboardingView").classList.add("visible");
-      currentOnboardingStep = 13;
+      currentOnboardingStep = 14;
       renderOnboardingStep();
     }
     revealApp();
