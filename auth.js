@@ -156,6 +156,16 @@ onAuthStateChanged(auth, async (user) => {
   authGeneration += 1;
   const myGeneration = authGeneration;
 
+  // Fired synchronously, before any of the awaited work below — in
+  // particular before the migration branch's getDoc() read, which is a
+  // real network round trip and the actual source of the multi-second delay
+  // that made onAuthChange() (and anything gated behind it, like
+  // firestore-sync's listeners) too slow to drive a same-tick UI reveal.
+  // This carries only the raw Firebase user object — no account/task data,
+  // no migration result — for consumers that just need to know "is anyone
+  // signed in, and are they verified" as fast as Firebase itself resolves.
+  document.dispatchEvent(new CustomEvent("auth-state-resolved", { detail: { user } }));
+
   if (user && skipMigrationForNextSignIn) {
     skipMigrationForNextSignIn = false;
     migrationRanForUid = user.uid;

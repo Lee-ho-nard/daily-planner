@@ -22,6 +22,17 @@ const firebaseConfig = {
 export const firebaseApp = initializeApp(firebaseConfig);
 export const auth = getAuth(firebaseApp);
 
+// Raw synchronous handle for app.js (a classic script, so it can't import
+// this module directly) — assigned here, at module-evaluation time, rather
+// than from auth-ui.js's DOMContentLoaded-gated window.authBridge. This
+// module evaluates as a dependency of auth.js before auth.js's own
+// onAuthStateChanged registration runs, and onAuthStateChanged never fires
+// synchronously with module evaluation — so this is guaranteed to already
+// be set by the time any onAuthStateChanged callback (or anything it
+// triggers, like app.js's "auth-state-resolved" listener) reads it, with
+// no DOMContentLoaded race.
+window.firebaseAuth = auth;
+
 // Persistent local cache with multi-tab support gives offline-first
 // behavior for free — reads/writes work offline and sync automatically
 // once connectivity returns, across multiple open tabs of the app.

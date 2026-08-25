@@ -667,6 +667,18 @@
   body.onboarding-active .fab-guide-arrow {
     display: none;
   }
+  /* Suppresses both root screens until app.js's revealApp() confirms the
+     auth-driven routing decision (see hydrateFromFirestore()) — without
+     this, a page load/refresh briefly shows whichever screen the
+     synchronous localStorage-based bootstrap guessed (onboarding step 1,
+     or the planner) before that guess can be corrected once Firebase's
+     auth state resolves. Opacity/visibility only, so layout is unaffected
+     and removing the class is all revealApp() needs to do. */
+  body.app-loading > .container,
+  body.app-loading > #onboardingView {
+    opacity: 0;
+    visibility: hidden;
+  }
   .onboarding-container { max-width: 420px; margin: 0 auto; }
   .onboarding-progress-wrap { max-width: 420px; margin: 2rem auto 2rem; }
   .onboarding-back-wrap { position: fixed; top: 1.5rem; left: 1.5rem; z-index: 21; }

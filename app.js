@@ -5376,12 +5376,24 @@ let currentRange = "week";
     goToOnboardingStep(target);
   });
 
+  // Reads window.firebaseAuth (firebase-init.js) directly rather than
+  // window.authBridge — authBridge is only assigned once auth-ui.js's
+  // DOMContentLoaded handler runs, and this function is called from
+  // app.js's "auth-state-resolved" listener, which fires as the very first
+  // line inside onAuthStateChanged, with no DOMContentLoaded guarantee
+  // ahead of it. A DOMContentLoaded race there previously made this
+  // function see no bridge yet, silently return false, and let the
+  // verification screen get skipped in favor of onboarding's default step
+  // 1. firebaseAuth is set at firebase-init.js's module-evaluation time,
+  // strictly before auth.js's onAuthStateChanged can ever fire, so it has
+  // no equivalent race.
   function onboardingAccountNeedsEmailVerification() {
-    const bridge = window.authBridge;
-    if (!bridge || !bridge.getCurrentUser) return false;
-    const user = bridge.getCurrentUser();
+    const authInstance = window.firebaseAuth;
+    if (!authInstance) return false;
+    const user = authInstance.currentUser;
     if (!user) return false;
-    return !user.emailVerified && bridge.hasPasswordProvider && bridge.hasPasswordProvider();
+    const hasPasswordProvider = user.providerData.some(p => p.providerId === "password");
+    return !user.emailVerified && hasPasswordProvider;
   }
 
   function advanceOnboardingAfterAccountStep() {
@@ -6117,6 +6129,41 @@ let currentRange = "week";
   // this race every time if left unguarded.
   window.pendingGoogleAccountCheck = false;
 
+  // Removes the CSS-only "app-loading" gate (styles.css) that keeps both
+  // .container and #onboardingView invisible from first paint — added so
+  // the synchronous, localStorage-only bootstrap render below never has a
+  // chance to be seen before auth state resolves it needs correcting.
+  // Idempotent, so every call site below can call it unconditionally.
+  let appRevealed = false;
+  function revealApp() {
+    if (appRevealed) return;
+    appRevealed = true;
+    document.body.classList.remove("app-loading");
+  }
+
+  // auth.js's "auth-state-resolved" (see auth.js) fires synchronously as
+  // soon as Firebase itself resolves — before auth.js's own migration check
+  // (a real getDoc() network read) and well before firestore-sync's 6
+  // Firestore listeners below have a chance to fire, which is what was
+  // previously leaving the app invisible for several seconds on every load.
+  // This is the ONLY signal fast enough to correct the one case that must
+  // never flash step 1: a signed-in, unverified user refreshing mid-
+  // verification. onboardingAccountNeedsEmailVerification() depends only on
+  // Firebase Auth state (not Firestore data), so it's safe to decide and
+  // render here immediately. Every other bootstrap guess (fresh onboarding,
+  // already-onboarded planner) is correct as constructed or self-corrects
+  // later via hydrateFromFirestore() once real data arrives — per product
+  // decision, only the verification screen needs refresh-restoration.
+  document.addEventListener("auth-state-resolved", () => {
+    if (onboardingAccountNeedsEmailVerification()) {
+      document.body.classList.add("onboarding-active");
+      document.getElementById("onboardingView").classList.add("visible");
+      currentOnboardingStep = 13;
+      renderOnboardingStep();
+    }
+    revealApp();
+  });
+
   document.addEventListener("firestore-auth-ready", (e) => {
     if (e.detail.signedIn) {
       if (window.pendingGoogleAccountCheck) return;
@@ -6125,10 +6172,12 @@ let currentRange = "week";
       hasBeenSignedInThisSession = false;
       clearLocalDataOnSignOut();
     }
+    revealApp();
   });
   document.addEventListener("firestore-data-changed", () => {
     if (window.pendingGoogleAccountCheck) return;
     hydrateFromFirestore();
+    revealApp();
   });
 
   // These four overlays' own open/close/field logic lives entirely in
