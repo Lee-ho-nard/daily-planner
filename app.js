@@ -940,6 +940,20 @@
     });
   }
 
+  // Takes a getTasksForDate() occurrence (the shape renderTasks() iterates
+  // over), not a raw tasks[] record — a recurring task's own t.date is its
+  // series start (often long in the past) and it has no t.done at all, so
+  // checking those directly would misfire. occurrenceDate/occurrenceDone are
+  // already resolved per-day for both recurring and one-off tasks above,
+  // which is the correct pair to compare against "today". String comparison
+  // is safe since toDateStr() always produces zero-padded YYYY-MM-DD.
+  // Visibility-in-the-Planner (the 3rd overdue condition) isn't checked
+  // here — it's guaranteed by only ever calling this from renderTasks()'s
+  // per-rendered-item loop, never against the full unfiltered tasks[] list.
+  function isTaskOverdue(task) {
+    return !task.occurrenceDone && task.occurrenceDate < toDateStr(new Date());
+  }
+
   // --- View switching ---
   const CROSSFADE_VIEW_IDS = { planner: "plannerView", goals: "goalsView", analysis: "analysisView", reflection: "reflectionView" };
   const VIEW_FADE_SPRING_KEY = {};
@@ -1701,6 +1715,15 @@
       cat.style.setProperty("--task-cat-color", categoryColor(task.category));
       cat.textContent = task.category;
 
+      // Only ever appended when overdue — with no modifier class applied
+      // otherwise, there's nothing rendered for the false case, matching
+      // "no modifier class, stays hidden" without needing new CSS.
+      const overdue = document.createElement("span");
+      if (isTaskOverdue(task)) {
+        overdue.className = "status-badge overdue";
+        overdue.textContent = "Overdue";
+      }
+
       const del = document.createElement("button");
       del.className = "delete-btn";
       del.innerHTML = '<i data-lucide="x" class="icon"></i>';
@@ -1750,6 +1773,7 @@
       li.appendChild(name);
       if (metaParts.length) li.appendChild(meta);
       li.appendChild(cat);
+      if (overdue.classList.contains("overdue")) li.appendChild(overdue);
       li.appendChild(del);
       listEl.appendChild(li);
     });
