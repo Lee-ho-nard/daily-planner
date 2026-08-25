@@ -3541,11 +3541,29 @@ let currentRange = "week";
     if (!hasHistory) return;
 
     renderRingChart();
-    renderBarChart(currentRange);
-    renderMomentum();
+
+    // Bar chart, momentum, focus score, and smart insights are premium —
+    // free users get none of the four, replaced by a single combined
+    // locked-state card rather than four separate teasers. Ring chart
+    // above stays fully free/functional regardless. monthComparisonBox
+    // and weeklyRecapCard are separate, pre-existing premium gates
+    // (each hides/shows itself already) and are untouched here.
+    const premiumAnalysis = isPremiumUser();
+    document.getElementById("analysisLockedCard").style.display = premiumAnalysis ? "none" : "block";
+    document.getElementById("insightsCard").style.display = premiumAnalysis ? "" : "none";
+    document.getElementById("momentumBox").style.display = premiumAnalysis ? "" : "none";
+    document.getElementById("focusScoreBox").style.display = premiumAnalysis ? "" : "none";
+    document.querySelector(".range-tabs").style.display = premiumAnalysis ? "" : "none";
+    document.getElementById("barChart").style.display = premiumAnalysis ? "" : "none";
+    document.getElementById("bestWorst").style.display = premiumAnalysis ? "" : "none";
+    if (premiumAnalysis) {
+      renderBarChart(currentRange);
+      renderMomentum();
+      renderFocusScore();
+      renderInsights();
+    }
+
     renderMonthComparison();
-    renderFocusScore();
-    renderInsights();
     renderWeeklyRecapCard();
   }
 
