@@ -451,6 +451,10 @@
   .ring-legend { flex:1; font-size:var(--text-sm); }
   .ring-legend-row { display:flex; align-items:center; gap:0.4rem; margin-bottom:0.45rem; }
   .ring-legend-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+  /* Extracted from #weeklyRecapCard's old inline style so the premium and
+     locked (.deep-work-stats-teaser) states can be toggled by swapping
+     className, instead of juggling two different inline style strings. */
+  .weekly-recap-card { background: var(--bg-card); border-radius: var(--radius-md); padding: 1.1rem 1.3rem; margin-bottom: 1.25rem; box-shadow: var(--shadow-card); }
   .range-tabs { display:flex; gap:0.4rem; margin-bottom:1rem; background:var(--border); padding:0.3rem; border-radius:var(--radius-md); }
   .range-tab { flex:1; padding:0.5rem; border-radius:10px; border:none; background:transparent; cursor:pointer; font-family:inherit; font-size:var(--text-sm); font-weight:500; color:var(--text-secondary); transition: background 0.2s, color 0.2s; }
   .range-tab.active { background:var(--bg-card); color: var(--text-primary); box-shadow: var(--shadow-card); }

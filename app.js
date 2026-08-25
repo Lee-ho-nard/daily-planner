@@ -3460,9 +3460,22 @@ let currentRange = "week";
   function renderWeeklyRecapCard() {
     const card = document.getElementById("weeklyRecapCard");
     if (!card) return;
-    if (!isPremiumUser()) { card.style.display = "none"; return; }
-    const recap = computeWeeklyRecap();
     card.style.display = "block";
+    if (!isPremiumUser()) {
+      // Locked state: same position and same visual treatment as
+      // analysisLockedCard's .deep-work-stats-teaser, but its own title/
+      // copy since it's a distinct feature — no computeWeeklyRecap() call
+      // here, so no real recap data ever reaches a free user.
+      card.className = "deep-work-stats-teaser";
+      card.innerHTML = `
+        <div style="font-weight:600;color:var(--text-primary);margin-bottom:0.35rem;"><i data-lucide="lock" class="icon"></i> Weekly Recap</div>
+        <div>See your completed tasks, Deep Work time, reflections, and streak every week. Upgrade to Premium.</div>
+      `;
+      lucide.createIcons();
+      return;
+    }
+    card.className = "weekly-recap-card";
+    const recap = computeWeeklyRecap();
     card.innerHTML = `
       <div style="font-size:var(--text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:0.4rem;">This week</div>
       <div style="font-size:var(--text-base);color:var(--text-primary);">${recapSummaryText(recap)}</div>
