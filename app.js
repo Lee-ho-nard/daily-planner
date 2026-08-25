@@ -5707,19 +5707,13 @@ let currentRange = "week";
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.5rem;">Let's get specific.</div>
           <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:1.5rem;">One per category. You can always add more later.</div>
           <div id="obSeedRows"></div>
-          <button id="obContinue" class="start-focus-btn" style="margin-top:1rem;">Skip for now</button>
+          <div class="field-error" id="obSeedError">Add at least one task to get started.</div>
+          <button id="obContinue" class="start-focus-btn" style="margin-top:1rem;">Continue</button>
         </div>
       `;
       const rowsWrap = document.getElementById("obSeedRows");
       const continueBtn = document.getElementById("obContinue");
-      const updateSeedContinueLabel = () => {
-        const hasText = [...rowsWrap.querySelectorAll(".ob-seed-row")].some(row => {
-          const skipBtn = row.querySelector(".ob-skip-row");
-          const input = row.querySelector(".ob-seed-input");
-          return skipBtn.dataset.skipped !== "true" && input.value.trim();
-        });
-        continueBtn.textContent = hasText ? "Continue" : "Skip for now";
-      };
+      const seedError = document.getElementById("obSeedError");
       onboardingCategories.forEach(catName => {
         const color = onboardingCategoryColor(catName);
         const existing = onboardingSeedTasks.find(t => t.category === catName);
@@ -5743,21 +5737,25 @@ let currentRange = "week";
           skipBtn.textContent = nowSkipped ? "skip this one" : "skipped";
           input.disabled = !nowSkipped;
           row.style.opacity = nowSkipped ? "1" : "0.5";
-          updateSeedContinueLabel();
+          seedError.classList.remove("show");
         });
-        input.addEventListener("input", updateSeedContinueLabel);
+        input.addEventListener("input", () => { seedError.classList.remove("show"); });
       });
-      updateSeedContinueLabel();
 
       continueBtn.addEventListener("click", () => {
-        onboardingSeedTasks = [];
+        const candidateTasks = [];
         rowsWrap.querySelectorAll(".ob-seed-row").forEach(row => {
           const skipBtn = row.querySelector(".ob-skip-row");
           const input = row.querySelector(".ob-seed-input");
           if (skipBtn.dataset.skipped === "true") return;
           const val = input.value.trim();
-          if (val) onboardingSeedTasks.push({ category: row.dataset.cat, taskName: val });
+          if (val) candidateTasks.push({ category: row.dataset.cat, taskName: val });
         });
+        if (candidateTasks.length === 0) {
+          seedError.classList.add("show");
+          return;
+        }
+        onboardingSeedTasks = candidateTasks;
         goToOnboardingStep(9);
       });
 
