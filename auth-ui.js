@@ -121,6 +121,23 @@ function computeSubscriptionStatus() {
   return "Free plan";
 }
 
+// Streak Insurance's shared premium pool — window-exposed by app.js the
+// same way isPremiumUser()/trialDaysRemaining() are (see the comment
+// above). Free users never see this line: their own freeze bank is
+// per-goal and already surfaced on each goal's card, not a single
+// account-wide number the way premium's shared pool is.
+function updateFreezeStatusDisplay() {
+  const el = document.getElementById("authFreezeStatus");
+  if (!el) return;
+  if (typeof window.isPremiumUser !== "function" || !window.isPremiumUser() || typeof window.getStreakFreezeState !== "function") {
+    el.style.display = "none";
+    return;
+  }
+  const remaining = window.getStreakFreezeState().remaining;
+  el.textContent = `❄ ${remaining} freeze${remaining === 1 ? "" : "s"} remaining this month`;
+  el.style.display = "block";
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const overlay = document.getElementById("authModalOverlay");
   const emailInput = document.getElementById("authEmailInput");
@@ -240,6 +257,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("authAccountCreated").textContent = createdDate ? `Member since ${createdDate}` : "";
 
     document.getElementById("authSubscriptionStatus").textContent = computeSubscriptionStatus();
+    updateFreezeStatusDisplay();
 
     verifyBanner.style.display = user.emailVerified ? "none" : "flex";
     changePasswordBtn.style.display = hasPasswordProvider() ? "block" : "none";
@@ -631,6 +649,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!currentUser) return;
     if (e.detail.key === "billing" || e.detail.key === "userDoc") {
       document.getElementById("authSubscriptionStatus").textContent = computeSubscriptionStatus();
+      updateFreezeStatusDisplay();
     }
   });
 });

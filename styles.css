@@ -633,6 +633,13 @@
     transition: opacity 400ms ease-out, transform 400ms cubic-bezier(0.34, 1.56, 0.64, 1);
   }
   #milestoneScreen.visible .milestone-card { opacity: 1; transform: scale(1); }
+  /* Escalates 30/100-day milestones from the 7-day baseline without
+     touching the card's own fixed brand background (#2F5233) — that stays
+     identical across every tier deliberately, since the card is exported/
+     shared outside the app and needs to look like "the same brand" every
+     time. Only the surrounding ring escalates. */
+  .milestone-card.tier-30 { box-shadow: var(--shadow-elevated), 0 0 0 3px #E8CB8A; }
+  .milestone-card.tier-100 { box-shadow: var(--shadow-elevated), 0 0 0 4px #F4D48A, 0 0 32px 4px rgba(244, 212, 138, 0.55); }
   .milestone-wordmark { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.16em; opacity: 0.7; color: #FAFAF7; }
   .milestone-dots { flex: 1; display: flex; flex-wrap: wrap; align-content: center; justify-content: center; }
   .milestone-dot { flex-shrink: 0; } /* border-radius set inline per dot, proportional to size (see renderMilestoneDotsDOM) */

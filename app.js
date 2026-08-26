@@ -505,16 +505,19 @@
     return getCurrentStreakDates(task).length;
   }
 
-  // Streak freeze economy (Snapchat-style): every 7 consecutive streak days
-  // (completed or already-frozen) banks 1 freeze, capped at a stockpile of
-  // 2. A past scheduled day that's missed consumes a banked freeze instead
-  // of breaking the streak, if one's available. This is a pure re-simulation
-  // from task.date forward through completedDates/frozenDates every time
-  // it's called — deliberately not a separately-stored, freely-settable
-  // "freeze count" field, so there's nothing for a client to just edit to a
-  // higher number; the only persisted side effect is appending newly-frozen
-  // dates to frozenDates, exactly like any other task field edit already
-  // goes through the same read/write security rule.
+  // Streak freeze economy (Snapchat-style), free tier: every 7 consecutive
+  // streak days (completed or already-frozen) banks 1 freeze, capped at a
+  // stockpile of 1 (Streak Insurance reserves the higher, 2-freeze tier for
+  // premium's separate applyPremiumStreakFreezes() below — the two systems
+  // are mutually exclusive per user, never combined). A past scheduled day
+  // that's missed consumes a banked freeze instead of breaking the streak,
+  // if one's available. This is a pure re-simulation from task.date forward
+  // through completedDates/frozenDates every time it's called — deliberately
+  // not a separately-stored, freely-settable "freeze count" field, so
+  // there's nothing for a client to just edit to a higher number; the only
+  // persisted side effect is appending newly-frozen dates to frozenDates,
+  // exactly like any other task field edit already goes through the same
+  // read/write security rule.
   // Returns { changed, freezesAvailable } — changed is true when new dates
   // were appended to task.frozenDates (caller should persist via save()).
   function applyStreakFreezes(task) {
@@ -553,13 +556,115 @@
       }
 
       if (consecutive > 0 && consecutive % 7 === 0) {
-        freezesBanked = Math.min(2, freezesBanked + 1);
+        freezesBanked = Math.min(1, freezesBanked + 1);
       }
     });
 
     if (newlyFrozen.length === 0) return { changed: false, freezesAvailable: freezesBanked };
     task.frozenDates = [...(task.frozenDates || []), ...newlyFrozen];
     return { changed: true, freezesAvailable: freezesBanked };
+  }
+
+  // --- Streak Insurance (premium) ---
+  // A single pool shared across every one of the user's goals — refilled to
+  // PREMIUM_FREEZE_CAP on the first render of each new calendar month,
+  // independent of how consistent the user has actually been (unlike the
+  // free tier above). Mirrors isPremiumUser()'s own honesty about being
+  // client/localStorage-driven for now: there's no Cloud Functions project
+  // in this app yet, so "monthly refill" means "refilled the next time the
+  // app is opened in a new month," and consumption is evaluated client-side
+  // on render, not at a real day-rollover boundary. Not tamper-proof, same
+  // caveat as isPremiumUser() itself.
+  const PREMIUM_FREEZE_CAP = 2;
+  const LOCAL_FREEZE_STATE_KEY = "premiumStreakFreezeState";
+
+  function currentYearMonth() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  function getStreakFreezeState() {
+    if (window.firestoreBridge && window.firestoreBridge.isSignedIn() && window.firestoreBridge.getAccountInfo) {
+      const account = window.firestoreBridge.getAccountInfo();
+      return {
+        remaining: (account && typeof account.premiumStreakFreezesRemaining === "number") ? account.premiumStreakFreezesRemaining : 0,
+        refillMonth: (account && account.lastFreezeRefillMonth) || null
+      };
+    }
+    const raw = JSON.parse(localStorage.getItem(LOCAL_FREEZE_STATE_KEY) || "null");
+    return raw || { remaining: 0, refillMonth: null };
+  }
+
+  function saveStreakFreezeState(remaining, refillMonth) {
+    if (window.firestoreBridge && window.firestoreBridge.isSignedIn() && window.firestoreBridge.saveStreakFreezeState) {
+      window.firestoreBridge.saveStreakFreezeState(remaining, refillMonth);
+      return;
+    }
+    localStorage.setItem(LOCAL_FREEZE_STATE_KEY, JSON.stringify({ remaining, refillMonth }));
+  }
+
+  // Unused freezes never carry over — refilling to the cap (not adding to
+  // whatever's left) is what makes a stale month's leftovers expire.
+  function ensurePremiumFreezeRefill() {
+    if (!isPremiumUser()) return;
+    const state = getStreakFreezeState();
+    const nowMonth = currentYearMonth();
+    if (state.refillMonth === nowMonth) return;
+    saveStreakFreezeState(PREMIUM_FREEZE_CAP, nowMonth);
+  }
+
+  // Spends from the shared pool across every goal's missed days this
+  // calendar month (oldest miss first, regardless of which goal), instead
+  // of each task re-simulating its own independent bank like the free tier
+  // does — restricted to the current month specifically so upgrading to
+  // premium (or this feature shipping) can't retroactively spend this
+  // month's allowance healing old, already-broken streaks from further
+  // back. A day already in frozenDates is never re-consumed, matching the
+  // free tier's same "only append newly-frozen dates" persistence rule.
+  // Returns { changed, consumedCount } — caller persists both the tasks
+  // (via save()) and the pool (already done here) when changed is true.
+  function applyPremiumStreakFreezes(goalTasks) {
+    ensurePremiumFreezeRefill();
+    let { remaining, refillMonth } = getStreakFreezeState();
+    const today = toDateStr(new Date());
+    const thisMonth = currentYearMonth();
+
+    const misses = [];
+    goalTasks.forEach(task => {
+      if (!task.recurrence || task.recurrence.type === "none") return;
+      const start = new Date(task.date + "T00:00:00");
+      const end = new Date((task.endDate || today) + "T00:00:00");
+      const completedDates = task.completedDates || [];
+      const existingFrozen = new Set(task.frozenDates || []);
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        const ds = toDateStr(d);
+        if (ds >= today || !ds.startsWith(thisMonth)) continue;
+        if (!occursOn(task, d)) continue;
+        if (completedDates.includes(ds) || existingFrozen.has(ds)) continue;
+        misses.push({ task, ds });
+      }
+    });
+    misses.sort((a, b) => (a.ds < b.ds ? -1 : a.ds > b.ds ? 1 : 0));
+
+    let changed = false;
+    let consumedCount = 0;
+    misses.forEach(({ task, ds }) => {
+      if (remaining <= 0) return;
+      task.frozenDates = [...(task.frozenDates || []), ds];
+      remaining--;
+      changed = true;
+      consumedCount++;
+    });
+
+    if (consumedCount > 0) saveStreakFreezeState(remaining, refillMonth);
+    return { changed, consumedCount };
+  }
+
+  // Single entry point for "how many freezes can this goal show right now" —
+  // premium reads the shared pool (same number for every goal); free reads
+  // each goal's own independently-earned bank.
+  function getFreezesAvailable(task) {
+    return isPremiumUser() ? getStreakFreezeState().remaining : applyStreakFreezes(task).freezesAvailable;
   }
 
   // Shareable milestone cards (roadmap #6). MILESTONE_THRESHOLDS gates
@@ -611,8 +716,20 @@
   function syncAllStreakFreezes() {
     let anyChanged = false;
     let newMilestone = null;
+    const premium = isPremiumUser();
+
+    if (premium) {
+      const recurringTasks = tasks.filter(t => t.recurrence && t.recurrence.type !== "none");
+      const result = applyPremiumStreakFreezes(recurringTasks);
+      if (result.changed) anyChanged = true;
+      if (result.consumedCount > 0) {
+        const remaining = getStreakFreezeState().remaining;
+        showToast(`Your streak was protected. ${remaining} freeze${remaining === 1 ? "" : "s"} remaining this month.`, "success");
+      }
+    }
+
     tasks.forEach(t => {
-      if (applyStreakFreezes(t).changed) anyChanged = true;
+      if (!premium && applyStreakFreezes(t).changed) anyChanged = true;
       const record = checkStreakMilestones(t);
       if (record) {
         anyChanged = true;
@@ -705,8 +822,17 @@
       protectedEl.style.display = "none";
     }
     lucide.createIcons();
+    // Escalates the entrance/ring treatment for 30/100 over the 7-day
+    // baseline (see .milestone-card.tier-* in styles.css) — the card's own
+    // fixed brand background never changes, only starts smaller/pops in
+    // more dramatically and gains a glowing ring at the higher tiers.
+    const card = document.getElementById("milestoneCard");
+    card.classList.remove("tier-30", "tier-100");
+    let revealFrom = 0.92;
+    if (data.threshold >= 100) { card.classList.add("tier-100"); revealFrom = 0.8; }
+    else if (data.threshold >= 30) { card.classList.add("tier-30"); revealFrom = 0.86; }
     document.getElementById("milestoneScreen").classList.add("visible");
-    springScaleReveal(document.getElementById("milestoneCard"), 0.92);
+    springScaleReveal(card, revealFrom);
   }
 
   document.getElementById("milestoneCloseBtn").addEventListener("click", () => {
@@ -1309,7 +1435,7 @@
       const doneCount = scheduledDays.filter(ds => (goal.completedDates || []).includes(ds)).length;
       const pct = scheduledDays.length ? Math.round((doneCount / scheduledDays.length) * 100) : 0;
       const streak = computeStreak(goal);
-      const freezesAvailable = applyStreakFreezes(goal).freezesAvailable;
+      const freezesAvailable = getFreezesAvailable(goal);
 
       const card = document.createElement("li");
       card.className = "goal-card pressable";
@@ -1356,7 +1482,12 @@
         snow.setAttribute("data-lucide", "snowflake");
         snow.className = "icon";
         sub.appendChild(snow);
-        sub.append(` ${freezesAvailable} freeze${freezesAvailable === 1 ? "" : "s"} banked`);
+        // Premium's shared pool reads as "remaining this month" (it isn't
+        // earned per-goal); free's own bank reads as "banked", matching how
+        // it was actually built up.
+        sub.append(isPremiumUser()
+          ? ` ${freezesAvailable} freeze${freezesAvailable === 1 ? "" : "s"} remaining this month`
+          : ` ${freezesAvailable} freeze${freezesAvailable === 1 ? "" : "s"} banked`);
       }
       const earnedMilestones = goal.milestonesEarned || {};
       const earnedThresholds = MILESTONE_THRESHOLDS.filter(t => earnedMilestones[t]);
@@ -1704,7 +1835,7 @@
         const realTask = tasks.find(t => t.id === task.id);
         const streak = computeStreak(realTask);
         streakIcon = streak > 0 ? `<i data-lucide="flame" class="icon"></i>${streak}` : '<i data-lucide="repeat" class="icon"></i>';
-        const freezesAvailable = applyStreakFreezes(realTask).freezesAvailable;
+        const freezesAvailable = getFreezesAvailable(realTask);
         if (freezesAvailable > 0) freezeIcon = `<i data-lucide="snowflake" class="icon"></i>${freezesAvailable}`;
       }
       const metaParts = [task.time, durIcon, streakIcon, freezeIcon, goalIcon].filter(Boolean);
@@ -3361,10 +3492,14 @@ function openGoalViewModal(goalId) {
   if (!g) return;
   document.getElementById("goalViewName").textContent = g.name;
   document.getElementById("goalViewCheckoff").textContent = "Daily check-off: " + (g.checkoffLabel || g.name);
-  const freezesAvailable = applyStreakFreezes(g).freezesAvailable;
+  const freezesAvailable = getFreezesAvailable(g);
   const freezesEl = document.getElementById("goalViewFreezes");
   freezesEl.style.display = freezesAvailable > 0 ? "block" : "none";
-  freezesEl.textContent = freezesAvailable > 0 ? `❄ ${freezesAvailable} streak freeze${freezesAvailable === 1 ? "" : "s"} banked` : "";
+  freezesEl.textContent = freezesAvailable > 0
+    ? (isPremiumUser()
+        ? `❄ ${freezesAvailable} streak freeze${freezesAvailable === 1 ? "" : "s"} remaining this month`
+        : `❄ ${freezesAvailable} streak freeze${freezesAvailable === 1 ? "" : "s"} banked`)
+    : "";
   document.getElementById("goalViewWhy").textContent = g.why || "None";
   document.getElementById("goalViewPlan").textContent = g.plan || "None";
   editingGoalId = goalId;

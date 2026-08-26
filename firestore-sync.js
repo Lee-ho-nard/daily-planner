@@ -278,6 +278,20 @@ async function setTrialStartDate(startDate) {
   }, { merge: true });
 }
 
+// Streak Insurance's shared premium freeze pool — client-side/localStorage-
+// mirrored like everything else premium-related in this app today (see
+// isPremiumUser()'s own comment), not a server-verified balance. A real
+// migration to a Cloud-Function-owned balance is future work, same as the
+// billing/status roadmap item.
+async function saveStreakFreezeState(remaining, refillMonth) {
+  if (!currentUid) return;
+  const ref = doc(db, "users", currentUid);
+  await setDoc(ref, {
+    premiumStreakFreezesRemaining: remaining,
+    lastFreezeRefillMonth: refillMonth
+  }, { merge: true });
+}
+
 // Deletes every doc under users/{uid} that the client is allowed to write
 // (see firestore.rules): all subcollections plus the top-level doc itself.
 // billing/status and weeklyInsights/* are server-controlled — write: if
@@ -322,5 +336,6 @@ window.firestoreBridge = {
   saveDeepWorkSessionNote,
   saveSelectedTheme,
   setTrialStartDate,
+  saveStreakFreezeState,
   deleteAllUserData
 };
