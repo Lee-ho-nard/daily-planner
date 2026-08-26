@@ -5540,12 +5540,10 @@ let currentRange = "week";
   function updateOnboardingProgress() {
     const wrap = document.getElementById("onboardingProgressWrap");
     const stepIndicator = document.getElementById("onboardingStepIndicator");
-    // The streak preview deliberately remains presentation-only, without a
-    // progress indicator; all other setup steps show their real position.
     // Step 6 ("A couple more details") is itself skipped entirely when no
     // goal was entered on step 5, so it's dropped from the count too —
-    // those users see "Step X of 10" instead of "Step X of 11".
-    const PROGRESS_STEPS = onboardingGoalName ? [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14] : [3, 4, 5, 7, 8, 9, 10, 11, 12, 14];
+    // those users see "Step X of 8" instead of "Step X of 9".
+    const PROGRESS_STEPS = onboardingGoalName ? [3, 4, 5, 6, 7, 8, 9, 10, 11] : [3, 4, 5, 7, 8, 9, 10, 11];
     const currentStepNum = PROGRESS_STEPS.indexOf(currentOnboardingStep) + 1;
     const showProgress = currentStepNum > 0;
     wrap.style.display = showProgress ? "block" : "none";
@@ -5606,17 +5604,17 @@ let currentRange = "week";
       renderOnboardingStep();
       return;
     }
-    goToOnboardingStep(16);
+    goToOnboardingStep(13);
   }
 
   document.addEventListener("onboarding-auth-changed", () => {
-    if (currentOnboardingStep === 15) renderOnboardingStep();
+    if (currentOnboardingStep === 12) renderOnboardingStep();
   });
 
   function renderOnboardingStep() {
     updateOnboardingProgress();
     updateOnboardingBackButton();
-    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1 || currentOnboardingStep === 13);
+    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1);
     const content = document.getElementById("onboardingContent");
     const step = currentOnboardingStep;
 
@@ -5856,7 +5854,7 @@ let currentRange = "week";
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.5rem;">Let's get specific.</div>
-          <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:1.5rem;">One per category. You can always add more later.</div>
+          <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:1.5rem;">One per category. You can always add more later, and edit times, durations, and repeat schedules anytime.</div>
           <div id="obSeedRows"></div>
           <div class="field-error" id="obSeedError">Add at least one task to get started.</div>
           <button id="obContinue" class="start-focus-btn" style="margin-top:1rem;">Continue</button>
@@ -5929,61 +5927,6 @@ let currentRange = "week";
     } else if (step === 9) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
-          <div style="font-size:var(--text-2xl);font-weight:600;color:var(--text-primary);line-height:1.15;margin-bottom:1.5rem;">Your tasks are planted.</div>
-          <div style="font-size:var(--text-md);color:var(--text-secondary);line-height:1.6;">Edit them anytime to add times, durations, repeat schedules, and more. No rush. You can fill these in as you go.</div>
-          <button id="obContinue" class="start-focus-btn" style="margin-top:1.5rem;">Continue</button>
-        </div>
-      `;
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(10));
-
-    } else if (step === 10) {
-      content.innerHTML = `
-        <div class="onboarding-container" style="padding-top:4rem;">
-          <div style="font-size:var(--text-xl);font-weight:600;line-height:1.8;margin-bottom:2.5rem;">
-            <div id="obSolvesHeader" class="onboarding-reveal" style="font-size:var(--text-2xl);color:var(--accent);margin-bottom:1rem;"></div>
-            <div id="obSolvesLines" class="onboarding-reveal">
-              <div id="obSolvesLine1" style="margin-bottom:1rem;"></div>
-              <div id="obSolvesLine2" style="margin-bottom:1rem;"></div>
-              <div id="obSolvesLine3"></div>
-            </div>
-          </div>
-          <button id="obContinue" class="start-focus-btn">Continue</button>
-        </div>
-      `;
-      requestAnimationFrame(() => { obRevealIn(document.getElementById("obSolvesHeader")); });
-      setTimeout(() => { obRevealIn(document.getElementById("obSolvesLines")); }, 200);
-      const genericLines = [
-        "The streak reflects what you actually complete, a real record, not a plan.",
-        "Deep Work locks out everything but one task.",
-        "Reflection ends the day. No editing after."
-      ];
-      const firstSeedTask = onboardingSeedTasks.find(t => t.taskName && t.taskName.trim());
-      let headerText = "";
-      let lines = genericLines;
-      if (firstSeedTask) {
-        headerText = `You just added "${firstSeedTask.taskName}" under ${firstSeedTask.category}.`;
-        lines = [
-          "Complete it today, and it counts toward a streak.",
-          "Run a Deep Work session on it, and everything else disappears until it's done.",
-          "Reflect tonight, and today locks in. No editing after."
-        ];
-      } else if (onboardingCategories.length) {
-        headerText = `You set up ${onboardingCategories.join(", ")}. Here's what happens from here:`;
-      }
-      const headerEl = document.getElementById("obSolvesHeader");
-      if (headerText) {
-        headerEl.textContent = headerText;
-      } else {
-        headerEl.style.display = "none";
-      }
-      document.getElementById("obSolvesLine1").textContent = lines[0];
-      document.getElementById("obSolvesLine2").textContent = lines[1];
-      document.getElementById("obSolvesLine3").textContent = lines[2];
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(11));
-
-    } else if (step === 11) {
-      content.innerHTML = `
-        <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Build your first habit.</div>
           <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1.5rem;line-height:1.6;">Pick one thing to do every day. Completing it keeps your streak alive.</div>
           <input type="text" id="obDailyTask" placeholder="e.g. Read for 20 minutes" value="${onboardingDailyTaskName}" style="width:100%;padding:0.65rem 0.75rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:var(--text-base);font-family:inherit;margin-bottom:0.5rem;">
@@ -6006,11 +5949,11 @@ let currentRange = "week";
           return;
         }
         onboardingDailyTaskName = trimmed;
-        goToOnboardingStep(12);
+        goToOnboardingStep(10);
       });
       setTimeout(() => dailyInput.focus(), 50);
 
-    } else if (step === 12) {
+    } else if (step === 10) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-2xl);font-weight:600;color:var(--text-primary);line-height:1.15;margin-bottom:1.5rem;">You've planted your anchor.</div>
@@ -6037,35 +5980,13 @@ let currentRange = "week";
             </div>
           </div>
           <div style="height:1px;background:var(--border);margin:1.5rem 0;"></div>
-          <div style="font-size:var(--text-md);font-weight:500;color:var(--text-secondary);margin-bottom:1.5rem;">This rhythm compounds. Do it again tomorrow.</div>
+          <div style="font-size:var(--text-md);font-weight:500;color:var(--text-secondary);margin-bottom:1.5rem;">This rhythm compounds. Day 1 unlocks tonight.</div>
           <button id="obContinue" class="start-focus-btn">Continue</button>
         </div>
       `;
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(13));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(11));
 
-    } else if (step === 13) {
-      content.innerHTML = `
-        <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
-          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Your first streak starts tonight.</div>
-          <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1.5rem;">Complete at least one task each day to keep your streak alive.</div>
-          <div id="obDemoDots" style="display:flex;gap:6px;justify-content:center;margin-bottom:0.75rem;"></div>
-          <div style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:2.5rem;">Day 1 unlocks after your first completed day.</div>
-          <button id="obContinue" class="start-focus-btn">Continue</button>
-        </div>
-      `;
-      const dotsWrap = document.getElementById("obDemoDots");
-      for (let i = 0; i < 7; i++) {
-        const dot = document.createElement("div");
-        // No dot is ever pre-filled as done here — nothing's been earned
-        // yet. The first dot (today) gets a distinct "ready to start"
-        // outline/pulse instead, same honesty standard as streak freeze:
-        // never show progress before it's real.
-        dot.className = i === 0 ? "goal-dot today-ready" : "goal-dot future";
-        dotsWrap.appendChild(dot);
-      }
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(14));
-
-    } else if (step === 14) {
+    } else if (step === 11) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
           <div id="obSynthesisHeading" style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;"></div>
@@ -6101,10 +6022,10 @@ let currentRange = "week";
       });
       document.getElementById("obContinue").addEventListener("click", () => {
         finalizeOnboardingData();
-        goToOnboardingStep(15);
+        goToOnboardingStep(12);
       });
 
-    } else if (step === 15) {
+    } else if (step === 12) {
       // Reuses the exact same #authModalOverlay/openAuthModal("signup")
       // Settings already uses (window.openOnboardingAuthModal, exposed by
       // auth-ui.js) rather than rebuilding a Google/email form here.
@@ -6116,7 +6037,7 @@ let currentRange = "week";
       // import.
       const authUser = window.authBridge && window.authBridge.getCurrentUser ? window.authBridge.getCurrentUser() : null;
       if (authUser && !onboardingAccountNeedsEmailVerification()) {
-        goToOnboardingStep(16);
+        goToOnboardingStep(13);
         return;
       }
       if (authUser && onboardingAccountNeedsEmailVerification()) {
@@ -6140,7 +6061,7 @@ let currentRange = "week";
             const fresh = await window.authBridge.reloadCurrentUser();
             if (fresh && fresh.emailVerified) {
               showToast("Email verified. You're all set.", "success");
-              goToOnboardingStep(16);
+              goToOnboardingStep(13);
             } else {
               statusEl.textContent = "Not verified yet. Check your inbox (and spam), click the link, then try again.";
             }
@@ -6182,10 +6103,10 @@ let currentRange = "week";
             // Only the auth credentials are reset here — onboardingDraft
             // and every other in-memory onboarding field (name, identity,
             // ageBracket, categories, tasks, goal/anchor task) are left
-            // exactly as finalizeOnboardingData() built them on step 14, so
-            // step 15 re-renders as a fresh account-creation prompt with the
+            // exactly as finalizeOnboardingData() built them on step 11, so
+            // step 12 re-renders as a fresh account-creation prompt with the
             // rest of onboarding untouched.
-            goToOnboardingStep(15);
+            goToOnboardingStep(12);
           } catch (err) {
             statusEl.textContent = "Could not remove account, please try again.";
             btn.disabled = false;
@@ -6204,7 +6125,7 @@ let currentRange = "week";
         });
       }
 
-    } else if (step === 16) {
+    } else if (step === 13) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-2xl);font-weight:600;color:var(--text-primary);line-height:1.1;margin-bottom:1rem;">Your first 7 days are free.</div>
@@ -6353,20 +6274,20 @@ let currentRange = "week";
     if (onboardingAccountNeedsEmailVerification()) {
       document.body.classList.add("onboarding-active");
       document.getElementById("onboardingView").classList.add("visible");
-      currentOnboardingStep = 15;
+      currentOnboardingStep = 12;
       renderOnboardingStep();
       return;
     }
 
     const wasOnboarding = document.body.classList.contains("onboarding-active");
     if (wasOnboarding && categories.length > 0) {
-      // Signing up on the account-creation step (15) migrates this
+      // Signing up on the account-creation step (12) migrates this
       // session's local data in, landing right here with categories now
-      // populated. Let step 15's own logic decide whether that means
-      // advancing to the trial-explainer step (16) or showing the
+      // populated. Let step 12's own logic decide whether that means
+      // advancing to the trial-explainer step (13) or showing the
       // verification screen first, instead of the general case below,
       // which would otherwise skip past both.
-      if (currentOnboardingStep === 15) {
+      if (currentOnboardingStep === 12) {
         advanceOnboardingAfterAccountStep();
       } else {
         localStorage.setItem("onboardingComplete", "true");
@@ -6457,7 +6378,7 @@ let currentRange = "week";
     if (onboardingAccountNeedsEmailVerification()) {
       document.body.classList.add("onboarding-active");
       document.getElementById("onboardingView").classList.add("visible");
-      currentOnboardingStep = 15;
+      currentOnboardingStep = 12;
       renderOnboardingStep();
     }
     revealApp();
