@@ -5914,7 +5914,7 @@ let currentRange = "week";
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-2xl);font-weight:600;color:var(--text-primary);line-height:1.15;margin-bottom:1.5rem;">Your tasks are planted.</div>
-          <div style="font-size:var(--text-md);color:var(--text-secondary);line-height:1.6;">Edit them anytime to add times, durations, repeat schedules, and more. No rush—you can fill these in as you go.</div>
+          <div style="font-size:var(--text-md);color:var(--text-secondary);line-height:1.6;">Edit them anytime to add times, durations, repeat schedules, and more. No rush. You can fill these in as you go.</div>
           <button id="obContinue" class="start-focus-btn" style="margin-top:1.5rem;">Continue</button>
         </div>
       `;
