@@ -5622,8 +5622,7 @@ let currentRange = "week";
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:5rem;text-align:center;">
           <div class="onboarding-hook-headline" id="obHookLine1">Hey.</div>
-          <div class="onboarding-reveal" id="obHookLine2" style="font-size:var(--text-xl);font-weight:600;line-height:1.5;margin-bottom:0.5rem;">Most people don't have a real system for managing their time.</div>
-          <div class="onboarding-reveal" id="obHookLine2Caption" style="font-size:var(--text-xs);color:var(--text-secondary);margin-bottom:2.5rem;">A finding repeated across multiple independent workplace studies (Acuity Training and others).</div>
+          <div class="onboarding-reveal" id="obHookLine2" style="font-size:var(--text-xl);font-weight:600;line-height:1.5;margin-bottom:2.5rem;">Most people don't have a real system for managing their time.</div>
           <div class="onboarding-reveal" id="obHookPrompt">
             <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;">Feel like that's you?</div>
             <button type="button" id="obHookYeah" class="cat-pill">Let's fix that.</button>
@@ -5639,7 +5638,6 @@ let currentRange = "week";
       requestAnimationFrame(() => { document.getElementById("obHookLine1").classList.add("ob-in"); });
       setTimeout(() => {
         obRevealIn(document.getElementById("obHookLine2"));
-        obRevealIn(document.getElementById("obHookLine2Caption"));
       }, 900);
       setTimeout(() => {
         obRevealIn(document.getElementById("obHookPrompt"));
