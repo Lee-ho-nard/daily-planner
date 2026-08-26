@@ -2409,7 +2409,15 @@
   });
 
   document.getElementById("modalIsGoal").addEventListener("change", () => {
-    document.getElementById("modalGoalFields").classList.toggle("show", document.getElementById("modalIsGoal").checked);
+    const checked = document.getElementById("modalIsGoal").checked;
+    document.getElementById("modalGoalFields").classList.toggle("show", checked);
+    // Pre-fill with the current task name the moment the field becomes
+    // relevant — only if empty, so toggling the checkbox off/on never
+    // clobbers a name the user already customized.
+    const goalNameInput = document.getElementById("modalGoalName");
+    if (checked && !goalNameInput.value.trim()) {
+      goalNameInput.value = document.getElementById("modalName").value.trim();
+    }
   });
 
   function openAddModal() {
@@ -2428,6 +2436,7 @@
     }
     document.getElementById("modalIsGoal").checked = false;
     document.getElementById("modalGoalFields").classList.remove("show");
+    document.getElementById("modalGoalName").value = "";
     document.getElementById("modalGoalWhy").value = "";
     document.getElementById("modalGoalPlan").value = "";
     repeatSelect.value = "none";
@@ -2464,6 +2473,7 @@
     }
     document.getElementById("modalIsGoal").checked = false;
     document.getElementById("modalGoalFields").classList.remove("show");
+    document.getElementById("modalGoalName").value = "";
     document.getElementById("modalGoalWhy").value = "";
     document.getElementById("modalGoalPlan").value = "";
     repeatSelect.value = "none";
@@ -2594,6 +2604,7 @@
     document.getElementById("modalEndDate").value = task.endDate || "";
     document.getElementById("modalIsGoal").checked = !!task.isGoal;
     document.getElementById("modalGoalFields").classList.toggle("show", !!task.isGoal);
+    document.getElementById("modalGoalName").value = task.checkoffLabel || task.name;
     document.getElementById("modalGoalWhy").value = task.why || "";
     document.getElementById("modalGoalPlan").value = task.plan || "";
 
@@ -2633,6 +2644,10 @@
     const isGoal = repeatType !== "none" && document.getElementById("modalIsGoal").checked;
     const why = isGoal ? document.getElementById("modalGoalWhy").value.trim() : "";
     const plan = isGoal ? document.getElementById("modalGoalPlan").value.trim() : "";
+    // Stored separately from the task's own name — checkoffLabel is the
+    // same field the standalone Add Goal modal already uses for this,
+    // falling back to the task name only when left blank, same convention.
+    const checkoffLabel = isGoal ? (document.getElementById("modalGoalName").value.trim() || name) : "";
 
     if (!name || !category) return;
 
@@ -2647,7 +2662,7 @@
       const task = tasks.find(t => t.id === editingTaskId);
       task.name = name; task.category = category; task.time = time; task.duration = duration;
       task.date = date; task.endDate = endDate; task.recurrence = recurrence; task.isGoal = isGoal;
-      task.why = why; task.plan = plan;
+      task.why = why; task.plan = plan; task.checkoffLabel = checkoffLabel;
       if (!task.completedDates) task.completedDates = [];
     } else {
       let copies = parseInt(document.getElementById("modalCopies").value) || 1;
@@ -2658,7 +2673,7 @@
         maxOrder += 1;
         tasks.push({
           id: newId, name, category, time, duration, date, endDate,
-          done: false, order: maxOrder, recurrence, completedDates: [], isGoal, why, plan
+          done: false, order: maxOrder, recurrence, completedDates: [], isGoal, why, plan, checkoffLabel
         });
         lastAddedTaskId = newId;
       }
@@ -3211,6 +3226,7 @@
     document.getElementById("modalEndDate").value = "";
     document.getElementById("modalIsGoal").checked = false;
     document.getElementById("modalGoalFields").classList.remove("show");
+    document.getElementById("modalGoalName").value = "";
     document.getElementById("modalGoalWhy").value = "";
     document.getElementById("modalGoalPlan").value = "";
     repeatSelect.value = parsedRepeatType;
@@ -5393,8 +5409,8 @@ let currentRange = "week";
     // progress indicator; all other setup steps show their real position.
     // Step 6 ("A couple more details") is itself skipped entirely when no
     // goal was entered on step 5, so it's dropped from the count too —
-    // those users see "Step X of 8" instead of "Step X of 9".
-    const PROGRESS_STEPS = onboardingGoalName ? [3, 4, 5, 6, 7, 8, 9, 10, 11, 13] : [3, 4, 5, 7, 8, 9, 10, 11, 13];
+    // those users see "Step X of 10" instead of "Step X of 11".
+    const PROGRESS_STEPS = onboardingGoalName ? [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14] : [3, 4, 5, 7, 8, 9, 10, 11, 12, 14];
     const currentStepNum = PROGRESS_STEPS.indexOf(currentOnboardingStep) + 1;
     const showProgress = currentStepNum > 0;
     wrap.style.display = showProgress ? "block" : "none";
@@ -5455,17 +5471,17 @@ let currentRange = "week";
       renderOnboardingStep();
       return;
     }
-    goToOnboardingStep(15);
+    goToOnboardingStep(16);
   }
 
   document.addEventListener("onboarding-auth-changed", () => {
-    if (currentOnboardingStep === 14) renderOnboardingStep();
+    if (currentOnboardingStep === 15) renderOnboardingStep();
   });
 
   function renderOnboardingStep() {
     updateOnboardingProgress();
     updateOnboardingBackButton();
-    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1 || currentOnboardingStep === 12);
+    document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1 || currentOnboardingStep === 13);
     const content = document.getElementById("onboardingContent");
     const step = currentOnboardingStep;
 
@@ -5762,6 +5778,16 @@ let currentRange = "week";
     } else if (step === 9) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
+          <div style="font-size:var(--text-2xl);font-weight:600;color:var(--text-primary);line-height:1.15;margin-bottom:1.5rem;">Your tasks are planted.</div>
+          <div style="font-size:var(--text-md);color:var(--text-secondary);line-height:1.6;">Edit them anytime to add times, durations, repeat schedules, and more. No rush—you can fill these in as you go.</div>
+          <button id="obContinue" class="start-focus-btn" style="margin-top:1.5rem;">Continue</button>
+        </div>
+      `;
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(10));
+
+    } else if (step === 10) {
+      content.innerHTML = `
+        <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;line-height:1.8;margin-bottom:2.5rem;">
             <div id="obSolvesHeader" class="onboarding-reveal" style="font-size:var(--text-2xl);color:var(--accent);margin-bottom:1rem;"></div>
             <div id="obSolvesLines" class="onboarding-reveal">
@@ -5802,9 +5828,9 @@ let currentRange = "week";
       document.getElementById("obSolvesLine1").textContent = lines[0];
       document.getElementById("obSolvesLine2").textContent = lines[1];
       document.getElementById("obSolvesLine3").textContent = lines[2];
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(10));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(11));
 
-    } else if (step === 10) {
+    } else if (step === 11) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Build your first habit.</div>
@@ -5829,11 +5855,11 @@ let currentRange = "week";
           return;
         }
         onboardingDailyTaskName = trimmed;
-        goToOnboardingStep(11);
+        goToOnboardingStep(12);
       });
       setTimeout(() => dailyInput.focus(), 50);
 
-    } else if (step === 11) {
+    } else if (step === 12) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-2xl);font-weight:600;color:var(--text-primary);line-height:1.15;margin-bottom:1.5rem;">You've planted your anchor.</div>
@@ -5864,9 +5890,9 @@ let currentRange = "week";
           <button id="obContinue" class="start-focus-btn">Continue</button>
         </div>
       `;
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(12));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(13));
 
-    } else if (step === 12) {
+    } else if (step === 13) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
           <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Your first streak starts tonight.</div>
@@ -5886,9 +5912,9 @@ let currentRange = "week";
         dot.className = i === 0 ? "goal-dot today-ready" : "goal-dot future";
         dotsWrap.appendChild(dot);
       }
-      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(13));
+      document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(14));
 
-    } else if (step === 13) {
+    } else if (step === 14) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
           <div id="obSynthesisHeading" style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;"></div>
@@ -5924,10 +5950,10 @@ let currentRange = "week";
       });
       document.getElementById("obContinue").addEventListener("click", () => {
         finalizeOnboardingData();
-        goToOnboardingStep(14);
+        goToOnboardingStep(15);
       });
 
-    } else if (step === 14) {
+    } else if (step === 15) {
       // Reuses the exact same #authModalOverlay/openAuthModal("signup")
       // Settings already uses (window.openOnboardingAuthModal, exposed by
       // auth-ui.js) rather than rebuilding a Google/email form here.
@@ -5939,7 +5965,7 @@ let currentRange = "week";
       // import.
       const authUser = window.authBridge && window.authBridge.getCurrentUser ? window.authBridge.getCurrentUser() : null;
       if (authUser && !onboardingAccountNeedsEmailVerification()) {
-        goToOnboardingStep(15);
+        goToOnboardingStep(16);
         return;
       }
       if (authUser && onboardingAccountNeedsEmailVerification()) {
@@ -5963,7 +5989,7 @@ let currentRange = "week";
             const fresh = await window.authBridge.reloadCurrentUser();
             if (fresh && fresh.emailVerified) {
               showToast("Email verified. You're all set.", "success");
-              goToOnboardingStep(15);
+              goToOnboardingStep(16);
             } else {
               statusEl.textContent = "Not verified yet. Check your inbox (and spam), click the link, then try again.";
             }
@@ -6005,10 +6031,10 @@ let currentRange = "week";
             // Only the auth credentials are reset here — onboardingDraft
             // and every other in-memory onboarding field (name, identity,
             // ageBracket, categories, tasks, goal/anchor task) are left
-            // exactly as finalizeOnboardingData() built them on step 13, so
-            // step 14 re-renders as a fresh account-creation prompt with the
+            // exactly as finalizeOnboardingData() built them on step 14, so
+            // step 15 re-renders as a fresh account-creation prompt with the
             // rest of onboarding untouched.
-            goToOnboardingStep(14);
+            goToOnboardingStep(15);
           } catch (err) {
             statusEl.textContent = "Could not remove account, please try again.";
             btn.disabled = false;
@@ -6027,16 +6053,43 @@ let currentRange = "week";
         });
       }
 
-    } else if (step === 15) {
+    } else if (step === 16) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
-          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Your first 7 days are on us.</div>
-          <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:1rem;line-height:1.6;">Every premium feature (themes, deep work history, weekly recaps, and more) is unlocked for 7 days once you complete Day 1.</div>
-          <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:2rem;line-height:1.6;">No card required to start.</div>
-          <button id="obContinue" class="start-focus-btn">Continue</button>
+          <div style="font-size:var(--text-2xl);font-weight:600;color:var(--text-primary);line-height:1.1;margin-bottom:1rem;">Your first 7 days are free.</div>
+          <div style="font-size:var(--text-md);color:var(--text-secondary);line-height:1.5;margin-bottom:2.5rem;">Card required to continue after Day 7.</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:2.5rem;">
+            <div style="background:var(--bg-page-alt);padding:1rem;border-radius:var(--radius-sm);">
+              <div style="font-size:var(--text-base);font-weight:500;color:var(--text-primary);">Charts</div>
+              <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:0.25rem;">Bar charts, momentum, focus score.</div>
+            </div>
+            <div style="background:var(--bg-page-alt);padding:1rem;border-radius:var(--radius-sm);">
+              <div style="font-size:var(--text-base);font-weight:500;color:var(--text-primary);">Deep Work</div>
+              <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:0.25rem;">Session history, custom presets, notes.</div>
+            </div>
+            <div style="background:var(--bg-page-alt);padding:1rem;border-radius:var(--radius-sm);">
+              <div style="font-size:var(--text-base);font-weight:500;color:var(--text-primary);">Insights</div>
+              <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:0.25rem;">Weekly recap, month-over-month view.</div>
+            </div>
+            <div style="background:var(--bg-page-alt);padding:1rem;border-radius:var(--radius-sm);">
+              <div style="font-size:var(--text-base);font-weight:500;color:var(--text-primary);">Export</div>
+              <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:0.25rem;">Download your data as JSON or CSV.</div>
+            </div>
+          </div>
+          <div style="font-size:var(--text-base);font-weight:500;color:var(--text-secondary);margin-bottom:3rem;">Try everything. Then decide if it's worth keeping.</div>
+          <button id="obContinue" class="start-focus-btn" style="margin-bottom:0.75rem;">Start my free trial</button>
+          <button id="obLearnMorePlans" type="button" style="width:100%;padding:0.9rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:none;color:var(--accent);font-size:var(--text-md);font-weight:600;cursor:pointer;font-family:inherit;">Learn more about plans</button>
         </div>
       `;
+      // Primary button: no payment-card collection exists yet (Cloud
+      // Function integration is explicitly out of scope here), so this
+      // still just completes onboarding into the trial exactly like the
+      // old "Continue" button did — a placeholder until that's built. The
+      // screen's own copy ("Card required to continue after Day 7") is not
+      // yet enforced anywhere.
       document.getElementById("obContinue").addEventListener("click", () => completeOnboarding());
+      // Secondary button: plans-comparison page/modal is explicitly scoped
+      // separately (per spec) — intentionally has no handler yet.
     }
   }
 
@@ -6140,7 +6193,7 @@ let currentRange = "week";
     // even via a stale currentOnboardingStep. That variable lives in memory
     // only and resets to 1 on every page load/refresh, so a mid-verification
     // refresh (or an existing unverified account signing in from step 1's
-    // escape hatch) would otherwise miss the `=== 14` check below entirely
+    // escape hatch) would otherwise miss the `=== 15` check below entirely
     // and fall straight into the "onboarding complete" branch, flipping
     // onboardingComplete to true and routing to the planner while
     // emailVerified is still false. Checking the real Firebase state here
@@ -6149,20 +6202,20 @@ let currentRange = "week";
     if (onboardingAccountNeedsEmailVerification()) {
       document.body.classList.add("onboarding-active");
       document.getElementById("onboardingView").classList.add("visible");
-      currentOnboardingStep = 14;
+      currentOnboardingStep = 15;
       renderOnboardingStep();
       return;
     }
 
     const wasOnboarding = document.body.classList.contains("onboarding-active");
     if (wasOnboarding && categories.length > 0) {
-      // Signing up on the account-creation step (14) migrates this
+      // Signing up on the account-creation step (15) migrates this
       // session's local data in, landing right here with categories now
-      // populated. Let step 14's own logic decide whether that means
-      // advancing to the trial-explainer step (15) or showing the
+      // populated. Let step 15's own logic decide whether that means
+      // advancing to the trial-explainer step (16) or showing the
       // verification screen first, instead of the general case below,
       // which would otherwise skip past both.
-      if (currentOnboardingStep === 14) {
+      if (currentOnboardingStep === 15) {
         advanceOnboardingAfterAccountStep();
       } else {
         localStorage.setItem("onboardingComplete", "true");
@@ -6253,7 +6306,7 @@ let currentRange = "week";
     if (onboardingAccountNeedsEmailVerification()) {
       document.body.classList.add("onboarding-active");
       document.getElementById("onboardingView").classList.add("visible");
-      currentOnboardingStep = 14;
+      currentOnboardingStep = 15;
       renderOnboardingStep();
     }
     revealApp();
