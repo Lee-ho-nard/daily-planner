@@ -5865,6 +5865,19 @@ let currentRange = "week";
       const rowsWrap = document.getElementById("obSeedRows");
       const continueBtn = document.getElementById("obContinue");
       const seedError = document.getElementById("obSeedError");
+      const totalSeedRows = onboardingCategories.length;
+
+      const updateSeedSkipAvailability = () => {
+        const rows = Array.from(rowsWrap.querySelectorAll(".ob-seed-row"));
+        const skippedCount = rows.filter(r => r.querySelector(".ob-skip-row").dataset.skipped === "true").length;
+        rows.forEach(row => {
+          const skipBtn = row.querySelector(".ob-skip-row");
+          const isSkipped = skipBtn.dataset.skipped === "true";
+          const wouldLeaveZero = totalSeedRows === 1 || (!isSkipped && skippedCount === totalSeedRows - 1);
+          skipBtn.style.display = wouldLeaveZero ? "none" : "";
+        });
+      };
+
       onboardingCategories.forEach(catName => {
         const color = onboardingCategoryColor(catName);
         const existing = onboardingSeedTasks.find(t => t.category === catName);
@@ -5889,9 +5902,12 @@ let currentRange = "week";
           input.disabled = !nowSkipped;
           row.style.opacity = nowSkipped ? "1" : "0.5";
           seedError.classList.remove("show");
+          updateSeedSkipAvailability();
         });
         input.addEventListener("input", () => { seedError.classList.remove("show"); });
       });
+
+      updateSeedSkipAvailability();
 
       continueBtn.addEventListener("click", () => {
         const candidateTasks = [];
