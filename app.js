@@ -2765,6 +2765,23 @@
   enableFabPressSpring(document.getElementById("openAdd"));
   document.getElementById("cancelAdd").addEventListener("click", () => closeModal(overlay));
 
+  // Shared by submitTaskForm() (manual Add Task modal) and the Siri bridge's
+  // createTaskFromSiri() below, so both entry points create a new task
+  // identically. Only covers new-task creation — editing an existing task
+  // stays inline in submitTaskForm(), since Siri never edits, only creates.
+  function createTaskRecord({ name, category, time = "", duration = "", date, endDate = "", recurrence = { type: "none" }, isGoal = false, why = "", plan = "", checkoffLabel = "" }) {
+    const resolvedDate = date || toDateStr(currentDate);
+    const maxOrder = tasks.filter(t => t.date === resolvedDate).reduce((max, t) => Math.max(max, t.order ?? 0), -1);
+    const id = Date.now().toString() + Math.random().toString(36).slice(2, 7);
+    const task = {
+      id, name, category, time, duration, date: resolvedDate, endDate,
+      done: false, order: maxOrder + 1, recurrence, completedDates: [], isGoal, why, plan, checkoffLabel
+    };
+    tasks.push(task);
+    lastAddedTaskId = id;
+    return task;
+  }
+
   function submitTaskForm() {
     const name = document.getElementById("modalName").value.trim();
     const category = document.getElementById("modalCategory").value;
@@ -2799,15 +2816,8 @@
     } else {
       let copies = parseInt(document.getElementById("modalCopies").value) || 1;
       copies = Math.max(1, Math.min(10, copies));
-      let maxOrder = tasks.filter(t => t.date === date).reduce((max, t) => Math.max(max, t.order ?? 0), -1);
       for (let i = 0; i < copies; i++) {
-        const newId = Date.now().toString() + Math.random().toString(36).slice(2, 7);
-        maxOrder += 1;
-        tasks.push({
-          id: newId, name, category, time, duration, date, endDate,
-          done: false, order: maxOrder, recurrence, completedDates: [], isGoal, why, plan, checkoffLabel
-        });
-        lastAddedTaskId = newId;
+        createTaskRecord({ name, category, time, duration, date, endDate, recurrence, isGoal, why, plan, checkoffLabel });
       }
     }
     save();
@@ -5680,6 +5690,242 @@ let currentRange = "week";
       plugin.addListener("registrationError", () => {});
     }
     await plugin.register();
+  }
+
+  // --- Siri Shortcuts JS bridge ---
+  // Called by native Swift App Intents (a future Mac/Xcode session, once
+  // that access exists — not built here) via WKWebView's evaluateJavaScript,
+  // e.g. window.createTaskFromSiri({...}). Every function here is additive:
+  // none of it touches the manual Add Task modal, Deep Work setup, or
+  // checkbox-completion code paths, which behave exactly as before. Meant to
+  // eventually replace the mic button's task-adding function — the mic UI
+  // itself stays until Siri integration is fully live.
+
+  // Classic Levenshtein edit distance (DP table). Only ever called on short
+  // names (tasks/categories/presets), so an O(n*m) table is never a real cost.
+  function levenshteinDistance(a, b) {
+    const m = a.length, n = b.length;
+    if (m === 0) return n;
+    if (n === 0) return m;
+    const dp = [];
+    for (let i = 0; i <= m; i++) { dp.push([i]); }
+    for (let j = 1; j <= n; j++) { dp[0][j] = j; }
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        dp[i][j] = a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1]
+          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+      }
+    }
+    return dp[m][n];
+  }
+
+  // Scores a candidate name against a query from 0 (dissimilar) to 1 (exact
+  // match after normalizing case/whitespace). Prefix/substring matches score
+  // highest without needing an exact match; anything else falls back to
+  // normalized Levenshtein similarity so near-misses ("Sprnt" -> "Sprint")
+  // still resolve.
+  function fuzzyScore(query, candidateName) {
+    const q = (query || "").trim().toLowerCase();
+    const c = (candidateName || "").trim().toLowerCase();
+    if (!q || !c) return 0;
+    if (q === c) return 1;
+    if (c.startsWith(q) || q.startsWith(c)) return 0.9;
+    if (c.includes(q) || q.includes(c)) return 0.75;
+    const dist = levenshteinDistance(q, c);
+    return Math.max(0, 1 - dist / Math.max(q.length, c.length));
+  }
+
+  // Ranks every candidate against `query` (via nameFn), best first. Callers
+  // apply their own confidence threshold and ambiguity rules — how "clear" a
+  // match needs to be varies deliberately by call site (category fallback is
+  // lenient, task completion is strict enough to never guess wrong).
+  function fuzzyRank(query, candidates, nameFn) {
+    return candidates
+      .map(item => ({ item, score: fuzzyScore(query, nameFn(item)) }))
+      .sort((a, b) => b.score - a.score);
+  }
+
+  // Accepts a Date instance or an ISO-8601 string (however the native
+  // bridge serializes the structured value App Intents already parsed) and
+  // returns the app's "HH:MM" 24h task.time format, or "" if unparseable.
+  function siriTimeToTaskTime(value) {
+    if (!value) return "";
+    const d = value instanceof Date ? value : new Date(value);
+    if (isNaN(d.getTime())) return "";
+    return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+
+  // Same acceptance rules as siriTimeToTaskTime, but returns a toDateStr()
+  // date string, falling back to actual today (not currentDate, which may
+  // be some other day the planner happens to be showing) when omitted or
+  // unparseable — matching this function's own documented default.
+  function siriDateToDateStr(value) {
+    if (!value) return toDateStr(new Date());
+    const d = value instanceof Date ? value : new Date(value);
+    if (isNaN(d.getTime())) return toDateStr(new Date());
+    return toDateStr(d);
+  }
+
+  const SIRI_CATEGORY_MATCH_THRESHOLD = 0.5;
+
+  function createTaskFromSiri(params) {
+    params = params || {};
+    const name = (params.name || "").trim();
+    if (!name) {
+      return { success: false, error: "A task name is required." };
+    }
+
+    let resolvedCategory = null;
+    let categoryWasMatched = false;
+    if (params.category && categories.length) {
+      const ranked = fuzzyRank(params.category, categories, c => c.name);
+      if (ranked.length && ranked[0].score >= SIRI_CATEGORY_MATCH_THRESHOLD) {
+        resolvedCategory = ranked[0].item.name;
+        categoryWasMatched = true;
+      }
+    }
+    // No match (or none given): fall back to the user's first category.
+    // Every onboarded user has at least one — onboarding requires picking
+    // one before it can complete — so this is always safe for a real
+    // signed-in user. The data model has no "Inbox" concept to fall back
+    // to instead, and creating one is out of this function's scope (it
+    // only matches against *existing* categories).
+    if (!resolvedCategory) {
+      if (!categories.length) {
+        return { success: false, error: "No categories exist yet to assign this task to." };
+      }
+      resolvedCategory = categories[0].name;
+    }
+
+    const recurrence = params.repeatDaily ? { type: "daily" } : { type: "none" };
+    const task = createTaskRecord({
+      name,
+      category: resolvedCategory,
+      time: siriTimeToTaskTime(params.time),
+      duration: (params.durationMinutes !== undefined && params.durationMinutes !== null && params.durationMinutes !== "")
+        ? String(params.durationMinutes) : "",
+      date: siriDateToDateStr(params.date),
+      recurrence
+    });
+    save();
+    renderAll();
+
+    return {
+      success: true,
+      taskId: task.id,
+      name: task.name,
+      category: resolvedCategory,
+      categoryWasMatched,
+      repeatsDaily: !!params.repeatDaily
+    };
+  }
+
+  const SIRI_PRESET_MATCH_THRESHOLD = 0.6;
+
+  function startDeepWorkFromSiri(params) {
+    params = params || {};
+    const presetName = (params.presetName || "").trim();
+
+    let matchedOption = null;
+    if (presetName) {
+      // The built-in "Custom" slot (work === null) can never be a
+      // direct-start target — it requires typed minutes with no sensible
+      // default, exactly the "actively-running wrong-length session" this
+      // function is told never to guess into.
+      const startable = getSessionOptions().filter(o => o.work !== null);
+      const ranked = fuzzyRank(presetName, startable, o => o.name);
+      if (ranked.length && ranked[0].score >= SIRI_PRESET_MATCH_THRESHOLD) {
+        matchedOption = ranked[0].item;
+      }
+    }
+
+    if (matchedOption) {
+      const idx = getSessionOptions().findIndex(o => sessionKey(o) === sessionKey(matchedOption));
+      if (idx !== -1) selectedSession = idx;
+      switchView("focus");
+      startTimer();
+      return { success: true, started: true, presetName: matchedOption.name, setupScreenOpened: false };
+    }
+
+    switchView("focus");
+    return { success: true, started: false, presetName: null, setupScreenOpened: true };
+  }
+
+  const SIRI_COMPLETE_CLEAR_THRESHOLD = 0.75;
+  // Top candidate must beat the runner-up by at least this much to count as
+  // "clearly" the intended task — an exact name match (score 1) always
+  // short-circuits this check, since matching a task's literal name is
+  // unambiguous regardless of what else is on today's list.
+  const SIRI_COMPLETE_AMBIGUITY_GAP = 0.15;
+
+  function completeTaskFromSiri(params) {
+    params = params || {};
+    const name = (params.name || "").trim();
+    if (!name) {
+      return { success: false, completed: false, reason: "no_name_given", candidates: [] };
+    }
+
+    const todayStr = toDateStr(new Date());
+    if (isDayLocked(todayStr)) {
+      return { success: false, completed: false, reason: "day_locked", candidates: [] };
+    }
+
+    const openToday = getTasksForDate(new Date()).filter(t => !t.occurrenceDone);
+    const ranked = fuzzyRank(name, openToday, t => t.name);
+    const top = ranked[0];
+    const runnerUp = ranked[1];
+
+    const isClearMatch = !!top && (
+      top.score === 1 ||
+      (top.score >= SIRI_COMPLETE_CLEAR_THRESHOLD && (!runnerUp || top.score - runnerUp.score >= SIRI_COMPLETE_AMBIGUITY_GAP))
+    );
+
+    if (!isClearMatch) {
+      // "ambiguous" means multiple candidates are competitively close to
+      // each other, not just "a candidate existed" — a single low-scoring
+      // candidate (or none at all) is a plain no-match, not an ambiguity.
+      const isAmbiguous = !!top && top.score >= SIRI_COMPLETE_CLEAR_THRESHOLD && !!runnerUp;
+      return {
+        success: true,
+        completed: false,
+        reason: isAmbiguous ? "ambiguous" : "no_match",
+        candidates: ranked.slice(0, 4).map(r => ({ name: r.item.name, score: r.score }))
+      };
+    }
+
+    const occurrence = top.item;
+    const realTask = tasks.find(t => t.id === occurrence.id);
+    if (occurrence.isRecurring) {
+      realTask.completedDates = realTask.completedDates || [];
+      if (!realTask.completedDates.includes(occurrence.occurrenceDate)) {
+        realTask.completedDates.push(occurrence.occurrenceDate);
+      }
+    } else {
+      realTask.done = true;
+    }
+    save();
+    maybeCelebrateDailyCompletion();
+    renderAll();
+
+    return { success: true, completed: true, taskId: realTask.id, taskName: realTask.name };
+  }
+
+  function getTodaysPlanFromSiri() {
+    const todayTasks = getTasksForDate(new Date());
+    return {
+      success: true,
+      totalCount: todayTasks.length,
+      completedCount: todayTasks.filter(t => t.occurrenceDone).length,
+      tasks: todayTasks.map(t => ({ name: t.name, done: t.occurrenceDone })),
+      // The app has no persisted "anchor task" flag beyond onboarding's
+      // one-time setup screen (see finalizeOnboardingData) — a task created
+      // there is indistinguishable from any other daily-recurring task
+      // afterward, so there is no reliable way to identify "the" anchor
+      // task at general runtime. Always null rather than guessing at one.
+      anchorTaskName: null,
+      anchorDone: null
+    };
   }
 
   function onboardingCategoryColor(catName) {
