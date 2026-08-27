@@ -278,6 +278,22 @@ async function setTrialStartDate(startDate) {
   }, { merge: true });
 }
 
+async function saveNotificationPreferences(prefs) {
+  if (!currentUid) return;
+  const ref = doc(db, "users", currentUid);
+  await setDoc(ref, { notificationPreferences: prefs }, { merge: true });
+}
+
+// Written on native app launch and on FCM/APNs token refresh (see app.js's
+// registerPushToken()) — client-side only, no server send capability exists
+// yet. Kept here purely so a future Cloud Function has somewhere to read a
+// per-user token from.
+async function savePushToken(token) {
+  if (!currentUid) return;
+  const ref = doc(db, "users", currentUid);
+  await setDoc(ref, { pushToken: token }, { merge: true });
+}
+
 // Streak Insurance's shared premium freeze pool — client-side/localStorage-
 // mirrored like everything else premium-related in this app today (see
 // isPremiumUser()'s own comment), not a server-verified balance. A real
@@ -337,5 +353,7 @@ window.firestoreBridge = {
   saveSelectedTheme,
   setTrialStartDate,
   saveStreakFreezeState,
+  saveNotificationPreferences,
+  savePushToken,
   deleteAllUserData
 };

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Flit</string>
+    <string name="title_activity_main">Flit</string>
+    <string name="package_name">com.flit.app</string>
+    <string name="custom_url_scheme">com.flit.app</string>
+</resources>

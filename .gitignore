@@ -1,0 +1,19 @@
+node_modules/
+www/
+
+# Android
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/.idea/
+android/*.iml
+android/app/*.iml
+android/captures/
+android/app/src/main/assets/public/
+android/app/src/main/res/xml/config.xml
+
+# iOS (not built on this machine, but keep the ignore ready)
+ios/App/Pods/
+ios/App/App/public/
+ios/App/build/

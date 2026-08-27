@@ -442,10 +442,11 @@
     if (window.firestoreBridge && window.firestoreBridge.isSignedIn()) {
       window.firestoreBridge.syncTasks(tasks);
       window.firestoreBridge.syncCategories(categories);
-      return;
+    } else {
+      localStorage.setItem("tasks", JSON.stringify(tasks));
+      localStorage.setItem("categories", JSON.stringify(categories));
     }
-    localStorage.setItem("tasks", JSON.stringify(tasks));
-    localStorage.setItem("categories", JSON.stringify(categories));
+    scheduleNativeNotificationsSync();
   }
   // Signed-in users' identity now lives only on users/{uid} (written by
   // onboarding's Firestore flush, never localStorage) — fall back to
@@ -5487,6 +5488,200 @@ let currentRange = "week";
     if (navigator.vibrate) navigator.vibrate(intensity === "light" ? 8 : 15);
   }
 
+  // --- Native local notifications (morning / evening / pre-task) ---
+  // Scheduled entirely on-device via @capacitor/local-notifications — no
+  // server, no push credentials, works fully offline. window.Capacitor only
+  // exists inside the native-wrapped app (injected by Capacitor's runtime at
+  // native launch), so capacitorAvailable() is false in a plain browser tab
+  // and every function below becomes a no-op there.
+  const DEFAULT_NOTIFICATION_PREFS = {
+    morningEnabled: true,
+    morningTime: "08:00",
+    eveningEnabled: true,
+    eveningTime: "20:00",
+    preTaskEnabled: false,
+    preTaskMinutesBefore: 10
+  };
+  const MORNING_NOTIF_ID = 1;
+  const EVENING_NOTIF_ID = 2;
+  // Pre-task notification ids live above this offset so getPending() can
+  // tell them apart from the two fixed daily ids above when cancelling the
+  // previous batch before rescheduling.
+  const PRE_TASK_ID_BASE = 10000;
+
+  function loadStoredNotificationPrefs() {
+    try {
+      const raw = localStorage.getItem("notificationPreferences");
+      if (!raw) return { ...DEFAULT_NOTIFICATION_PREFS };
+      return { ...DEFAULT_NOTIFICATION_PREFS, ...JSON.parse(raw) };
+    } catch (err) {
+      return { ...DEFAULT_NOTIFICATION_PREFS };
+    }
+  }
+
+  // Same "local var is the source of truth, optimistically updated on
+  // save" shape localSelectedTheme (above) uses, for the same reason: a
+  // Firestore write only echoes back async via onSnapshot, so branching a
+  // read live off window.firestoreBridge would show stale prefs for a beat
+  // right after saving.
+  let localNotificationPrefs = loadStoredNotificationPrefs();
+
+  function getNotificationPrefs() {
+    return localNotificationPrefs;
+  }
+
+  function saveNotificationPrefs(prefs) {
+    localNotificationPrefs = { ...DEFAULT_NOTIFICATION_PREFS, ...prefs };
+    if (window.firestoreBridge && window.firestoreBridge.isSignedIn()) {
+      window.firestoreBridge.saveNotificationPreferences(localNotificationPrefs);
+    } else {
+      localStorage.setItem("notificationPreferences", JSON.stringify(localNotificationPrefs));
+    }
+    scheduleNativeNotificationsSync();
+  }
+
+  function capacitorAvailable() {
+    return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === "function" && window.Capacitor.isNativePlatform());
+  }
+
+  function localNotificationsPlugin() {
+    return window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications;
+  }
+
+  async function ensureLocalNotificationPermission() {
+    const plugin = localNotificationsPlugin();
+    if (!plugin) return false;
+    const current = await plugin.checkPermissions();
+    if (current.display === "granted") return true;
+    const requested = await plugin.requestPermissions();
+    return requested.display === "granted";
+  }
+
+  // Deterministic string -> positive int hash (djb2 variant), so the same
+  // task id always maps to the same notification id across reschedules.
+  // Capacitor notification ids must be integers; task ids are strings.
+  function hashTaskIdToInt(str) {
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) + hash + str.charCodeAt(i)) | 0;
+    }
+    return Math.abs(hash) % 1000000;
+  }
+
+  async function rescheduleDailyNotifications() {
+    const plugin = localNotificationsPlugin();
+    if (!plugin) return;
+    const prefs = getNotificationPrefs();
+    await plugin.cancel({ notifications: [{ id: MORNING_NOTIF_ID }, { id: EVENING_NOTIF_ID }] });
+    const toSchedule = [];
+    if (prefs.morningEnabled) {
+      const [h, m] = prefs.morningTime.split(":").map(Number);
+      toSchedule.push({
+        id: MORNING_NOTIF_ID,
+        title: "Plan your day",
+        body: "Check today's tasks and get your anchor done first.",
+        schedule: { on: { hour: h, minute: m }, allowWhileIdle: true }
+      });
+    }
+    if (prefs.eveningEnabled) {
+      const [h, m] = prefs.eveningTime.split(":").map(Number);
+      toSchedule.push({
+        id: EVENING_NOTIF_ID,
+        title: "Reflect on your day",
+        body: "Lock in today before it resets.",
+        schedule: { on: { hour: h, minute: m }, allowWhileIdle: true }
+      });
+    }
+    if (toSchedule.length) await plugin.schedule({ notifications: toSchedule });
+  }
+
+  async function reschedulePreTaskNotifications() {
+    const plugin = localNotificationsPlugin();
+    if (!plugin) return;
+    const prefs = getNotificationPrefs();
+    const pending = await plugin.getPending();
+    const previousPreTaskIds = pending.notifications
+      .map(n => n.id)
+      .filter(id => id >= PRE_TASK_ID_BASE);
+    if (previousPreTaskIds.length) {
+      await plugin.cancel({ notifications: previousPreTaskIds.map(id => ({ id })) });
+    }
+    if (!prefs.preTaskEnabled) return;
+
+    const now = new Date();
+    const todaysTasks = getTasksForDate(now).filter(t => !t.occurrenceDone && t.time);
+    const toSchedule = [];
+    todaysTasks.forEach(task => {
+      const [h, m] = task.time.split(":").map(Number);
+      const taskTime = new Date(now);
+      taskTime.setHours(h, m, 0, 0);
+      const fireAt = new Date(taskTime.getTime() - prefs.preTaskMinutesBefore * 60000);
+      if (fireAt <= now) return;
+      toSchedule.push({
+        id: PRE_TASK_ID_BASE + hashTaskIdToInt(task.id),
+        title: task.name,
+        body: `Starts in ${prefs.preTaskMinutesBefore} minutes.`,
+        schedule: { at: fireAt }
+      });
+    });
+    if (toSchedule.length) await plugin.schedule({ notifications: toSchedule });
+  }
+
+  async function syncNativeNotifications() {
+    if (!capacitorAvailable()) return;
+    const granted = await ensureLocalNotificationPermission();
+    if (!granted) return;
+    await rescheduleDailyNotifications();
+    await reschedulePreTaskNotifications();
+  }
+
+  // Debounced so a burst of task edits (e.g. drag-reordering several rows)
+  // doesn't fire a full cancel/reschedule pass per row.
+  let nativeNotificationsSyncTimer = null;
+  function scheduleNativeNotificationsSync() {
+    if (!capacitorAvailable()) return;
+    clearTimeout(nativeNotificationsSyncTimer);
+    nativeNotificationsSyncTimer = setTimeout(syncNativeNotifications, 400);
+  }
+
+  // --- Push notification token registration (client-side only) ---
+  // No server-side send capability exists yet — that needs a Cloud Function
+  // plus your own Apple (.p8/team ID/key ID) and FCM credentials, neither of
+  // which this session has access to. This only keeps a current token
+  // parked on the user doc so that infrastructure has somewhere to read one
+  // from once it's built; it never actually triggers a push itself.
+  function pushNotificationsPlugin() {
+    return window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications;
+  }
+
+  function savePushTokenAnywhere(token) {
+    if (window.firestoreBridge && window.firestoreBridge.isSignedIn()) {
+      window.firestoreBridge.savePushToken(token);
+    } else {
+      localStorage.setItem("pushToken", token);
+    }
+  }
+
+  let pushRegistrationListenersAttached = false;
+  async function registerPushToken() {
+    if (!capacitorAvailable()) return;
+    const plugin = pushNotificationsPlugin();
+    if (!plugin) return;
+    const current = await plugin.checkPermissions();
+    let granted = current.receive === "granted";
+    if (!granted) {
+      const requested = await plugin.requestPermissions();
+      granted = requested.receive === "granted";
+    }
+    if (!granted) return;
+    if (!pushRegistrationListenersAttached) {
+      pushRegistrationListenersAttached = true;
+      plugin.addListener("registration", (token) => { savePushTokenAnywhere(token.value); });
+      plugin.addListener("registrationError", () => {});
+    }
+    await plugin.register();
+  }
+
   function onboardingCategoryColor(catName) {
     const idx = ONBOARDING_CATEGORY_PRESETS.indexOf(catName);
     return PALETTE[idx % PALETTE.length];
@@ -6258,6 +6453,12 @@ let currentRange = "week";
     // deepWorkSessions isn't a cached top-level variable — getDeepWorkSessions()
     // still branches live off window.firestoreBridge, so there's nothing to
     // reassign here for it.
+    const account = window.firestoreBridge.getAccountInfo();
+    if (account && account.notificationPreferences) {
+      localNotificationPrefs = { ...DEFAULT_NOTIFICATION_PREFS, ...account.notificationPreferences };
+    }
+    scheduleNativeNotificationsSync();
+    registerPushToken();
 
     // A signed-in-but-unverified user must never reach the planner — not
     // even via a stale currentOnboardingStep. That variable lives in memory
@@ -6328,6 +6529,8 @@ let currentRange = "week";
     // reset needs to carry over to whatever clears the real billing doc's
     // local mirror on sign-out — don't let it get dropped in that migration.
     localStorage.removeItem("isPremium");
+    localNotificationPrefs = loadStoredNotificationPrefs();
+    localStorage.removeItem("pushToken");
     applySelectedTheme();
     rerenderCurrentView();
   }
@@ -6412,6 +6615,38 @@ let currentRange = "week";
   enableModalDragDismiss(document.getElementById("reauthModalOverlay"));
   enableModalDragDismiss(document.getElementById("authModalOverlay"));
 
+  // Settings' Notifications section — kept here rather than in auth-ui.js,
+  // which deliberately stays self-contained to Account-related fields only
+  // (same reasoning as enableModalDragDismiss above).
+  const NOTIF_FIELD_IDS = ["notifMorningEnabled", "notifMorningTime", "notifEveningEnabled", "notifEveningTime", "notifPreTaskEnabled", "notifPreTaskMinutes"];
+  function populateNotificationSettingsUI() {
+    const prefs = getNotificationPrefs();
+    document.getElementById("notifMorningEnabled").checked = prefs.morningEnabled;
+    document.getElementById("notifMorningTime").value = prefs.morningTime;
+    document.getElementById("notifEveningEnabled").checked = prefs.eveningEnabled;
+    document.getElementById("notifEveningTime").value = prefs.eveningTime;
+    document.getElementById("notifPreTaskEnabled").checked = prefs.preTaskEnabled;
+    document.getElementById("notifPreTaskMinutes").value = String(prefs.preTaskMinutesBefore);
+    const native = capacitorAvailable();
+    document.getElementById("notifNativeOnlyNote").style.display = native ? "none" : "block";
+    document.getElementById("notifControlsWrap").style.opacity = native ? "1" : "0.5";
+    NOTIF_FIELD_IDS.forEach(id => { document.getElementById(id).disabled = !native; });
+  }
+  function readNotificationSettingsUIIntoPrefs() {
+    saveNotificationPrefs({
+      morningEnabled: document.getElementById("notifMorningEnabled").checked,
+      morningTime: document.getElementById("notifMorningTime").value || DEFAULT_NOTIFICATION_PREFS.morningTime,
+      eveningEnabled: document.getElementById("notifEveningEnabled").checked,
+      eveningTime: document.getElementById("notifEveningTime").value || DEFAULT_NOTIFICATION_PREFS.eveningTime,
+      preTaskEnabled: document.getElementById("notifPreTaskEnabled").checked,
+      preTaskMinutesBefore: Number(document.getElementById("notifPreTaskMinutes").value)
+    });
+  }
+  document.getElementById("settingsBtn").addEventListener("click", populateNotificationSettingsUI);
+  NOTIF_FIELD_IDS.forEach(id => {
+    document.getElementById(id).addEventListener("change", readNotificationSettingsUIIntoPrefs);
+  });
+
   if (localStorage.getItem("onboardingComplete") !== "true" && categories.length === 0) {
     document.body.classList.add("onboarding-active");
     document.getElementById("onboardingView").classList.add("visible");
@@ -6420,4 +6655,6 @@ let currentRange = "week";
     renderAll();
     maybeShowWeeklyRecapBanner();
   }
+  syncNativeNotifications();
+  registerPushToken();
   lucide.createIcons();

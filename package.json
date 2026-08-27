@@ -1,0 +1,36 @@
+{
+  "name": "daily-planner",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "sync:www": "node scripts/sync-www.js",
+    "cap:sync": "npm run sync:www && npx cap sync android",
+    "android": "npm run cap:sync && npx cap run android"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lee-ho-nard/daily-planner.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Lee-ho-nard/daily-planner/issues"
+  },
+  "homepage": "https://github.com/Lee-ho-nard/daily-planner#readme",
+  "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/local-notifications": "^8.3.1",
+    "@capacitor/push-notifications": "^8.1.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.0"
+  }
+}

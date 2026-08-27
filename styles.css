@@ -409,6 +409,7 @@
   .goal-checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.9rem; }
   .goal-checkbox-row input { width: auto; }
   .goal-checkbox-row label { margin: 0; font-size: var(--text-base); color: var(--text-primary); }
+  .settings-notif-field { margin-top: 0.4rem; }
 
   /* No "at risk"/"behind pace" state exists in the app's goal logic today
      (checked app.js), so unlike .task-item there's no real state left to
