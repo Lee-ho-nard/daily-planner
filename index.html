@@ -66,12 +66,18 @@
 
     <div class="category-tabs" id="categoryTabs"></div>
 
-    <div class="task-list-toolbar">
+    <div class="range-tabs" id="plannerViewToggle">
+      <button class="range-tab active" data-planner-view="list" type="button"><i data-lucide="list" class="icon"></i> List</button>
+      <button class="range-tab" data-planner-view="timeline" type="button"><i data-lucide="clock" class="icon"></i> Timeline</button>
+    </div>
+
+    <div class="task-list-toolbar" id="taskListToolbar">
       <button id="selectAllBtn" class="cat-pill" type="button" style="display:none;">Select all</button>
       <button id="selectModeBtn" class="cat-pill" type="button">Select</button>
     </div>
 
     <ul id="taskList"></ul>
+    <div id="timelineView" style="display:none;"></div>
   </div>
 
   <div id="goalsView" style="display:none;">

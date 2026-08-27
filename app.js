@@ -1705,14 +1705,27 @@
     }
   }
 
+  // Single entry point for both Planner sub-views (called from everywhere
+  // list-editing already called it: checkbox toggles, add/edit/delete,
+  // drag-reorder, category filter changes, day navigation). Handles the
+  // "no tasks at all" empty state once, shared by both views, then defers
+  // to renderListView()/renderTimelineView() for the rest — each owns its
+  // own container's visibility and any view-specific empty states.
   function renderTasks() {
     const listEl = document.getElementById("taskList");
-    listEl.innerHTML = "";
+    const timelineEl = document.getElementById("timelineView");
+    const toolbarEl = document.getElementById("taskListToolbar");
     const dayTasks = getTasksForDate(currentDate, activeCategory);
     renderProgress(dayTasks);
     updateSelectAllBtn(dayTasks);
 
     if (dayTasks.length === 0) {
+      stopTimelineNowLine();
+      timelineEl.style.display = "none";
+      timelineEl.innerHTML = "";
+      toolbarEl.style.display = "none";
+      listEl.style.display = "";
+      listEl.innerHTML = "";
       const msg = document.createElement("div");
       msg.className = "empty-msg";
       // A brand-new account (no tasks anywhere yet, viewing the unfiltered
@@ -1738,6 +1751,25 @@
       lucide.createIcons();
       return;
     }
+
+    if (plannerViewMode === "timeline") {
+      listEl.style.display = "none";
+      toolbarEl.style.display = "none";
+      timelineEl.style.display = "";
+      renderTimelineView(dayTasks);
+      return;
+    }
+    stopTimelineNowLine();
+    timelineEl.style.display = "none";
+    timelineEl.innerHTML = "";
+    toolbarEl.style.display = "";
+    listEl.style.display = "";
+    renderListView(dayTasks);
+  }
+
+  function renderListView(dayTasks) {
+    const listEl = document.getElementById("taskList");
+    listEl.innerHTML = "";
     if (dayTasks.every(t => t.occurrenceDone)) {
       const msg = document.createElement("div");
       msg.className = "empty-msg";
@@ -1930,6 +1962,217 @@
 
     updateBulkActionBar();
   }
+
+  // --- Planner Timeline view ---
+  // Alternate visualization of the exact same getTasksForDate() data list
+  // view renders — no separate editing surface (every block/marker/
+  // unscheduled row opens the same openEditModal() list view uses) and no
+  // bulk-select (there's nothing checkbox-shaped to select against here).
+  let plannerViewMode = localStorage.getItem("plannerViewMode") === "timeline" ? "timeline" : "list";
+  let timelineNowLineInterval = null;
+
+  function stopTimelineNowLine() {
+    clearInterval(timelineNowLineInterval);
+    timelineNowLineInterval = null;
+  }
+
+  const TIMELINE_START_HOUR = 6;  // 6 AM
+  const TIMELINE_END_HOUR = 23;   // 11 PM
+
+  function timelineParseTimeToMinutes(timeStr) {
+    const [h, m] = timeStr.split(":").map(Number);
+    return h * 60 + m;
+  }
+
+  function formatTimelineHourLabel(h) {
+    const displayHour = h % 12 === 0 ? 12 : h % 12;
+    return displayHour + (h < 12 ? " AM" : " PM");
+  }
+
+  // Deliberately not clamped to the 6AM-11PM range — a task outside it
+  // still gets its true proportional position (above/below the axis)
+  // instead of being clipped or hidden, per spec.
+  function timelineMinutesToPx(minutes, rowHeightPx) {
+    return ((minutes - TIMELINE_START_HOUR * 60) / 60) * rowHeightPx;
+  }
+
+  // Groups scheduled items into transitively-overlapping clusters — a
+  // sweep over start-sorted intervals: if A overlaps B and B overlaps C,
+  // all three land in one cluster even though A and C alone might not
+  // overlap — then splits each cluster's width evenly across its members
+  // side by side in start-time order, the "standard calendar-app pattern"
+  // the spec asks for. Deliberately not full interval-graph column packing
+  // (where a short task fully inside a longer one could reuse a column) —
+  // splitting the whole cluster evenly is what was actually asked for and
+  // is far simpler to reason about and test than optimal packing.
+  function timelineAssignColumns(items) {
+    const sorted = [...items].sort((a, b) => a.start - b.start || String(a.task.id).localeCompare(String(b.task.id)));
+    const clusters = [];
+    let current = [];
+    let clusterEnd = -Infinity;
+    sorted.forEach(item => {
+      if (current.length && item.start >= clusterEnd) {
+        clusters.push(current);
+        current = [];
+        clusterEnd = -Infinity;
+      }
+      current.push(item);
+      clusterEnd = Math.max(clusterEnd, item.end);
+    });
+    if (current.length) clusters.push(current);
+    clusters.forEach(cluster => {
+      cluster.forEach((item, idx) => {
+        item.colIndex = idx;
+        item.colCount = cluster.length;
+      });
+    });
+    return sorted;
+  }
+
+  function renderTimelineView(dayTasks) {
+    stopTimelineNowLine();
+    const container = document.getElementById("timelineView");
+    container.innerHTML = "";
+
+    const scheduled = dayTasks.filter(t => t.time);
+    const unscheduled = dayTasks.filter(t => !t.time);
+
+    if (unscheduled.length) {
+      const unschedWrap = document.createElement("div");
+      unschedWrap.className = "timeline-unscheduled";
+      const label = document.createElement("div");
+      label.className = "timeline-unscheduled-label";
+      label.textContent = "Unscheduled";
+      unschedWrap.appendChild(label);
+      unscheduled.forEach(task => {
+        const row = document.createElement("div");
+        row.className = "timeline-unscheduled-item" + (task.occurrenceDone ? " done" : "");
+        row.dataset.taskId = task.id;
+        const dot = document.createElement("span");
+        dot.className = "timeline-unscheduled-dot";
+        dot.style.setProperty("--task-cat-color", categoryColor(task.category));
+        const name = document.createElement("span");
+        name.className = "timeline-unscheduled-name";
+        name.textContent = task.checkoffLabel || task.name;
+        row.appendChild(dot);
+        row.appendChild(name);
+        row.addEventListener("click", () => openEditModal(task.id));
+        unschedWrap.appendChild(row);
+      });
+      container.appendChild(unschedWrap);
+    }
+
+    // Read from CSS rather than hard-coded, so #timelineView's own
+    // --timeline-row-height/--timeline-label-width (styles.css) stay the
+    // single source of truth a redesign only has to touch once.
+    const rowHeight = parseFloat(getComputedStyle(container).getPropertyValue("--timeline-row-height")) || 56;
+
+    const axisWrap = document.createElement("div");
+    axisWrap.className = "timeline-axis-wrap";
+    axisWrap.style.height = ((TIMELINE_END_HOUR - TIMELINE_START_HOUR) * rowHeight) + "px";
+
+    for (let h = TIMELINE_START_HOUR; h <= TIMELINE_END_HOUR; h++) {
+      const row = document.createElement("div");
+      row.className = "timeline-hour-row";
+      row.style.top = ((h - TIMELINE_START_HOUR) * rowHeight) + "px";
+      const label = document.createElement("span");
+      label.className = "timeline-hour-label";
+      label.textContent = formatTimelineHourLabel(h);
+      row.appendChild(label);
+      axisWrap.appendChild(row);
+    }
+
+    const eventsWrap = document.createElement("div");
+    eventsWrap.className = "timeline-events";
+
+    const positioned = scheduled.map(task => {
+      const start = timelineParseTimeToMinutes(task.time);
+      const durationMin = parseInt(task.duration) || 0;
+      // Marker-only tasks (no duration) get a nominal 1-minute width so
+      // they still participate correctly in overlap grouping alongside
+      // real duration blocks, without affecting their own thin-line render.
+      const end = durationMin > 0 ? start + durationMin : start + 1;
+      return { task, start, end, durationMin };
+    });
+
+    timelineAssignColumns(positioned).forEach(item => {
+      const { task, start, durationMin, colIndex, colCount } = item;
+      const el = document.createElement("div");
+      el.dataset.taskId = task.id;
+      el.style.setProperty("--task-cat-color", categoryColor(task.category));
+      el.style.left = `calc(${(colIndex / colCount) * 100}% + ${colIndex > 0 ? "2px" : "0px"})`;
+      el.style.width = `calc(${100 / colCount}% - 4px)`;
+      el.style.top = timelineMinutesToPx(start, rowHeight) + "px";
+      el.addEventListener("click", () => openEditModal(task.id));
+
+      if (durationMin > 0) {
+        el.className = "timeline-block" + (task.occurrenceDone ? " done" : "");
+        el.style.height = Math.max((durationMin / 60) * rowHeight, 20) + "px";
+        const nameEl = document.createElement("span");
+        nameEl.className = "timeline-block-name";
+        nameEl.textContent = task.checkoffLabel || task.name;
+        const timeEl = document.createElement("span");
+        timeEl.className = "timeline-block-time";
+        timeEl.textContent = task.time + " · " + formatDuration(task.duration);
+        el.appendChild(nameEl);
+        el.appendChild(timeEl);
+      } else {
+        el.className = "timeline-marker" + (task.occurrenceDone ? " done" : "");
+        const line = document.createElement("span");
+        line.className = "timeline-marker-line";
+        const labelEl = document.createElement("span");
+        labelEl.className = "timeline-marker-label";
+        labelEl.textContent = (task.checkoffLabel || task.name) + " · " + task.time;
+        el.appendChild(line);
+        el.appendChild(labelEl);
+      }
+      eventsWrap.appendChild(el);
+    });
+
+    axisWrap.appendChild(eventsWrap);
+    container.appendChild(axisWrap);
+
+    // Only today gets the live indicator — a past/future day's "now" would
+    // be meaningless (and, for the past, indistinguishable from just being
+    // off the bottom of a day that's already over).
+    if (toDateStr(currentDate) === toDateStr(new Date())) {
+      const nowLine = document.createElement("div");
+      nowLine.className = "timeline-now-line";
+      const updateNowLine = () => {
+        const now = new Date();
+        nowLine.style.top = timelineMinutesToPx(now.getHours() * 60 + now.getMinutes(), rowHeight) + "px";
+      };
+      updateNowLine();
+      eventsWrap.appendChild(nowLine);
+      timelineNowLineInterval = setInterval(updateNowLine, 60000);
+    }
+
+    lucide.createIcons();
+  }
+
+  function setPlannerViewMode(mode) {
+    if (mode === plannerViewMode) return;
+    plannerViewMode = mode;
+    localStorage.setItem("plannerViewMode", mode);
+    document.querySelectorAll("#plannerViewToggle .range-tab").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.plannerView === mode);
+    });
+    // Bulk-select only makes sense against list rows/checkboxes — timeline
+    // has neither, so leaving it on would strand the bulk-action bar with
+    // no way to actually select anything. setSelectMode(false) already
+    // re-renders, so only call renderTasks() directly when that didn't run.
+    if (mode === "timeline" && selectMode) {
+      setSelectMode(false);
+    } else {
+      renderTasks();
+    }
+  }
+  document.querySelectorAll("#plannerViewToggle .range-tab").forEach(btn => {
+    btn.addEventListener("click", () => setPlannerViewMode(btn.dataset.plannerView));
+    // Markup hardcodes "List" active by default — sync it to whatever
+    // preference was actually persisted.
+    btn.classList.toggle("active", btn.dataset.plannerView === plannerViewMode);
+  });
 
   function toggleTaskSelection(taskId) {
     if (selectedTaskIds.has(taskId)) selectedTaskIds.delete(taskId); else selectedTaskIds.add(taskId);
