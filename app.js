@@ -3012,13 +3012,13 @@
   // createTaskFromSiri() below, so both entry points create a new task
   // identically. Only covers new-task creation — editing an existing task
   // stays inline in submitTaskForm(), since Siri never edits, only creates.
-  function createTaskRecord({ name, category, time = "", duration = "", date, endDate = "", recurrence = { type: "none" }, isGoal = false, why = "", plan = "", checkoffLabel = "" }) {
+  function createTaskRecord({ name, category, time = "", duration = "", date, endDate = "", recurrence = { type: "none" }, isGoal = false, why = "", plan = "", checkoffLabel = "", sourceUrl = "" }) {
     const resolvedDate = date || toDateStr(currentDate);
     const maxOrder = tasks.filter(t => t.date === resolvedDate).reduce((max, t) => Math.max(max, t.order ?? 0), -1);
     const id = Date.now().toString() + Math.random().toString(36).slice(2, 7);
     const task = {
       id, name, category, time, duration, date: resolvedDate, endDate,
-      done: false, order: maxOrder + 1, recurrence, completedDates: [], isGoal, why, plan, checkoffLabel
+      done: false, order: maxOrder + 1, recurrence, completedDates: [], isGoal, why, plan, checkoffLabel, sourceUrl
     };
     tasks.push(task);
     lastAddedTaskId = id;
@@ -6168,6 +6168,55 @@ let currentRange = "week";
       // task at general runtime. Always null rather than guessing at one.
       anchorTaskName: null,
       anchorDone: null
+    };
+  }
+
+  // --- Quick Capture JS bridge (iOS Share Extension) ---
+  // Called by a native iOS Share Extension (a future Mac/Xcode session,
+  // once that access exists — not built here) via WKWebView's
+  // evaluateJavaScript, e.g. window.createTaskFromShare({...}). Additive,
+  // same as the Siri bridge above: doesn't touch the manual Add Task modal
+  // or createTaskFromSiri, both of which stay exactly as they were.
+  function createTaskFromShare(params) {
+    params = params || {};
+    const text = (params.text || "").trim();
+    const url = (params.url || "").trim();
+    const title = (params.title || "").trim();
+
+    // title -> text -> url, in that order — url is only ever the *name*
+    // when nothing else was shared alongside it.
+    const name = title || text || url;
+    if (!name) {
+      return { success: false, error: "Nothing to create a task from." };
+    }
+
+    if (!categories.length) {
+      return { success: false, error: "No categories exist yet to assign this task to." };
+    }
+    // Quick Capture has no category concept of its own to match against —
+    // same "first category" fallback createTaskFromSiri falls back to when
+    // its own category param is missing or doesn't match anything.
+    const resolvedCategory = categories[0].name;
+
+    const task = createTaskRecord({
+      name,
+      category: resolvedCategory,
+      date: toDateStr(new Date()),
+      // Stored whenever a URL was part of the share, independent of
+      // whether it also ended up as the task's name — e.g. a shared
+      // article keeps its link even though the task name is the article's
+      // title, not the URL.
+      sourceUrl: url
+    });
+    save();
+    renderAll();
+
+    return {
+      success: true,
+      taskId: task.id,
+      name: task.name,
+      category: resolvedCategory,
+      sourceUrl: task.sourceUrl || null
     };
   }
 
