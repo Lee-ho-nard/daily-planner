@@ -1,7 +1,8 @@
 import { auth } from "./firebase-init.js";
 import {
   GoogleAuthProvider,
-  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   onAuthStateChanged,
@@ -11,7 +12,7 @@ import {
   deleteUser,
   EmailAuthProvider,
   reauthenticateWithCredential,
-  reauthenticateWithPopup,
+  reauthenticateWithRedirect,
   getAdditionalUserInfo
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 
@@ -31,13 +32,34 @@ import { runMigrationIfNeeded } from "./migrate.js";
 export const AUTH_ACTION_URL = "https://flit-96c38.web.app/auth-action.html";
 const VERIFICATION_ACTION_SETTINGS = { url: AUTH_ACTION_URL };
 
+// Redirect, not popup: popup-based OAuth is broken inside Android/iOS
+// WebViews (Google rejects it outright as an embedded user agent), so this
+// is the one flow that has to work identically in both a regular browser
+// tab and the Capacitor-wrapped native app. The tradeoff is that this
+// promise resolves before the user ever leaves the page (the browser is
+// about to navigate away to Google, then back) — it does NOT resolve with
+// the signed-in user the way signInWithPopup() used to. Callers must not
+// await it for a result; the actual UserCredential only becomes available
+// via checkGoogleRedirectResult() below, on the next page load after the
+// redirect returns.
 export function signInWithGoogle() {
   const provider = new GoogleAuthProvider();
   // Without this, Google silently re-signs-in with whichever account was
   // used last instead of showing the picker — no chance to choose a
   // different account.
   provider.setCustomParameters({ prompt: "select_account" });
-  return signInWithPopup(auth, provider);
+  return signInWithRedirect(auth, provider);
+}
+
+// Call once on every app load (see auth-ui.js's DOMContentLoaded handler).
+// Resolves to the UserCredential (same shape signInWithPopup used to
+// return, including isNewUser via getAdditionalUserInfo) if this load is
+// the browser returning from a signInWithGoogle() redirect, or null for
+// every other kind of page load (fresh visit, refresh of an already-
+// signed-in session, etc.) — those are already handled by
+// onAuthStateChanged below regardless.
+export function checkGoogleRedirectResult() {
+  return getRedirectResult(auth);
 }
 
 export async function signUpWithEmail(email, password) {
@@ -97,11 +119,18 @@ export function reauthenticateWithPassword(password) {
   return reauthenticateWithCredential(user, credential);
 }
 
+// Redirect, not popup — same WebView incompatibility and same fix as
+// signInWithGoogle() above. Same tradeoff too: this resolves before the
+// user leaves the page, not with a result. The account-deletion flow that
+// calls this (auth-ui.js's attemptDeleteAccount()) picks the result back up
+// via checkGoogleRedirectResult() on the next load, same mechanism, since
+// Firebase surfaces both sign-in and reauth redirect outcomes through the
+// same getRedirectResult() call.
 export function reauthenticateWithGoogle() {
   const user = auth.currentUser;
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
-  return reauthenticateWithPopup(user, provider);
+  return reauthenticateWithRedirect(user, provider);
 }
 
 // Firebase requires the current password to be verified via

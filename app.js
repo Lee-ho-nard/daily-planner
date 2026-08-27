@@ -6662,6 +6662,46 @@ let currentRange = "week";
     return onboardingDraft;
   }
 
+  // Google sign-in now goes through signInWithRedirect (see auth.js) —
+  // required for it to work inside a native WebView, but it means the whole
+  // page navigates away to Google and back, a real reload that wipes every
+  // in-memory variable. Without this, a user who taps "Continue with
+  // Google" on onboarding's account-creation step would come back signed in
+  // but dumped at onboarding step 1 with currentOnboardingStep reset and
+  // onboardingDraft (their name/categories/tasks/goal) gone. Called by
+  // auth-ui.js immediately before triggering that redirect.
+  function saveOnboardingStateForGoogleRedirect() {
+    sessionStorage.setItem("flitOnboardingGoogleRedirect", JSON.stringify({
+      step: currentOnboardingStep,
+      draft: onboardingDraft
+    }));
+  }
+
+  // Called once at bootstrap (see this file's tail) to restore what
+  // saveOnboardingStateForGoogleRedirect() saved, if anything's there.
+  // One-shot: removes its own sessionStorage entry as soon as it's read, so
+  // a later unrelated reload doesn't re-trigger this. Returns whether it
+  // actually restored something, so the caller can skip the normal
+  // onboarding-vs-planner bootstrap branch when it did.
+  function restoreOnboardingStateAfterGoogleRedirect() {
+    const raw = sessionStorage.getItem("flitOnboardingGoogleRedirect");
+    if (!raw) return false;
+    sessionStorage.removeItem("flitOnboardingGoogleRedirect");
+    let saved;
+    try {
+      saved = JSON.parse(raw);
+    } catch (err) {
+      return false;
+    }
+    if (!saved || !saved.step) return false;
+    onboardingDraft = saved.draft || null;
+    currentOnboardingStep = saved.step;
+    document.body.classList.add("onboarding-active");
+    document.getElementById("onboardingView").classList.add("visible");
+    renderOnboardingStep();
+    return true;
+  }
+
   function completeOnboarding() {
     localStorage.setItem("onboardingComplete", "true");
     onboardingDraft = null;
@@ -6893,13 +6933,21 @@ let currentRange = "week";
     document.getElementById(id).addEventListener("change", readNotificationSettingsUIIntoPrefs);
   });
 
-  if (localStorage.getItem("onboardingComplete") !== "true" && categories.length === 0) {
-    document.body.classList.add("onboarding-active");
-    document.getElementById("onboardingView").classList.add("visible");
-    renderOnboardingStep();
-  } else {
-    renderAll();
-    maybeShowWeeklyRecapBanner();
+  // Checked first: if this load is the browser returning from a Google
+  // sign-in redirect triggered mid-onboarding, this already restored the
+  // right onboarding step/draft and rendered it — the normal
+  // onboarding-vs-planner decision below would otherwise stomp on that with
+  // a fresh step-1 render before hydrateFromFirestore() gets a chance to
+  // run (see auth-ui.js's handleGoogleRedirectResult()).
+  if (!restoreOnboardingStateAfterGoogleRedirect()) {
+    if (localStorage.getItem("onboardingComplete") !== "true" && categories.length === 0) {
+      document.body.classList.add("onboarding-active");
+      document.getElementById("onboardingView").classList.add("visible");
+      renderOnboardingStep();
+    } else {
+      renderAll();
+      maybeShowWeeklyRecapBanner();
+    }
   }
   syncNativeNotifications();
   registerPushToken();

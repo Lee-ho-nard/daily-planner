@@ -1,5 +1,6 @@
 import {
   signInWithGoogle,
+  checkGoogleRedirectResult,
   signUpWithEmail,
   signInWithEmail,
   signOutUser,
@@ -308,62 +309,143 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // signInWithGoogle() now triggers signInWithRedirect (see auth.js) —
+  // required for Google sign-in to work inside a native WebView, but it
+  // means the page navigates away to Google and back instead of resolving
+  // a popup promise in place. This handler only fires the redirect and
+  // persists what's needed to resume; the actual result (isNewUser check,
+  // flushing onboarding's draft, closing this modal) is handled by
+  // handleGoogleRedirectResult() below, once on the next load.
+  const GOOGLE_REDIRECT_REQUIRE_NEW_ACCOUNT_KEY = "flitGoogleRedirectRequireNewAccount";
+  // Set by attemptDeleteAccount() below, right before it triggers
+  // reauthenticateWithGoogle()'s redirect — see that function for why this
+  // needs to survive a reload too (the account's Firestore data is already
+  // gone by the time reauth is needed; only finishing deleteCurrentUser()
+  // is left waiting on it).
+  const GOOGLE_REDIRECT_DELETE_REAUTH_KEY = "flitGoogleRedirectDeleteReauth";
+
   document.getElementById("authGoogleBtn").addEventListener("click", async () => {
     // Firestore's own onSnapshot-driven "signed in" event can fire (often
     // from local cache, near-instantly for an account previously used on
-    // this device) before this handler even gets to inspect isNewUser below
-    // — that race is what let an existing-account collision hydrate real
-    // data and advance onboarding ahead of the sign-out further down. This
-    // flag tells app.js's listener to hold off until this handler has made
-    // its determination; see the "firestore-auth-ready" listener in app.js.
+    // this device) before handleGoogleRedirectResult() gets to inspect
+    // isNewUser on the next load — that race is what let an existing-
+    // account collision hydrate real data and advance onboarding ahead of
+    // the sign-out. This flag tells app.js's listener to hold off until
+    // that determination is made; see the "firestore-auth-ready" listener
+    // in app.js. sessionStorage (not just the in-memory flags below)
+    // because a real page reload is coming and would otherwise wipe them.
     if (requireNewGoogleAccount) {
       window.pendingGoogleAccountCheck = true;
       skipNextMigration();
+      sessionStorage.setItem(GOOGLE_REDIRECT_REQUIRE_NEW_ACCOUNT_KEY, "1");
+      if (typeof window.saveOnboardingStateForGoogleRedirect === "function") window.saveOnboardingStateForGoogleRedirect();
     }
     try {
-      const result = await signInWithGoogle();
-      if (requireNewGoogleAccount) {
-        const info = getAdditionalUserInfo(result);
-        if (!info || !info.isNewUser) {
-          // This Google account already has a Flit account behind it —
-          // signInWithPopup just silently signed into it instead of
-          // creating a new one. Onboarding is new-users-only, so back out
-          // immediately rather than letting them land in the app as if
-          // they'd just finished setup on someone else's account.
-          cancelSkipMigration();
-          try { await signOutUser(); } catch (signOutErr) { /* best-effort */ }
-          window.pendingGoogleAccountCheck = false;
-          const stillSignedIn = getCurrentUser();
-          if (stillSignedIn) {
-            console.error("Sign-out after existing-account Google collision did not take effect — still signed in as", stillSignedIn.uid);
-          }
-          errorEl.textContent = "Looks like you already have a Flit account.";
-          errorEl.classList.add("show");
-          existingAccountLink.style.display = "block";
-          existingAccountDetected = true;
-          return;
-        }
-        // Genuinely new account: flush onboarding's draft to Firestore
-        // before hydrating, so the mirror this pulls from already has real
-        // data instead of a still-empty collection. The "firestore-auth-
-        // ready" event above was held back (or hadn't fired yet) while the
-        // isNewUser check above was pending. Clear the guard and, since
-        // that event only ever dispatches once per uid, explicitly run the
-        // hydrate it would have triggered — later "firestore-data-changed"
-        // events keep it in sync from here same as any other sign-up.
-        await flushOnboardingDraft(result.user.uid);
-        window.pendingGoogleAccountCheck = false;
-        if (typeof window.hydrateFromFirestore === "function") window.hydrateFromFirestore();
-      }
-      closeModal(overlay);
-      notifyOnboardingAuthChanged();
+      // Resolves before the redirect navigation completes (often before the
+      // user even leaves) — never carries a sign-in result. If it rejects
+      // (e.g. the redirect itself couldn't start), fall into the catch
+      // below exactly as a popup failure used to.
+      await signInWithGoogle();
     } catch (err) {
-      if (requireNewGoogleAccount) cancelSkipMigration();
+      if (requireNewGoogleAccount) {
+        cancelSkipMigration();
+        sessionStorage.removeItem(GOOGLE_REDIRECT_REQUIRE_NEW_ACCOUNT_KEY);
+      }
       window.pendingGoogleAccountCheck = false;
       const msg = friendlyAuthError(err);
       if (msg) { errorEl.textContent = msg; errorEl.classList.add("show"); }
     }
   });
+
+  // Called once below, on every load. Resolves non-null exactly when this
+  // load is the browser returning from the signInWithGoogle() redirect
+  // above — every other load (fresh visit, refresh of an already-signed-in
+  // session) resolves null here and is already handled by onAuthChange.
+  async function handleGoogleRedirectResult() {
+    const wasDeleteReauth = sessionStorage.getItem(GOOGLE_REDIRECT_DELETE_REAUTH_KEY) === "1";
+
+    let result;
+    try {
+      result = await checkGoogleRedirectResult();
+    } catch (err) {
+      sessionStorage.removeItem(GOOGLE_REDIRECT_REQUIRE_NEW_ACCOUNT_KEY);
+      sessionStorage.removeItem(GOOGLE_REDIRECT_DELETE_REAUTH_KEY);
+      window.pendingGoogleAccountCheck = false;
+      if (wasDeleteReauth) {
+        // Firestore data is already gone (deleteAllUserData ran before this
+        // reauth was ever triggered) — there's nothing left to lose, just a
+        // dangling Auth account that never finished being removed.
+        notify("Your data was deleted, but we couldn't finish removing your account. Please try again from Settings.", "warning");
+        return;
+      }
+      const msg = friendlyAuthError(err);
+      if (msg) { errorEl.textContent = msg; errorEl.classList.add("show"); openModal(overlay); }
+      return;
+    }
+    if (!result) return; // not a redirect return — nothing to do
+
+    if (wasDeleteReauth) {
+      sessionStorage.removeItem(GOOGLE_REDIRECT_DELETE_REAUTH_KEY);
+      // Resuming attemptDeleteAccount()'s auth/requires-recent-login branch
+      // after the redirect round trip: the reauth itself just succeeded
+      // (we have a fresh result), so retry the one thing that was actually
+      // waiting on it. No modal/confirmation state to restore here — the
+      // deletion was already irrevocably committed (data gone) before this
+      // redirect ever started, so finishing quietly is the right resume
+      // behavior, not re-showing a confirmation the user already gave.
+      try {
+        await deleteCurrentUser();
+        finishAccountDeletion();
+      } catch (err) {
+        notify("Your data was deleted, but we couldn't finish removing your account. Please try again from Settings.", "warning");
+      }
+      return;
+    }
+
+    const wasRequireNewAccount = sessionStorage.getItem(GOOGLE_REDIRECT_REQUIRE_NEW_ACCOUNT_KEY) === "1";
+    sessionStorage.removeItem(GOOGLE_REDIRECT_REQUIRE_NEW_ACCOUNT_KEY);
+
+    if (wasRequireNewAccount) {
+      const info = getAdditionalUserInfo(result);
+      if (!info || !info.isNewUser) {
+        // This Google account already has a Flit account behind it —
+        // Google just silently signed into it instead of creating a new
+        // one. Onboarding is new-users-only, so back out immediately
+        // rather than letting them land in the app as if they'd just
+        // finished setup on someone else's account.
+        cancelSkipMigration();
+        try { await signOutUser(); } catch (signOutErr) { /* best-effort */ }
+        window.pendingGoogleAccountCheck = false;
+        const stillSignedIn = getCurrentUser();
+        if (stillSignedIn) {
+          console.error("Sign-out after existing-account Google collision did not take effect — still signed in as", stillSignedIn.uid);
+        }
+        errorEl.textContent = "Looks like you already have a Flit account.";
+        errorEl.classList.add("show");
+        existingAccountLink.style.display = "block";
+        existingAccountDetected = true;
+        // The modal starts closed on this fresh page load (unlike the old
+        // popup flow, where it had stayed open the whole time) — reopen it
+        // so the error is actually visible.
+        openModal(overlay);
+        return;
+      }
+      // Genuinely new account: flush onboarding's draft to Firestore before
+      // hydrating, so the mirror this pulls from already has real data
+      // instead of a still-empty collection. The "firestore-auth-ready"
+      // event was held back (or hadn't fired yet) while the isNewUser check
+      // above was pending. Clear the guard and, since that event only ever
+      // dispatches once per uid, explicitly run the hydrate it would have
+      // triggered — later "firestore-data-changed" events keep it in sync
+      // from here same as any other sign-up.
+      await flushOnboardingDraft(result.user.uid);
+      window.pendingGoogleAccountCheck = false;
+      if (typeof window.hydrateFromFirestore === "function") window.hydrateFromFirestore();
+    }
+    closeModal(overlay);
+    notifyOnboardingAuthChanged();
+  }
+  handleGoogleRedirectResult();
 
   existingAccountLink.addEventListener("click", async () => {
     // Same guarantee as the Cancel path: don't carry the rejected Google
@@ -573,13 +655,22 @@ document.addEventListener("DOMContentLoaded", () => {
         // fresh sign-in to finish removing the now-empty Auth account.
         try {
           if (hasGoogleProvider()) {
+            // reauthenticateWithGoogle() now redirects the whole page to
+            // Google and back (see auth.js) — it resolves before that
+            // navigation completes, not with a result, so nothing after
+            // this call in this try block ever runs for the Google case.
+            // handleGoogleRedirectResult() picks this back up on the next
+            // load via the flag set here, retries deleteCurrentUser(), and
+            // calls finishAccountDeletion() itself.
+            sessionStorage.setItem(GOOGLE_REDIRECT_DELETE_REAUTH_KEY, "1");
             await reauthenticateWithGoogle();
-          } else {
-            await openReauthModal();
+            return;
           }
+          await openReauthModal();
           await deleteCurrentUser();
           finishAccountDeletion();
         } catch (reauthErr) {
+          sessionStorage.removeItem(GOOGLE_REDIRECT_DELETE_REAUTH_KEY);
           if (reauthErr && reauthErr.message !== "cancelled") {
             notify("Your data was deleted, but we couldn't finish removing your account. Please try again from Settings.", "warning");
           }
