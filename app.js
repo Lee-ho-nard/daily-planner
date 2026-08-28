@@ -6772,6 +6772,7 @@ let currentRange = "week";
   // Safe to call even when nothing was actually restored — every step here
   // is already a no-op against default state in that case.
   function clearRestoredOnboardingState() {
+    console.log("[flit-auth-debug] clearRestoredOnboardingState() running");
     sessionStorage.removeItem("flitOnboardingGoogleRedirect");
     onboardingDraft = null;
     currentOnboardingStep = 1;
@@ -6804,6 +6805,7 @@ let currentRange = "week";
   }
 
   function hydrateFromFirestore() {
+    console.log("[flit-auth-debug] hydrateFromFirestore() called, isSignedIn:", !!(window.firestoreBridge && window.firestoreBridge.isSignedIn()));
     if (!window.firestoreBridge || !window.firestoreBridge.isSignedIn()) return;
     hasBeenSignedInThisSession = true;
     tasks = window.firestoreBridge.getTasks();
@@ -6842,6 +6844,7 @@ let currentRange = "week";
     }
 
     const wasOnboarding = document.body.classList.contains("onboarding-active");
+    console.log("[flit-auth-debug] hydrateFromFirestore(): wasOnboarding =", wasOnboarding, "categories.length =", categories.length, "currentOnboardingStep =", currentOnboardingStep);
     if (wasOnboarding && categories.length > 0) {
       // Signing up on the account-creation step (12) migrates this
       // session's local data in, landing right here with categories now
@@ -6860,6 +6863,7 @@ let currentRange = "week";
       }
     }
 
+    console.log("[flit-auth-debug] hydrateFromFirestore(): calling rerenderCurrentView(), currentView =", currentView);
     rerenderCurrentView();
   }
 

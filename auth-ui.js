@@ -340,13 +340,19 @@ document.addEventListener("DOMContentLoaded", () => {
       sessionStorage.setItem(GOOGLE_REDIRECT_REQUIRE_NEW_ACCOUNT_KEY, "1");
       if (typeof window.saveOnboardingStateForGoogleRedirect === "function") window.saveOnboardingStateForGoogleRedirect();
     }
+    // TEMPORARY diagnostic logging — see handleGoogleRedirectResult()
+    // below for the matching return-leg logs. Remove once a real-account
+    // retest confirms Google sign-in actually works end to end.
+    console.log("[flit-auth-debug] signInWithGoogle() about to redirect, origin:", location.origin);
     try {
       // Resolves before the redirect navigation completes (often before the
       // user even leaves) — never carries a sign-in result. If it rejects
       // (e.g. the redirect itself couldn't start), fall into the catch
       // below exactly as a popup failure used to.
       await signInWithGoogle();
+      console.log("[flit-auth-debug] signInWithGoogle() returned without throwing (navigation should be underway)");
     } catch (err) {
+      console.error("[flit-auth-debug] signInWithGoogle() threw:", err && err.code, err && err.message, err);
       if (requireNewGoogleAccount) {
         cancelSkipMigration();
         sessionStorage.removeItem(GOOGLE_REDIRECT_REQUIRE_NEW_ACCOUNT_KEY);
@@ -364,10 +370,12 @@ document.addEventListener("DOMContentLoaded", () => {
   async function handleGoogleRedirectResult() {
     const wasDeleteReauth = sessionStorage.getItem(GOOGLE_REDIRECT_DELETE_REAUTH_KEY) === "1";
 
+    console.log("[flit-auth-debug] handleGoogleRedirectResult() running on load, origin:", location.origin);
     let result;
     try {
       result = await checkGoogleRedirectResult();
     } catch (err) {
+      console.error("[flit-auth-debug] checkGoogleRedirectResult() threw:", err && err.code, err && err.message, err);
       sessionStorage.removeItem(GOOGLE_REDIRECT_REQUIRE_NEW_ACCOUNT_KEY);
       sessionStorage.removeItem(GOOGLE_REDIRECT_DELETE_REAUTH_KEY);
       window.pendingGoogleAccountCheck = false;
@@ -382,6 +390,11 @@ document.addEventListener("DOMContentLoaded", () => {
       if (msg) { errorEl.textContent = msg; errorEl.classList.add("show"); openModal(overlay); }
       return;
     }
+    // TEMPORARY diagnostic logging — added to investigate a real-account
+    // test where existing-user sign-in from onboarding landed at raw step
+    // 1 instead of the main app. Remove once a real-account retest
+    // confirms the fix below actually resolves it.
+    console.log("[flit-auth-debug] checkGoogleRedirectResult() resolved:", result ? { uid: result.user.uid, email: result.user.email } : null);
     if (!result) return; // not a redirect return — nothing to do
 
     if (wasDeleteReauth) {
@@ -418,6 +431,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // stuck on the onboarding screen after a fully successful sign-in.
     const info = getAdditionalUserInfo(result);
     const isNewUser = !!(info && info.isNewUser);
+    console.log("[flit-auth-debug] wasRequireNewAccount:", wasRequireNewAccount, "isNewUser:", isNewUser);
 
     if (isNewUser) {
       // Genuinely new account — same treatment whether they came via the
@@ -452,17 +466,40 @@ document.addEventListener("DOMContentLoaded", () => {
       openModal(overlay);
       return;
     } else {
-      // The fix: an existing account signing in normally (onboarding's
-      // "already have an account" link, or step 1's own escape hatch).
-      // Explicitly undo any onboarding step/draft state that may have been
+      // An existing account signing in normally (onboarding's "already
+      // have an account" link, or step 1's own escape hatch). Explicitly
+      // undo any onboarding step/draft state that may have been
       // optimistically restored — an existing user must never resume or
       // re-enter onboarding, regardless of what screen they started from.
+      console.log("[flit-auth-debug] existing-user branch: calling clearRestoredOnboardingState()");
       if (typeof window.clearRestoredOnboardingState === "function") window.clearRestoredOnboardingState();
+      // The actual fix: clearing onboarding state above only stops the
+      // wrong screen from showing — it never loads this account's real
+      // data or reveals the app on its own. That was previously left to
+      // the independent firestore-auth-ready/firestore-data-changed event
+      // chain, which a real-account test showed doesn't reliably do it in
+      // time (landing at raw, uncorrected onboarding step 1 rather than
+      // any restored/stuck state means nothing ever ran to correct the
+      // bootstrap's default guess). Calling hydrateFromFirestore()
+      // directly removes that dependency for this specific, critical
+      // moment — it's a safe no-op if firestoreBridge isn't marked signed
+      // in yet (the later event-driven call still does the real work
+      // then), and the actual fix if it already is.
+      window.pendingGoogleAccountCheck = false;
+      console.log("[flit-auth-debug] existing-user branch: calling hydrateFromFirestore(), firestoreBridge.isSignedIn() =", !!(window.firestoreBridge && window.firestoreBridge.isSignedIn()));
+      if (typeof window.hydrateFromFirestore === "function") window.hydrateFromFirestore();
     }
     closeModal(overlay);
     notifyOnboardingAuthChanged();
   }
-  handleGoogleRedirectResult();
+  handleGoogleRedirectResult().catch(err => {
+    // Any uncaught throw above (flushOnboardingDraft, hydrateFromFirestore,
+    // etc.) would otherwise die silently — this was invoked fire-and-forget
+    // with no .catch() of its own, so nothing after the throw point (up to
+    // and including closeModal/notifyOnboardingAuthChanged) would run, and
+    // there'd be no trace of why. Logged, not swallowed.
+    console.error("[flit-auth-debug] handleGoogleRedirectResult() threw:", err);
+  });
 
   existingAccountLink.addEventListener("click", async () => {
     // Same guarantee as the Cancel path: don't carry the rejected Google
