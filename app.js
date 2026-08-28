@@ -6994,6 +6994,23 @@ let currentRange = "week";
     return true;
   }
 
+  // Called by auth-ui.js's handleGoogleRedirectResult() once it confirms
+  // (via isNewUser) that a Google redirect resolved to an EXISTING
+  // account — restoreOnboardingStateAfterGoogleRedirect() above runs at
+  // bootstrap, before isNewUser can possibly be known yet, so it can only
+  // ever be an optimistic guess. An existing user must never resume or
+  // re-enter onboarding once that guess turns out wrong, regardless of
+  // what screen they initiated sign-in from (the bug this exists to fix).
+  // Safe to call even when nothing was actually restored — every step here
+  // is already a no-op against default state in that case.
+  function clearRestoredOnboardingState() {
+    sessionStorage.removeItem("flitOnboardingGoogleRedirect");
+    onboardingDraft = null;
+    currentOnboardingStep = 1;
+    document.body.classList.remove("onboarding-active");
+    document.getElementById("onboardingView").classList.remove("visible");
+  }
+
   function completeOnboarding() {
     localStorage.setItem("onboardingComplete", "true");
     onboardingDraft = null;

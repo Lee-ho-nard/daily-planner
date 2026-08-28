@@ -405,42 +405,59 @@ document.addEventListener("DOMContentLoaded", () => {
     const wasRequireNewAccount = sessionStorage.getItem(GOOGLE_REDIRECT_REQUIRE_NEW_ACCOUNT_KEY) === "1";
     sessionStorage.removeItem(GOOGLE_REDIRECT_REQUIRE_NEW_ACCOUNT_KEY);
 
-    if (wasRequireNewAccount) {
-      const info = getAdditionalUserInfo(result);
-      if (!info || !info.isNewUser) {
-        // This Google account already has a Flit account behind it —
-        // Google just silently signed into it instead of creating a new
-        // one. Onboarding is new-users-only, so back out immediately
-        // rather than letting them land in the app as if they'd just
-        // finished setup on someone else's account.
-        cancelSkipMigration();
-        try { await signOutUser(); } catch (signOutErr) { /* best-effort */ }
-        window.pendingGoogleAccountCheck = false;
-        const stillSignedIn = getCurrentUser();
-        if (stillSignedIn) {
-          console.error("Sign-out after existing-account Google collision did not take effect — still signed in as", stillSignedIn.uid);
-        }
-        errorEl.textContent = "Looks like you already have a Flit account.";
-        errorEl.classList.add("show");
-        existingAccountLink.style.display = "block";
-        existingAccountDetected = true;
-        // The modal starts closed on this fresh page load (unlike the old
-        // popup flow, where it had stayed open the whole time) — reopen it
-        // so the error is actually visible.
-        openModal(overlay);
-        return;
-      }
-      // Genuinely new account: flush onboarding's draft to Firestore before
-      // hydrating, so the mirror this pulls from already has real data
-      // instead of a still-empty collection. The "firestore-auth-ready"
-      // event was held back (or hadn't fired yet) while the isNewUser check
-      // above was pending. Clear the guard and, since that event only ever
-      // dispatches once per uid, explicitly run the hydrate it would have
-      // triggered — later "firestore-data-changed" events keep it in sync
-      // from here same as any other sign-up.
+    // isNewUser is the ground truth for what actually happened — computed
+    // for every redirect return, not just the ones that came from the
+    // dedicated "create account" button. wasRequireNewAccount only
+    // captures *intent* (which button the user clicked before the
+    // redirect fired) and is what previously gated this whole check, which
+    // was the bug: an existing user signing in via onboarding's "already
+    // have an account" link (wasRequireNewAccount === false) never got an
+    // isNewUser check at all, so nothing ever corrected the onboarding
+    // step/draft state saveOnboardingStateForGoogleRedirect() may have
+    // left behind from an earlier attempt in the same tab, leaving them
+    // stuck on the onboarding screen after a fully successful sign-in.
+    const info = getAdditionalUserInfo(result);
+    const isNewUser = !!(info && info.isNewUser);
+
+    if (isNewUser) {
+      // Genuinely new account — same treatment whether they came via the
+      // dedicated "create account" button (expected) or ended up here via
+      // "already have an account" by mistake (unexpected, but the correct
+      // outcome is identical: flush this fresh account's onboarding draft
+      // in, same as the normal signup path). Flushing before hydrating so
+      // the mirror hydrateFromFirestore() reads from already has real data
+      // instead of a still-empty collection.
       await flushOnboardingDraft(result.user.uid);
       window.pendingGoogleAccountCheck = false;
       if (typeof window.hydrateFromFirestore === "function") window.hydrateFromFirestore();
+    } else if (wasRequireNewAccount) {
+      // Expected a new account (the dedicated "create account" button) but
+      // this Google account already has a Flit account behind it — back
+      // out rather than letting them land in the app as if they'd just
+      // finished setup on someone else's account.
+      cancelSkipMigration();
+      try { await signOutUser(); } catch (signOutErr) { /* best-effort */ }
+      window.pendingGoogleAccountCheck = false;
+      const stillSignedIn = getCurrentUser();
+      if (stillSignedIn) {
+        console.error("Sign-out after existing-account Google collision did not take effect — still signed in as", stillSignedIn.uid);
+      }
+      errorEl.textContent = "Looks like you already have a Flit account.";
+      errorEl.classList.add("show");
+      existingAccountLink.style.display = "block";
+      existingAccountDetected = true;
+      // The modal starts closed on this fresh page load (unlike the old
+      // popup flow, where it had stayed open the whole time) — reopen it
+      // so the error is actually visible.
+      openModal(overlay);
+      return;
+    } else {
+      // The fix: an existing account signing in normally (onboarding's
+      // "already have an account" link, or step 1's own escape hatch).
+      // Explicitly undo any onboarding step/draft state that may have been
+      // optimistically restored — an existing user must never resume or
+      // re-enter onboarding, regardless of what screen they started from.
+      if (typeof window.clearRestoredOnboardingState === "function") window.clearRestoredOnboardingState();
     }
     closeModal(overlay);
     notifyOnboardingAuthChanged();
