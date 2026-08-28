@@ -6987,6 +6987,18 @@ let currentRange = "week";
   // (same reasoning as enableModalDragDismiss above).
   const NOTIF_FIELD_IDS = ["notifMorningEnabled", "notifMorningTime", "notifEveningEnabled", "notifEveningTime", "notifPreTaskEnabled", "notifPreTaskMinutes"];
   function populateNotificationSettingsUI() {
+    // Notification preferences are Firestore-synced per-account state (see
+    // saveNotificationPrefs()) — a signed-out/local-only user has nothing
+    // for these toggles to actually control, so the whole section is
+    // hidden rather than shown-but-disabled like the native-only note
+    // below handles. Re-checked fresh on every settings-modal open, which
+    // is the only place this needs to react: signing in/out always closes
+    // this modal first (openAuthModal() does so explicitly), so there's no
+    // live state to keep in sync while it's already open.
+    const signedIn = !!(window.firestoreBridge && window.firestoreBridge.isSignedIn());
+    document.getElementById("notifSettingsSection").style.display = signedIn ? "" : "none";
+    if (!signedIn) return;
+
     const prefs = getNotificationPrefs();
     document.getElementById("notifMorningEnabled").checked = prefs.morningEnabled;
     document.getElementById("notifMorningTime").value = prefs.morningTime;
