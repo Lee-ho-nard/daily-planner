@@ -3410,88 +3410,8 @@
   document.getElementById("themesCloseBtn").addEventListener("click", () => closeModal(themesOverlay));
   themesOverlay.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(themesOverlay); });
 
-  // --- Premium data export ---
-  function updateExportBtnVisibility() {
-    document.getElementById("exportDataBtn").style.display = isPremiumUser() ? "flex" : "none";
-  }
-
-  function downloadFile(filename, content, mimeType) {
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
-  function csvEscape(value) {
-    const str = String(value == null ? "" : value);
-    if (/[",\n]/.test(str)) return '"' + str.replace(/"/g, '""') + '"';
-    return str;
-  }
-
-  function exportDataAsJson() {
-    // Reads the cached variables (correct for both signed-in and
-    // signed-out — the cache reflects whichever is the live source) rather
-    // than localStorage directly, since localStorage isn't kept in sync
-    // for signed-in users.
-    const data = {
-      tasks,
-      categories,
-      reflections,
-      lockedDays
-    };
-    downloadFile(`planner-export-${toDateStr(new Date())}.json`, JSON.stringify(data, null, 2), "application/json");
-    showToast("Exported. Check your downloads.", "success");
-  }
-
-  function exportDataAsCsv() {
-    const dateStr = toDateStr(new Date());
-
-    const storedTasks = tasks;
-    const taskHeader = ["name", "category", "date", "time", "duration", "done", "isGoal", "why", "plan"];
-    const taskLines = [taskHeader.join(",")];
-    storedTasks.forEach(t => {
-      const isRecurring = t.recurrence && t.recurrence.type !== "none";
-      const doneSummary = isRecurring ? (t.completedDates || []).join(";") : (t.done ? "true" : "false");
-      taskLines.push([
-        csvEscape(t.name), csvEscape(t.category), csvEscape(t.date), csvEscape(t.time), csvEscape(t.duration),
-        csvEscape(doneSummary), csvEscape(t.isGoal ? "true" : "false"), csvEscape(t.why), csvEscape(t.plan)
-      ].join(","));
-    });
-    downloadFile(`planner-export-tasks-${dateStr}.csv`, taskLines.join("\n"), "text/csv");
-
-    const storedReflections = reflections;
-    const reflHeader = ["date", "wentWell", "improve"];
-    const reflLines = [reflHeader.join(",")];
-    Object.keys(storedReflections).sort().forEach(date => {
-      const entry = storedReflections[date] || {};
-      reflLines.push([csvEscape(date), csvEscape(entry.wentWell), csvEscape(entry.improve)].join(","));
-    });
-    downloadFile(`planner-export-reflections-${dateStr}.csv`, reflLines.join("\n"), "text/csv");
-    showToast("Exported. Check your downloads.", "success");
-  }
-
-  const exportOverlay = document.getElementById("exportModalOverlay");
-  // Same drag-to-dismiss as the Add Task modal — enableModalDragDismiss()
-  // is written against a generic overlay/modal pair, so this is just
-  // another call, no changes to the function itself.
-  enableModalDragDismiss(exportOverlay);
-  document.getElementById("exportDataBtn").addEventListener("click", () => {
-    if (!isPremiumUser()) return;
-    openModal(exportOverlay);
-  });
-  document.getElementById("exportJsonBtn").addEventListener("click", exportDataAsJson);
-  document.getElementById("exportCsvBtn").addEventListener("click", exportDataAsCsv);
-  document.getElementById("exportCloseBtn").addEventListener("click", () => closeModal(exportOverlay));
-  exportOverlay.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(exportOverlay); });
-
   applySelectedTheme();
   updateThemesBtnVisibility();
-  updateExportBtnVisibility();
   updateSearchReflectionsBtnVisibility();
 
   const micBtn = document.getElementById("micBtn");
@@ -3960,43 +3880,124 @@ let currentRange = "week";
 
     renderRingChart();
 
-    // Bar chart, momentum, focus score, and smart insights are premium —
-    // free users get none of the four, replaced by a single combined
-    // locked-state card rather than four separate teasers. Ring chart
-    // above stays fully free/functional regardless. monthComparisonBox
-    // and weeklyRecapCard are separate, pre-existing premium gates
-    // (each hides/shows itself already) and are untouched here.
+    // Bar chart and sharpened Smart Insights are premium — free users get
+    // neither, replaced by a single combined locked-state card rather than
+    // separate teasers. Ring chart above stays fully free/functional
+    // regardless. weeklyRecapCard is a separate, pre-existing premium gate
+    // (hides/shows itself already) and is untouched here.
     const premiumAnalysis = isPremiumUser();
     document.getElementById("analysisLockedCard").style.display = premiumAnalysis ? "none" : "block";
     document.getElementById("insightsCard").style.display = premiumAnalysis ? "" : "none";
-    document.getElementById("momentumBox").style.display = premiumAnalysis ? "" : "none";
-    document.getElementById("focusScoreBox").style.display = premiumAnalysis ? "" : "none";
-    document.querySelector(".range-tabs").style.display = premiumAnalysis ? "" : "none";
+    document.getElementById("analysisRangeTabs").style.display = premiumAnalysis ? "" : "none";
     document.getElementById("barChart").style.display = premiumAnalysis ? "" : "none";
     document.getElementById("bestWorst").style.display = premiumAnalysis ? "" : "none";
     if (premiumAnalysis) {
       renderBarChart(currentRange);
-      renderMomentum();
-      renderFocusScore();
       renderInsights();
     }
 
-    renderMonthComparison();
     renderWeeklyRecapCard();
   }
 
   // --- Smart Insights ---
-  function weeklyTrendInsight() {
-    const thisWeek = avgPctForRange(6, 0);
-    const lastWeek = avgPctForRange(13, 7);
-    if (thisWeek === null || lastWeek === null) return null;
-    const diff = Math.round(thisWeek - lastWeek);
-    if (Math.abs(diff) <= 3) return { icon: "minus", text: "You're steady with last week" };
-    if (diff > 0) return { icon: "trending-up", text: `This week is up ${diff}% compared to last week` };
-    return { icon: "trending-down", text: `This week is down ${Math.abs(diff)}% compared to last week` };
+  // Each generator returns null (not enough eligible data, or the pattern
+  // isn't distinct enough to be worth surfacing) or { icon, text, strength }
+  // — strength is the percentage-point gap the finding is built on, used
+  // to rank candidates across all four types so only the strongest 1-3
+  // show, not every computable one. A flat minimum gap keeps genuinely
+  // marginal differences (52% vs 48%) from ever being presented as a
+  // "finding."
+  const INSIGHT_MIN_NOTABLE_GAP = 10; // percentage points
+  const INSIGHT_MIN_ELIGIBLE_COUNT = 8; // scheduled occurrences per side/category
+
+  // Gates the whole sharpened-insights section — separate from (and
+  // stricter than) hasAnyCompletionHistory()'s "has this account ever
+  // completed a single task" bar for the rest of the Analysis tab. A
+  // pattern computed from 2-3 days of data isn't a real pattern yet.
+  function hasEnoughHistoryForSharpInsights() {
+    const today = toDateStr(new Date());
+    const daysWithATask = new Set();
+    tasks.forEach(t => {
+      if (!t.recurrence || t.recurrence.type === "none") {
+        if (t.date <= today) daysWithATask.add(t.date);
+        return;
+      }
+      const start = new Date(t.date + "T00:00:00");
+      const end = new Date((t.endDate || today) + "T00:00:00");
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        const ds = toDateStr(d);
+        if (ds > today) break;
+        if (occursOn(t, d)) daysWithATask.add(ds);
+      }
+    });
+    return daysWithATask.size >= 14;
   }
 
-  function weakestCategoryInsight() {
+  // Every scheduled (has a real .time), past-or-today occurrence across
+  // the user's whole history, as { minutes, done }. Only the time-of-day
+  // generator needs this shape.
+  function collectTimedOccurrences() {
+    const today = toDateStr(new Date());
+    const out = [];
+    tasks.forEach(t => {
+      if (!t.time) return;
+      const [h, m] = t.time.split(":").map(Number);
+      const minutes = h * 60 + m;
+      if (!t.recurrence || t.recurrence.type === "none") {
+        if (t.date <= today) out.push({ minutes, done: !!t.done });
+        return;
+      }
+      const start = new Date(t.date + "T00:00:00");
+      const end = new Date((t.endDate || today) + "T00:00:00");
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        const ds = toDateStr(d);
+        if (ds > today) break;
+        if (occursOn(t, d)) out.push({ minutes, done: (t.completedDates || []).includes(ds) });
+      }
+    });
+    return out;
+  }
+
+  function formatMinutesAsClockTime(minutes) {
+    const h = Math.floor(minutes / 60) % 24;
+    const m = minutes % 60;
+    const suffix = h < 12 ? "AM" : "PM";
+    const displayHour = h % 12 === 0 ? 12 : h % 12;
+    return m === 0 ? `${displayHour} ${suffix}` : `${displayHour}:${String(m).padStart(2, "0")} ${suffix}`;
+  }
+
+  // Splits at the user's OWN median scheduled time, not a fixed clock
+  // hour — "before/after noon" means nothing for someone who schedules
+  // everything in the evening.
+  function timeOfDayInsight() {
+    const occurrences = collectTimedOccurrences();
+    if (occurrences.length < INSIGHT_MIN_ELIGIBLE_COUNT * 2) return null;
+
+    const sortedMinutes = occurrences.map(o => o.minutes).sort((a, b) => a - b);
+    const midpoint = sortedMinutes[Math.floor(sortedMinutes.length / 2)];
+
+    let beforeTotal = 0, beforeDone = 0, afterTotal = 0, afterDone = 0;
+    occurrences.forEach(o => {
+      if (o.minutes < midpoint) { beforeTotal++; if (o.done) beforeDone++; }
+      else { afterTotal++; if (o.done) afterDone++; }
+    });
+    if (beforeTotal < INSIGHT_MIN_ELIGIBLE_COUNT || afterTotal < INSIGHT_MIN_ELIGIBLE_COUNT) return null;
+
+    const beforeRate = (beforeDone / beforeTotal) * 100;
+    const afterRate = (afterDone / afterTotal) * 100;
+    const gap = Math.abs(Math.round(beforeRate - afterRate));
+    if (gap < INSIGHT_MIN_NOTABLE_GAP) return null;
+
+    const clockLabel = formatMinutesAsClockTime(midpoint);
+    const text = beforeRate > afterRate
+      ? `You complete ${gap}% more tasks before ${clockLabel} than after`
+      : `You complete ${gap}% more tasks after ${clockLabel} than before`;
+    return { icon: beforeRate > afterRate ? "sunrise" : "sunset", text, strength: gap };
+  }
+
+  // Biggest gap between any two of the user's categories — a direct X%
+  // vs. Y% comparison, not just "your single weakest category."
+  function categoryGapInsight() {
     const today = toDateStr(new Date());
     const stats = {};
     categories.forEach(cat => { stats[cat.name] = { scheduled: 0, completed: 0 }; });
@@ -4022,126 +4023,29 @@ let currentRange = "week";
       }
     });
 
-    let weakest = null;
-    let eligibleCount = 0;
+    let best = null, worst = null;
     Object.keys(stats).forEach(catName => {
       const s = stats[catName];
-      if (s.scheduled >= 5) {
-        eligibleCount++;
-        const rate = s.completed / s.scheduled;
-        if (!weakest || rate < weakest.rate) weakest = { catName, rate };
-      }
+      if (s.scheduled < INSIGHT_MIN_ELIGIBLE_COUNT) return;
+      const rate = (s.completed / s.scheduled) * 100;
+      if (!best || rate > best.rate) best = { catName, rate };
+      if (!worst || rate < worst.rate) worst = { catName, rate };
     });
+    if (!best || !worst || best.catName === worst.catName) return null;
 
-    if (eligibleCount < 2 || !weakest) return null;
-    const pct = Math.round(weakest.rate * 100);
-    return { icon: "trending-down", text: `${weakest.catName} tasks get completed least often, at ${pct}%` };
+    const gap = Math.round(best.rate - worst.rate);
+    if (gap < INSIGHT_MIN_NOTABLE_GAP) return null;
+
+    return {
+      icon: "bar-chart-2",
+      text: `Your ${best.catName} has a ${Math.round(best.rate)}% completion rate vs. ${Math.round(worst.rate)}% for ${worst.catName}`,
+      strength: gap
+    };
   }
 
-  function computeLongestStreakEver(task) {
-    const today = toDateStr(new Date());
-    const start = new Date(task.date + "T00:00:00");
-    const end = new Date((task.endDate || today) + "T00:00:00");
-    let scheduledDays = [];
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      if (occursOn(task, d)) scheduledDays.push(toDateStr(d));
-    }
-    let longest = 0, current = 0;
-    scheduledDays.forEach(ds => {
-      if ((task.completedDates || []).includes(ds)) {
-        current++;
-        if (current > longest) longest = current;
-      } else {
-        current = 0;
-      }
-    });
-    return longest;
-  }
-
-  function longestStreakEverInsight() {
-    const goalTasks = tasks.filter(t => t.isGoal);
-    let best = null;
-    goalTasks.forEach(g => {
-      const streak = computeLongestStreakEver(g);
-      if (!best || streak > best.streak) best = { streak, name: g.name };
-    });
-    if (!best || best.streak < 3) return null;
-    return { icon: "trophy", text: `Your longest streak ever was ${best.streak} days, on ${best.name}` };
-  }
-
-  function reflectionStreakInsight() {
-    const today = toDateStr(new Date());
-    const anchorDate = lockedDays.includes(today) ? today : (lockedDays.length ? lockedDays.slice().sort().reverse()[0] : null);
-    if (!anchorDate) return null;
-
-    let streak = 0;
-    let d = new Date(anchorDate + "T00:00:00");
-    while (true) {
-      const ds = toDateStr(d);
-      const entry = reflections[ds];
-      if (entry && (entry.wentWell || entry.improve)) {
-        streak++;
-        d.setDate(d.getDate() - 1);
-      } else {
-        break;
-      }
-    }
-    if (streak < 2) return null;
-    return { icon: "flame", text: `You've reflected ${streak} days in a row` };
-  }
-
-  function resurfacedReflectionInsight() {
-    const d = new Date();
-    d.setDate(d.getDate() - 7);
-    const entry = reflections[toDateStr(d)];
-    if (!entry || !entry.wentWell) return null;
-    let text = entry.wentWell;
-    if (text.length > 100) text = text.slice(0, 100) + "…";
-    return { icon: "book-open", text: `A week ago you wrote: '${text}'` };
-  }
-
-  function timeOfDaySplitInsight() {
-    const today = toDateStr(new Date());
-    let beforeTotal = 0, beforeDone = 0, afterTotal = 0, afterDone = 0;
-
-    tasks.forEach(t => {
-      if (!t.time) return;
-      const isBefore = t.time < "12:00";
-
-      if (!t.recurrence || t.recurrence.type === "none") {
-        if (t.date <= today) {
-          if (isBefore) { beforeTotal++; if (t.done) beforeDone++; }
-          else { afterTotal++; if (t.done) afterDone++; }
-        }
-      } else {
-        const start = new Date(t.date + "T00:00:00");
-        const end = new Date((t.endDate || today) + "T00:00:00");
-        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-          const ds = toDateStr(d);
-          if (ds > today) break;
-          if (occursOn(t, d)) {
-            const done = (t.completedDates || []).includes(ds);
-            if (isBefore) { beforeTotal++; if (done) beforeDone++; }
-            else { afterTotal++; if (done) afterDone++; }
-          }
-        }
-      }
-    });
-
-    if (beforeTotal < 5 || afterTotal < 5) return null;
-
-    const beforeRate = Math.round((beforeDone / beforeTotal) * 100);
-    const afterRate = Math.round((afterDone / afterTotal) * 100);
-    const diff = beforeRate - afterRate;
-    if (Math.abs(diff) < 5) return null;
-
-    if (diff > 0) {
-      return { icon: "sunrise", text: `You complete tasks scheduled before noon ${diff} percentage points more often than ones after noon` };
-    }
-    return { icon: "sunset", text: `You complete tasks scheduled after noon ${Math.abs(diff)} percentage points more often than ones before noon` };
-  }
-
-  function bestWeekdayInsight() {
+  // Best and worst weekday together, in one finding — only when the gap
+  // between them is itself a real pattern.
+  function weekdayInsight() {
     const today = new Date(); today.setHours(0, 0, 0, 0);
     let earliest = today;
     tasks.forEach(t => {
@@ -4162,138 +4066,98 @@ let currentRange = "week";
       }
     }
 
-    const WEEKDAY_NAMES_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    let best = null;
-    let eligibleCount = 0;
+    const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    let best = null, worst = null;
     for (let wd = 0; wd < 7; wd++) {
-      if (weekdayCounts[wd] >= 3) {
-        eligibleCount++;
-        const avg = weekdaySums[wd] / weekdayCounts[wd];
-        if (!best || avg > best.avg) best = { wd, avg };
-      }
+      if (weekdayCounts[wd] < 3) continue;
+      const avg = weekdaySums[wd] / weekdayCounts[wd];
+      if (!best || avg > best.avg) best = { wd, avg };
+      if (!worst || avg < worst.avg) worst = { wd, avg };
     }
-    if (eligibleCount < 2 || !best) return null;
-    return { icon: "star", text: `Your best day of the week is ${WEEKDAY_NAMES_FULL[best.wd]}, averaging ${Math.round(best.avg)}%` };
+    if (!best || !worst || best.wd === worst.wd) return null;
+
+    const gap = Math.round(best.avg - worst.avg);
+    if (gap < INSIGHT_MIN_NOTABLE_GAP) return null;
+
+    return {
+      icon: "calendar-days",
+      text: `You complete the most tasks on ${WEEKDAY_NAMES[best.wd]} (${Math.round(best.avg)}%) and the fewest on ${WEEKDAY_NAMES[worst.wd]} (${Math.round(worst.avg)}%)`,
+      strength: gap
+    };
   }
 
-  function weekendCategorySkewInsight() {
+  // Whether a category's presence on a given day correlates with a
+  // meaningfully more consistent day overall — "streak-related" in the
+  // sense of sustained day-to-day completion, not any single task's own
+  // streak counter.
+  function categoryConsistencyInsight() {
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    let earliest = today;
-    tasks.forEach(t => {
-      const d = new Date(t.date + "T00:00:00");
-      if (d < earliest) earliest = d;
-    });
-    const daysBack = Math.min(Math.round((today - earliest) / 86400000), 365);
+    const windowDays = 60; // recent-pattern window
 
-    let elapsedWeekendDays = 0, elapsedWeekdays = 0;
-    for (let i = 0; i <= daysBack; i++) {
-      const d = new Date(today); d.setDate(d.getDate() - i);
-      const wd = d.getDay();
-      if (wd === 0 || wd === 6) elapsedWeekendDays++; else elapsedWeekdays++;
-    }
-    if (elapsedWeekendDays === 0 || elapsedWeekdays === 0) return null;
-
-    const todayStr = toDateStr(today);
-    const stats = {};
-    categories.forEach(cat => { stats[cat.name] = { weekendCompleted: 0, weekdayCompleted: 0, totalCompleted: 0 }; });
-
-    tasks.forEach(t => {
-      if (!stats[t.category]) return;
-      if (!t.recurrence || t.recurrence.type === "none") {
-        if (t.date <= todayStr && t.done) {
-          const wd = new Date(t.date + "T00:00:00").getDay();
-          if (wd === 0 || wd === 6) stats[t.category].weekendCompleted++; else stats[t.category].weekdayCompleted++;
-          stats[t.category].totalCompleted++;
-        }
-      } else {
-        const start = new Date(t.date + "T00:00:00");
-        const end = new Date((t.endDate || todayStr) + "T00:00:00");
-        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-          const ds = toDateStr(d);
-          if (ds > todayStr) break;
-          if (occursOn(t, d) && (t.completedDates || []).includes(ds)) {
-            const wd = d.getDay();
-            if (wd === 0 || wd === 6) stats[t.category].weekendCompleted++; else stats[t.category].weekdayCompleted++;
-            stats[t.category].totalCompleted++;
-          }
-        }
-      }
+    const withStats = {}, withoutStats = {};
+    categories.forEach(cat => {
+      withStats[cat.name] = { sum: 0, count: 0 };
+      withoutStats[cat.name] = { sum: 0, count: 0 };
     });
 
-    let best = null;
-    Object.keys(stats).forEach(catName => {
-      const s = stats[catName];
-      if (s.totalCompleted < 6) return;
-      const weekendAvg = s.weekendCompleted / elapsedWeekendDays;
-      const weekdayAvg = s.weekdayCompleted / elapsedWeekdays;
-      let relDiff;
-      if (weekdayAvg === 0) {
-        if (weekendAvg === 0) return;
-        relDiff = Infinity;
-      } else {
-        relDiff = (weekendAvg - weekdayAvg) / weekdayAvg;
-      }
-      if (relDiff >= 0.3) {
-        if (!best || relDiff > best.relDiff) best = { catName, relDiff };
-      }
-    });
-
-    if (!best) return null;
-    return { icon: "calendar-days", text: `You do more ${best.catName} tasks on weekends than weekdays` };
-  }
-
-  function missedCategoryThisWeekInsight() {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const missed = {};
-    categories.forEach(cat => { missed[cat.name] = 0; });
-
-    for (let i = 6; i >= 0; i--) {
+    for (let i = 0; i < windowDays; i++) {
       const d = new Date(today); d.setDate(d.getDate() - i);
       const dayTasks = getTasksForDate(d, "All");
-      dayTasks.forEach(t => {
-        if (missed[t.category] === undefined) return;
-        if (!t.occurrenceDone) missed[t.category]++;
+      if (dayTasks.length === 0) continue;
+      const pct = (dayTasks.filter(t => t.occurrenceDone).length / dayTasks.length) * 100;
+      const presentCats = new Set(dayTasks.map(t => t.category));
+      categories.forEach(cat => {
+        if (presentCats.has(cat.name)) {
+          withStats[cat.name].sum += pct;
+          withStats[cat.name].count++;
+        } else {
+          withoutStats[cat.name].sum += pct;
+          withoutStats[cat.name].count++;
+        }
       });
     }
 
-    let worst = null;
-    Object.keys(missed).forEach(catName => {
-      if (!worst || missed[catName] > worst.count) worst = { catName, count: missed[catName] };
+    let bestCat = null;
+    categories.forEach(cat => {
+      const withS = withStats[cat.name], withoutS = withoutStats[cat.name];
+      if (withS.count < 5 || withoutS.count < 5) return;
+      const withAvg = withS.sum / withS.count;
+      const withoutAvg = withoutS.sum / withoutS.count;
+      const gap = withAvg - withoutAvg;
+      // Only a positive correlation counts as "most consistent when X is
+      // on your list" — a category that coincides with worse days isn't
+      // this finding.
+      if (gap <= 0) return;
+      if (!bestCat || gap > bestCat.gap) bestCat = { name: cat.name, withAvg, withoutAvg, gap };
     });
+    if (!bestCat) return null;
+    const gap = Math.round(bestCat.gap);
+    if (gap < INSIGHT_MIN_NOTABLE_GAP) return null;
 
-    if (!worst || worst.count < 1) return null;
-    return { icon: "alert-circle", text: `You've missed ${worst.catName} tasks ${worst.count} time${worst.count === 1 ? "" : "s"} this week` };
-  }
-
-  function identityInsight() {
-    const identity = getUserIdentity();
-    if (!identity) return null;
-    const goalTasks = tasks.filter(t => t.isGoal);
-    let bestStreak = 0;
-    goalTasks.forEach(g => {
-      const streak = computeStreak(g);
-      if (streak > bestStreak) bestStreak = streak;
-    });
-    if (bestStreak < 3) return null;
-    const identityLower = identity.charAt(0).toLowerCase() + identity.slice(1);
-    return { icon: "sparkles", text: `You said you're becoming ${identityLower}. That's showing up as a ${bestStreak}-day streak.` };
+    return {
+      icon: "flame",
+      text: `You're most consistent when ${bestCat.name} is on your list — ${Math.round(bestCat.withAvg)}% of tasks done those days, vs ${Math.round(bestCat.withoutAvg)}% otherwise`,
+      strength: gap
+    };
   }
 
   const INSIGHT_GENERATORS = [
-    weeklyTrendInsight,
-    weakestCategoryInsight,
-    longestStreakEverInsight,
-    reflectionStreakInsight,
-    resurfacedReflectionInsight,
-    timeOfDaySplitInsight,
-    bestWeekdayInsight,
-    weekendCategorySkewInsight,
-    missedCategoryThisWeekInsight,
-    identityInsight
+    timeOfDayInsight,
+    categoryGapInsight,
+    weekdayInsight,
+    categoryConsistencyInsight
   ];
 
+  // Ranks every computable candidate by strength (the percentage-point gap
+  // it's built on) and keeps the top 3 — "sharpened" means fewer, stronger
+  // findings, not every possible angle shown at once.
   function getActiveInsights() {
-    return INSIGHT_GENERATORS.map(fn => fn()).filter(Boolean);
+    if (!hasEnoughHistoryForSharpInsights()) return [];
+    return INSIGHT_GENERATORS
+      .map(fn => fn())
+      .filter(Boolean)
+      .sort((a, b) => b.strength - a.strength)
+      .slice(0, 3);
   }
 
   let currentInsightIndex = 0;
@@ -4353,105 +4217,6 @@ let currentRange = "week";
     renderInsightContent();
   }
 
-  function renderFocusScore() {
-    const todayTasks = getTasksForDate(new Date(), "All");
-    const completionPct = todayTasks.length
-      ? (todayTasks.filter(t => t.occurrenceDone).length / todayTasks.length) * 100
-      : 0;
-
-    const goalTasks = tasks.filter(t => t.isGoal);
-    let consistencyPct = 100;
-    if (goalTasks.length > 0) {
-      const aliveStreaks = goalTasks.filter(g => computeStreak(g) > 0).length;
-      consistencyPct = (aliveStreaks / goalTasks.length) * 100;
-    }
-
-    const score = Math.round(completionPct * 0.7 + consistencyPct * 0.3);
-
-    const el = document.getElementById("focusScoreBox");
-    let color = "var(--danger)";
-    if (score >= 80) color = "var(--accent)";
-    else if (score >= 50) color = "var(--warning)";
-
-    el.innerHTML = `
-      <div id="focusScoreNum" style="font-size:var(--text-2xl);font-weight:600;color:${color};">0</div>
-      <div style="font-size:var(--text-sm);color:var(--text-muted);"><i data-lucide="activity" class="icon"></i> Focus Score</div>
-    `;
-    lucide.createIcons();
-    animateCountUp(document.getElementById("focusScoreNum"), score, 550);
-  }
-
-  function avgPctForRange(startDaysAgo, endDaysAgo) {
-    const today = new Date(); today.setHours(0,0,0,0);
-    let sum = 0, count = 0;
-    for (let i = startDaysAgo; i >= endDaysAgo; i--) {
-      const d = new Date(today); d.setDate(d.getDate() - i);
-      const p = dayPct(d);
-      if (p !== null) { sum += p; count++; }
-    }
-    return count ? sum / count : null;
-  }
-
-  function renderMomentum() {
-    const thisWeek = avgPctForRange(6, 0);
-    const lastWeek = avgPctForRange(13, 7);
-    const el = document.getElementById("momentumBox");
-
-    if (thisWeek === null || lastWeek === null) {
-      el.innerHTML = `<div style="color:var(--text-muted);font-size:var(--text-base);">Not enough history yet to show momentum.</div>`;
-      return;
-    }
-
-    const diff = Math.round(thisWeek - lastWeek);
-    let icon = "minus", label = "Steady", color = "var(--text-muted)";
-    if (diff > 3) { icon = "trending-up"; label = "You're improving"; color = "var(--accent)"; }
-    else if (diff < -3) { icon = "trending-down"; label = "Momentum dropping"; color = "var(--danger)"; }
-
-    el.innerHTML = `
-      <div style="font-size:var(--text-xl);color:${color};"><i data-lucide="${icon}" class="icon icon-lg" style="color:inherit;"></i></div>
-      <div style="font-weight:500;color:${color};">${label}</div>
-      <div style="font-size:var(--text-sm);color:var(--text-muted);"><span id="momentumThisWeek">0</span>% this week vs <span id="momentumLastWeek">0</span>% last week</div>
-    `;
-    lucide.createIcons();
-    animateCountUp(document.getElementById("momentumThisWeek"), Math.round(thisWeek), 550);
-    animateCountUp(document.getElementById("momentumLastWeek"), Math.round(lastWeek), 550);
-  }
-
-  // "Last 30 days" means the 30 days before this week, so it doesn't
-  // double-count days already reflected in the this-week average.
-  function computeMonthComparison() {
-    const thisWeek = avgPctForRange(6, 0);
-    const monthAvg = avgPctForRange(36, 7);
-    const diff = (thisWeek === null || monthAvg === null) ? null : thisWeek - monthAvg;
-    return { thisWeek, monthAvg, diff };
-  }
-
-  function renderMonthComparison() {
-    const el = document.getElementById("monthComparisonBox");
-    if (!el) return;
-    if (!isPremiumUser()) { el.style.display = "none"; return; }
-    el.style.display = "block";
-
-    const comp = computeMonthComparison();
-    if (comp.thisWeek === null || comp.monthAvg === null) {
-      el.innerHTML = `<div style="color:var(--text-muted);font-size:var(--text-base);">Not enough history yet to compare.</div>`;
-      return;
-    }
-
-    const diff = Math.round(comp.diff);
-    let icon = "minus", label = "In line with your last 30 days", color = "var(--text-muted)";
-    if (diff > 3) { icon = "trending-up"; label = "Trending above your last 30 days"; color = "var(--accent)"; }
-    else if (diff < -3) { icon = "trending-down"; label = "Trending below your last 30 days"; color = "var(--danger)"; }
-
-    el.innerHTML = `
-      <div style="font-size:var(--text-xl);color:${color};"><i data-lucide="${icon}" class="icon icon-lg" style="color:inherit;"></i></div>
-      <div style="font-weight:500;color:${color};">${label}</div>
-      <div style="font-size:var(--text-sm);color:var(--text-muted);">This week: <span id="monthCompThisWeek">0</span>% · Last 30 days average: <span id="monthCompMonthAvg">0</span>%</div>
-    `;
-    lucide.createIcons();
-    animateCountUp(document.getElementById("monthCompThisWeek"), Math.round(comp.thisWeek), 550);
-    animateCountUp(document.getElementById("monthCompMonthAvg"), Math.round(comp.monthAvg), 550);
-  }
 
   function renderRingChart() {
     const today = new Date();
@@ -4609,9 +4374,13 @@ let currentRange = "week";
     }
   }
 
-  document.querySelectorAll(".range-tab").forEach(btn => {
+  // Scoped to #analysisRangeTabs specifically — .range-tab/.range-tabs is a
+  // shared component class also used by the Planner's List/Timeline toggle
+  // (#plannerViewToggle), which an unscoped querySelectorAll here would
+  // otherwise also strip .active from on every click.
+  document.querySelectorAll("#analysisRangeTabs .range-tab").forEach(btn => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".range-tab").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll("#analysisRangeTabs .range-tab").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
       currentRange = btn.dataset.range;
       renderBarChart(currentRange);
@@ -5675,7 +5444,6 @@ let currentRange = "week";
       danger: false,
       onConfirm: () => {
         pendingLockDate = dateStr;
-        document.getElementById("exportDataBtn").style.display = "none";
         document.getElementById("themesBtn").style.display = "none";
         document.getElementById("searchReflectionsBtn").style.display = "none";
         reflectionReadOnly = false;
@@ -6864,7 +6632,7 @@ let currentRange = "week";
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:2.5rem;">
             <div style="background:var(--bg-page-alt);padding:1rem;border-radius:var(--radius-sm);">
               <div style="font-size:var(--text-base);font-weight:500;color:var(--text-primary);">Charts</div>
-              <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:0.25rem;">Bar charts, momentum, focus score.</div>
+              <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:0.25rem;">Bar charts and category breakdowns.</div>
             </div>
             <div style="background:var(--bg-page-alt);padding:1rem;border-radius:var(--radius-sm);">
               <div style="font-size:var(--text-base);font-weight:500;color:var(--text-primary);">Deep Work</div>
@@ -6872,11 +6640,11 @@ let currentRange = "week";
             </div>
             <div style="background:var(--bg-page-alt);padding:1rem;border-radius:var(--radius-sm);">
               <div style="font-size:var(--text-base);font-weight:500;color:var(--text-primary);">Insights</div>
-              <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:0.25rem;">Weekly recap, month-over-month view.</div>
+              <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:0.25rem;">Specific, data-backed findings about your patterns.</div>
             </div>
             <div style="background:var(--bg-page-alt);padding:1rem;border-radius:var(--radius-sm);">
-              <div style="font-size:var(--text-base);font-weight:500;color:var(--text-primary);">Export</div>
-              <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:0.25rem;">Download your data as JSON or CSV.</div>
+              <div style="font-size:var(--text-base);font-weight:500;color:var(--text-primary);">Weekly Recap</div>
+              <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:0.25rem;">A summary of your week, every week.</div>
             </div>
           </div>
           <div style="font-size:var(--text-base);font-weight:500;color:var(--text-secondary);margin-bottom:3rem;">Try everything. Then decide if it's worth keeping.</div>

@@ -37,7 +37,6 @@
       <button class="view-tab" id="tabAnalysis">Analysis</button>
       <button class="view-tab" id="tabFocus">Deep Work</button>
     </div>
-    <button id="exportDataBtn" class="cat-add" style="display:none;" title="Export data"><i data-lucide="download" class="icon"></i></button>
     <button id="themesBtn" class="cat-add" style="display:none;" title="Themes"><i data-lucide="palette" class="icon"></i></button>
   </div>
 
@@ -99,11 +98,8 @@
       <div id="analysisLockedCard" class="deep-work-stats-teaser" style="display:none;">Unlock deeper insights with Premium</div>
       <div id="weeklyRecapCard" class="weekly-recap-card" style="display:none;"></div>
       <div id="insightsCard" style="background:var(--bg-card);border-radius:var(--radius-md);padding:1.1rem 1.3rem;margin-bottom:1.25rem;box-shadow:var(--shadow-card);"></div>
-      <div id="momentumBox" style="background:var(--bg-card);border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:center;"></div>
-      <div id="monthComparisonBox" style="display:none;background:var(--bg-card);border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:center;"></div>
-      <div id="focusScoreBox" style="background:var(--bg-card);border-radius:10px;padding:1rem;margin-bottom:1.25rem;text-align:center;"></div>
 
-      <div class="range-tabs">
+      <div class="range-tabs" id="analysisRangeTabs">
         <button class="range-tab active" data-range="week"><i data-lucide="bar-chart-3" class="icon"></i> Week</button>
         <button class="range-tab" data-range="month"><i data-lucide="bar-chart-3" class="icon"></i> Month</button>
         <button class="range-tab" data-range="year"><i data-lucide="bar-chart-3" class="icon"></i> Year</button>
@@ -371,17 +367,6 @@
     <div class="ob-row-list" id="themeOptionList"></div>
     <div class="modal-actions">
       <button class="btn-cancel" id="themesCloseBtn">Close</button>
-    </div>
-  </div>
-</div>
-
-<div class="modal-overlay" id="exportModalOverlay">
-  <div class="modal">
-    <h3>Export data</h3>
-    <button class="btn-save export-option-btn" id="exportJsonBtn">Export as JSON</button>
-    <button class="btn-save export-option-btn" id="exportCsvBtn">Export as CSV</button>
-    <div class="modal-actions" style="margin-top:0.5rem;">
-      <button class="btn-cancel" id="exportCloseBtn">Close</button>
     </div>
   </div>
 </div>
