@@ -3783,6 +3783,43 @@ let currentRange = "week";
     return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2, "0")}`;
   }
 
+  // The single "best" goal (highest live streak — same selection
+  // renderGoalsIdentityCard and currentStreak below use) evaluated over
+  // just `range`: held every day it was scheduled this week, broken (and
+  // on which day), or carried by a streak freeze. Returns null when there
+  // are no goals, or the chosen goal wasn't scheduled at all this week.
+  function computeWeekStreakStatus(range) {
+    const goalTasks = tasks.filter(t => t.isGoal);
+    if (goalTasks.length === 0) return null;
+
+    let bestGoal = null, bestStreak = -1;
+    goalTasks.forEach(g => {
+      const s = computeStreak(g);
+      if (s > bestStreak) { bestStreak = s; bestGoal = g; }
+    });
+    if (!bestGoal) return null;
+
+    const scheduledDays = [];
+    for (let d = new Date(range.start + "T00:00:00"); toDateStr(d) <= range.end; d.setDate(d.getDate() + 1)) {
+      if (toDateStr(d) < bestGoal.date) continue;
+      if (occursOn(bestGoal, d)) scheduledDays.push(toDateStr(d));
+    }
+    if (scheduledDays.length === 0) return null;
+
+    const doneDays = scheduledDays.filter(ds => (bestGoal.completedDates || []).includes(ds));
+    const frozenDays = scheduledDays.filter(ds => !doneDays.includes(ds) && (bestGoal.frozenDates || []).includes(ds));
+    const missedDays = scheduledDays.filter(ds => !doneDays.includes(ds) && !frozenDays.includes(ds));
+
+    if (missedDays.length > 0) {
+      const dayName = new Date(missedDays[0] + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
+      return { status: "broken", text: `Your ${bestGoal.name} streak broke on ${dayName}.` };
+    }
+    if (frozenDays.length > 0) {
+      return { status: "frozen", text: `Your ${bestGoal.name} streak was protected by ${frozenDays.length} streak freeze${frozenDays.length === 1 ? "" : "s"} this week.` };
+    }
+    return { status: "held", text: `You held your ${bestGoal.name} streak all ${scheduledDays.length} day${scheduledDays.length === 1 ? "" : "s"} this week.` };
+  }
+
   // Stats for the 7-day period ending on endDate (defaults to today), so the
   // Analysis card can show a rolling "this week" while the rollover banner
   // can pass yesterday to summarize the most recently completed week.
@@ -3792,15 +3829,28 @@ let currentRange = "week";
     start.setDate(start.getDate() - 6);
     const startStr = toDateStr(start);
     const endStr = toDateStr(end);
+    const range = { start: startStr, end: endStr };
 
-    let tasksCompleted = 0;
-    tasks.forEach(t => {
-      const isRecurring = t.recurrence && t.recurrence.type !== "none";
-      if (isRecurring) {
-        (t.completedDates || []).forEach(ds => { if (ds >= startStr && ds <= endStr) tasksCompleted++; });
-      } else if (t.done && t.date >= startStr && t.date <= endStr) {
-        tasksCompleted++;
-      }
+    // tasksScheduled/tasksCompleted/categoryCounts all come from the same
+    // getTasksForDate() occurrences the rest of Analysis (dayPct, etc.)
+    // already uses, rather than re-deriving "was this done" from raw task
+    // records a second, slightly different way.
+    let tasksScheduled = 0, tasksCompleted = 0;
+    const categoryCounts = {};
+    for (let d = new Date(start); toDateStr(d) <= endStr; d.setDate(d.getDate() + 1)) {
+      const dayTasks = getTasksForDate(d, "All");
+      tasksScheduled += dayTasks.length;
+      dayTasks.forEach(t => {
+        if (t.occurrenceDone) {
+          tasksCompleted++;
+          categoryCounts[t.category] = (categoryCounts[t.category] || 0) + 1;
+        }
+      });
+    }
+
+    let topCategory = null;
+    Object.keys(categoryCounts).forEach(cat => {
+      if (!topCategory || categoryCounts[cat] > topCategory.count) topCategory = { category: cat, count: categoryCounts[cat] };
     });
 
     const deepWorkSessions = getDeepWorkSessions()
@@ -3816,13 +3866,14 @@ let currentRange = "week";
       if (s > currentStreak) currentStreak = s;
     });
 
-    return { weekStart: startStr, weekEnd: endStr, tasksCompleted, deepWorkSessions, reflectionsWritten, currentStreak };
-  }
-
-  function recapSummaryText(recap) {
-    return `${recap.tasksCompleted} task${recap.tasksCompleted === 1 ? "" : "s"} done · `
-      + `${recap.deepWorkSessions} Deep Work session${recap.deepWorkSessions === 1 ? "" : "s"} · `
-      + `${recap.reflectionsWritten} reflection${recap.reflectionsWritten === 1 ? "" : "s"} written`;
+    return {
+      weekStart: startStr, weekEnd: endStr,
+      tasksScheduled, tasksCompleted, topCategory,
+      deepWorkSessions, reflectionsWritten, currentStreak,
+      bestDay: weekBestDay(range),
+      weekInsight: getWeekInsight(range),
+      streakStatus: computeWeekStreakStatus(range)
+    };
   }
 
   function renderWeeklyRecapCard() {
@@ -3844,10 +3895,36 @@ let currentRange = "week";
     }
     card.className = "weekly-recap-card";
     const recap = computeWeeklyRecap();
-    card.innerHTML = `
-      <div style="font-size:var(--text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:0.4rem;">This week</div>
-      <div style="font-size:var(--text-base);color:var(--text-primary);">${recapSummaryText(recap)}</div>
-    `;
+    const heading = `<div style="font-size:var(--text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:0.55rem;">This week</div>`;
+
+    if (recap.tasksScheduled === 0) {
+      card.innerHTML = `${heading}<div style="font-size:var(--text-base);color:var(--text-muted);">Nothing scheduled yet this week.</div>`;
+      return;
+    }
+
+    // Sections 1-3 and 5 are calm factual lines, omitted individually when
+    // there's nothing to say (a fresh account with no goals, a week with
+    // no clear best day, no category completions yet). Section 4 (the
+    // sharp insight) gets its own bordered callout since it's the one
+    // piece of analysis rather than a plain count.
+    const rows = [];
+    rows.push(`You completed ${recap.tasksCompleted} of ${recap.tasksScheduled} task${recap.tasksScheduled === 1 ? "" : "s"} this week.`);
+    if (recap.streakStatus) rows.push(recap.streakStatus.text);
+    if (recap.bestDay) rows.push(`${recap.bestDay.name} was your most productive day this week — ${Math.round(recap.bestDay.avg)}% of tasks completed.`);
+    const rowsHtml = rows.map(r => `<div style="font-size:var(--text-base);color:var(--text-primary);margin-bottom:0.5rem;">${r}</div>`).join("");
+
+    const insightHtml = recap.weekInsight ? `
+      <div style="display:flex;align-items:center;gap:0.5rem;margin:0.3rem 0 0.6rem;padding-top:0.6rem;border-top:1px solid var(--border);">
+        <i data-lucide="${recap.weekInsight.icon}" class="icon" style="color:var(--accent);flex-shrink:0;"></i>
+        <div style="font-size:var(--text-sm);color:var(--text-secondary);">${recap.weekInsight.text}</div>
+      </div>` : "";
+
+    const categoryHtml = recap.topCategory
+      ? `<div style="font-size:var(--text-sm);color:var(--text-secondary);">${recap.topCategory.category} received the most completed tasks this week (${recap.topCategory.count}).</div>`
+      : "";
+
+    card.innerHTML = heading + rowsHtml + insightHtml + categoryHtml;
+    lucide.createIcons();
   }
 
   function maybeShowWeeklyRecapBanner() {
@@ -3979,22 +4056,30 @@ let currentRange = "week";
   // Every scheduled (has a real .time), past-or-today occurrence across
   // the user's whole history, as { minutes, done }. Only the time-of-day
   // generator needs this shape.
-  function collectTimedOccurrences() {
+  //
+  // Optional `range` ({start, end} date strings) narrows the window that
+  // would otherwise default to "everything up to today" — this is what
+  // lets Weekly Recap reuse the exact same generator scoped to just its
+  // 7 days, instead of duplicating the occurrence-collection logic.
+  function collectTimedOccurrences(range) {
     const today = toDateStr(new Date());
+    const endStr = range ? range.end : today;
+    const startStr = range ? range.start : null;
     const out = [];
     tasks.forEach(t => {
       if (!t.time) return;
       const [h, m] = t.time.split(":").map(Number);
       const minutes = h * 60 + m;
       if (!t.recurrence || t.recurrence.type === "none") {
-        if (t.date <= today) out.push({ minutes, done: !!t.done });
+        if (t.date <= endStr && (!startStr || t.date >= startStr)) out.push({ minutes, done: !!t.done });
         return;
       }
       const start = new Date(t.date + "T00:00:00");
       const end = new Date((t.endDate || today) + "T00:00:00");
       for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
         const ds = toDateStr(d);
-        if (ds > today) break;
+        if (ds > endStr) break;
+        if (startStr && ds < startStr) continue;
         if (occursOn(t, d)) out.push({ minutes, done: (t.completedDates || []).includes(ds) });
       }
     });
@@ -4012,8 +4097,8 @@ let currentRange = "week";
   // Splits at the user's OWN median scheduled time, not a fixed clock
   // hour — "before/after noon" means nothing for someone who schedules
   // everything in the evening.
-  function timeOfDayInsight() {
-    const occurrences = collectTimedOccurrences();
+  function timeOfDayInsight(range) {
+    const occurrences = collectTimedOccurrences(range);
     if (occurrences.length < INSIGHT_MIN_ELIGIBLE_COUNT * 2) return null;
 
     const sortedMinutes = occurrences.map(o => o.minutes).sort((a, b) => a - b);
@@ -4040,15 +4125,17 @@ let currentRange = "week";
 
   // Biggest gap between any two of the user's categories — a direct X%
   // vs. Y% comparison, not just "your single weakest category."
-  function categoryGapInsight() {
+  function categoryGapInsight(range) {
     const today = toDateStr(new Date());
+    const endStr = range ? range.end : today;
+    const startStr = range ? range.start : null;
     const stats = {};
     categories.forEach(cat => { stats[cat.name] = { scheduled: 0, completed: 0 }; });
 
     tasks.forEach(t => {
       if (!stats[t.category]) return;
       if (!t.recurrence || t.recurrence.type === "none") {
-        if (t.date <= today) {
+        if (t.date <= endStr && (!startStr || t.date >= startStr)) {
           stats[t.category].scheduled++;
           if (t.done) stats[t.category].completed++;
         }
@@ -4057,7 +4144,8 @@ let currentRange = "week";
         const end = new Date((t.endDate || today) + "T00:00:00");
         for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
           const ds = toDateStr(d);
-          if (ds > today) break;
+          if (ds > endStr) break;
+          if (startStr && ds < startStr) continue;
           if (occursOn(t, d)) {
             stats[t.category].scheduled++;
             if ((t.completedDates || []).includes(ds)) stats[t.category].completed++;
@@ -4086,21 +4174,31 @@ let currentRange = "week";
     };
   }
 
-  // Best and worst weekday together, in one finding — only when the gap
-  // between them is itself a real pattern.
-  function weekdayInsight() {
+  const WEEKDAY_FULL_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+  // Shared by weekdayInsight() (all-time, gap-gated) and weekBestDay()
+  // (a single week, ungated) — both group per-day completion percentages
+  // by weekday and average them. Only what gates the result as "notable"
+  // differs between the two callers, so that stays in each of them.
+  function computeWeekdayAverages(range) {
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    let earliest = today;
-    tasks.forEach(t => {
-      const d = new Date(t.date + "T00:00:00");
-      if (d < earliest) earliest = d;
-    });
-    const daysBack = Math.min(Math.round((today - earliest) / 86400000), 365);
+    let start;
+    if (range) {
+      start = new Date(range.start + "T00:00:00");
+    } else {
+      start = today;
+      tasks.forEach(t => {
+        const d = new Date(t.date + "T00:00:00");
+        if (d < start) start = d;
+      });
+      const daysBack = Math.min(Math.round((today - start) / 86400000), 365);
+      start = new Date(today); start.setDate(start.getDate() - daysBack);
+    }
+    const end = range ? new Date(range.end + "T00:00:00") : today;
 
     const weekdaySums = [0, 0, 0, 0, 0, 0, 0];
     const weekdayCounts = [0, 0, 0, 0, 0, 0, 0];
-    for (let i = 0; i <= daysBack; i++) {
-      const d = new Date(today); d.setDate(d.getDate() - i);
+    for (let d = new Date(start); d <= end && d <= today; d.setDate(d.getDate() + 1)) {
       const p = dayPct(d);
       if (p !== null) {
         const wd = d.getDay();
@@ -4108,8 +4206,14 @@ let currentRange = "week";
         weekdayCounts[wd]++;
       }
     }
+    return { weekdaySums, weekdayCounts };
+  }
 
-    const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  // Best and worst weekday together, in one finding — only when the gap
+  // between them is itself a real pattern.
+  function weekdayInsight() {
+    const { weekdaySums, weekdayCounts } = computeWeekdayAverages();
+
     let best = null, worst = null;
     for (let wd = 0; wd < 7; wd++) {
       if (weekdayCounts[wd] < 3) continue;
@@ -4124,18 +4228,44 @@ let currentRange = "week";
 
     return {
       icon: "calendar-days",
-      text: `You complete the most tasks on ${WEEKDAY_NAMES[best.wd]} (${Math.round(best.avg)}%) and the fewest on ${WEEKDAY_NAMES[worst.wd]} (${Math.round(worst.avg)}%)`,
+      text: `You complete the most tasks on ${WEEKDAY_FULL_NAMES[best.wd]} (${Math.round(best.avg)}%) and the fewest on ${WEEKDAY_FULL_NAMES[worst.wd]} (${Math.round(worst.avg)}%)`,
       strength: gap
     };
+  }
+
+  // Least-gated version of weekdayInsight()'s technique, for Weekly Recap:
+  // a 7-day window has at most one data point per weekday, so the
+  // >=3-occurrences/>=10pt-gap bars built for an all-time "notable
+  // pattern" would suppress this every single week. This just reports the
+  // single best day, no "vs. worst" gap required.
+  function weekBestDay(range) {
+    const { weekdaySums, weekdayCounts } = computeWeekdayAverages(range);
+    let best = null;
+    for (let wd = 0; wd < 7; wd++) {
+      if (weekdayCounts[wd] < 1) continue;
+      const avg = weekdaySums[wd] / weekdayCounts[wd];
+      if (!best || avg > best.avg) best = { wd, avg };
+    }
+    if (!best || best.avg <= 0) return null;
+    return { wd: best.wd, avg: best.avg, name: WEEKDAY_FULL_NAMES[best.wd] };
   }
 
   // Whether a category's presence on a given day correlates with a
   // meaningfully more consistent day overall — "streak-related" in the
   // sense of sustained day-to-day completion, not any single task's own
   // streak counter.
-  function categoryConsistencyInsight() {
+  function categoryConsistencyInsight(range) {
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const windowDays = 60; // recent-pattern window
+    // Defaults to a rolling 60-day window; a passed-in range (e.g. Weekly
+    // Recap's 7 days) replaces it outright rather than being clamped
+    // against it.
+    let start;
+    if (range) {
+      start = new Date(range.start + "T00:00:00");
+    } else {
+      start = new Date(today); start.setDate(start.getDate() - 59); // 60-day window
+    }
+    const end = range ? new Date(range.end + "T00:00:00") : today;
 
     const withStats = {}, withoutStats = {};
     categories.forEach(cat => {
@@ -4143,8 +4273,7 @@ let currentRange = "week";
       withoutStats[cat.name] = { sum: 0, count: 0 };
     });
 
-    for (let i = 0; i < windowDays; i++) {
-      const d = new Date(today); d.setDate(d.getDate() - i);
+    for (let d = new Date(start); d <= end && d <= today; d.setDate(d.getDate() + 1)) {
       const dayTasks = getTasksForDate(d, "All");
       if (dayTasks.length === 0) continue;
       const pct = (dayTasks.filter(t => t.occurrenceDone).length / dayTasks.length) * 100;
@@ -4201,6 +4330,26 @@ let currentRange = "week";
       .filter(Boolean)
       .sort((a, b) => b.strength - a.strength)
       .slice(0, 3);
+  }
+
+  // Weekly Recap's "one sharp insight" — same generators, same
+  // gap-strength ranking, just scoped to the 7-day range and without the
+  // 14-day minimum-history gate (a week is inherently short; each
+  // generator's own per-side eligibility count already guards against a
+  // meaningless finding, so no separate gate is needed here). weekdayInsight
+  // is deliberately excluded — its best-vs-worst framing is used instead,
+  // ungated, for the recap's separate "best day" section (weekBestDay()).
+  const WEEK_INSIGHT_GENERATORS = [
+    timeOfDayInsight,
+    categoryGapInsight,
+    categoryConsistencyInsight
+  ];
+
+  function getWeekInsight(range) {
+    return WEEK_INSIGHT_GENERATORS
+      .map(fn => fn(range))
+      .filter(Boolean)
+      .sort((a, b) => b.strength - a.strength)[0] || null;
   }
 
   let currentInsightIndex = 0;
