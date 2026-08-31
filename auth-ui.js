@@ -742,7 +742,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const email = user.email || "";
     window.showConfirm({
       title: "Delete account",
-      message: "This permanently deletes your account and all of your data: tasks, categories, reflections, deep work history, and presets. This cannot be undone.",
+      message: "This permanently deletes your account and all of your data: tasks, categories, reflections, deep work history, presets, and custom reminders. This cannot be undone.",
       confirmLabel: "Delete account",
       danger: true,
       requireText: {

@@ -38,6 +38,10 @@ service cloud.firestore {
         allow read, write: if isOwner(uid);
       }
 
+      match /customReminders/{reminderId} {
+        allow read, write: if isOwner(uid);
+      }
+
       match /settings/{docId} {
         allow read, write: if isOwner(uid);
       }

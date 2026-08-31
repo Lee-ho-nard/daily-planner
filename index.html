@@ -122,16 +122,21 @@
       <button id="reflNextDay"><i data-lucide="chevron-right" class="icon"></i></button>
     </div>
 
-    <div id="reflEmptyIntro" class="deep-work-stats-teaser" style="display:none;">Reflection is a quick end-of-day check-in: what went well, and what you'd change. Write your first one below.</div>
+    <div id="reflEmptyIntro" class="empty-msg" style="display:none;">
+      <i data-lucide="book-open" class="icon" style="width:28px;height:28px;color:var(--text-muted);display:block;margin:0 auto 0.5rem;"></i>
+      <div class="big">First reflection</div>
+      Reflection is a quick end-of-day check-in: what went well, and what you'd change.
+      <span class="empty-msg-instruction">Write your first one below</span>
+    </div>
 
     <div id="reflWentWellGroup" class="refl-group">
       <label style="display:flex;align-items:center;gap:0.3rem;font-size:var(--text-base);color:var(--text-secondary);margin-bottom:0.4rem;"><i data-lucide="book-open" class="icon"></i>What went well today?</label>
-      <textarea id="reflWentWell" rows="3" style="width:100%;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:var(--text-base);margin-bottom:1rem;resize:none;"></textarea>
+      <textarea id="reflWentWell" rows="3" style="width:100%;padding:0.6rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:var(--text-base);margin-bottom:1rem;resize:none;"></textarea>
     </div>
 
     <div id="reflImproveGroup" class="refl-group">
       <label style="display:flex;align-items:center;gap:0.3rem;font-size:var(--text-base);color:var(--text-secondary);margin-bottom:0.4rem;"><i data-lucide="edit-3" class="icon"></i>What could improve?</label>
-      <textarea id="reflImprove" rows="3" style="width:100%;padding:0.6rem;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:var(--text-base);margin-bottom:1rem;resize:none;"></textarea>
+      <textarea id="reflImprove" rows="3" style="width:100%;padding:0.6rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:var(--text-base);margin-bottom:1rem;resize:none;"></textarea>
     </div>
 
     <div class="field-error" id="reflFormError"></div>
@@ -430,9 +435,51 @@
         </select>
       </div>
     </div>
+    <div class="settings-section" id="customRemindersSection">
+      <div class="settings-section-label">Custom Reminders</div>
+      <div id="customRemindersNativeOnlyNote" class="settings-account-meta" style="display:none;">Reminders only fire in the Flit app, not in a browser tab.</div>
+      <ul class="custom-reminders-list" id="customRemindersList"></ul>
+      <div class="settings-account-meta" id="customRemindersEmpty" style="display:none;">No custom reminders yet.</div>
+      <button class="settings-inline-link" id="addCustomReminderBtn" type="button">+ Add reminder</button>
+    </div>
     <div class="modal-actions">
       <button class="btn-cancel" id="settingsCloseBtn">Close</button>
     </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="customReminderModalOverlay">
+  <div class="modal">
+    <h3 id="customReminderModalTitle">Add Reminder</h3>
+    <label>Message</label>
+    <input type="text" id="reminderMessage" placeholder="e.g. Don't set your alarm too early">
+    <label>Time</label>
+    <input type="time" id="reminderTime">
+
+    <label>Repeat</label>
+    <select id="reminderRecurrence">
+      <option value="daily">Every day</option>
+      <option value="weekdays">On selected days</option>
+      <option value="dateRange">Within a date range</option>
+    </select>
+
+    <div class="repeat-extra" id="reminderWeekdaysFields">
+      <label>On these days</label>
+      <div class="weekday-picker" id="reminderWeekdayPicker"></div>
+    </div>
+
+    <div class="repeat-extra" id="reminderDateRangeFields">
+      <label>Start date</label>
+      <input type="date" id="reminderStartDate">
+      <label>End date</label>
+      <input type="date" id="reminderEndDate">
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-cancel" id="reminderCancelBtn">Cancel</button>
+      <button class="btn-save" id="reminderSaveBtn">Save</button>
+    </div>
+    <div class="field-error" id="reminderFormError"></div>
   </div>
 </div>
 

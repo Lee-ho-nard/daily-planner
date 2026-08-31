@@ -4606,6 +4606,40 @@ let currentRange = "week";
     selectedSession = SESSIONS.length + customPresets.length - 1;
   }
 
+  // --- Custom Reminders (free, standalone push notifications) ---
+  // Independent of tasks/goals and the morning/evening/pre-task reminders
+  // below — a flat list of {message, time, recurrence} records, synced the
+  // same "whole-array mirror" way customPresets is (see firestore-sync.js's
+  // syncCustomReminders/mirrorCollection). Actual native scheduling lives
+  // in rescheduleCustomReminders(), further down alongside the rest of the
+  // local-notification infrastructure.
+  let customReminders = JSON.parse(localStorage.getItem("customReminders")) || [];
+
+  function saveCustomReminders() {
+    if (window.firestoreBridge && window.firestoreBridge.isSignedIn()) {
+      window.firestoreBridge.syncCustomReminders(customReminders);
+    } else {
+      localStorage.setItem("customReminders", JSON.stringify(customReminders));
+    }
+    scheduleNativeNotificationsSync();
+  }
+
+  // A short, human-readable schedule line for the Settings list — e.g.
+  // "Mon, Wed, Fri at 7:00 AM" or "Aug 24 – Aug 30 at 9:00 PM".
+  function customReminderScheduleSummary(r) {
+    const [h, m] = r.time.split(":").map(Number);
+    const timeLabel = formatMinutesAsClockTime(h * 60 + m);
+    if (r.recurrence === "weekdays") {
+      const names = (r.weekdays || []).slice().sort((a, b) => a - b).map(wd => WEEKDAY_FULL_NAMES[wd].slice(0, 3));
+      return `${names.length ? names.join(", ") : "No days selected"} at ${timeLabel}`;
+    }
+    if (r.recurrence === "dateRange") {
+      const fmt = ds => new Date(ds + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      return `${fmt(r.startDate)} – ${fmt(r.endDate)} at ${timeLabel}`;
+    }
+    return `Every day at ${timeLabel}`;
+  }
+
   // Built-in sessions plus any saved custom presets, in one combined list so
   // the grid, selection index, and timer logic all treat them uniformly.
   // The built-in "Custom" slot is identified by work === null (not by a
@@ -5437,8 +5471,14 @@ let currentRange = "week";
   });
 
   // --- Reflection search (premium) ---
+  // Always visible now — a free user gets a locked teaser inside the modal
+  // on click (see the click handler below), same pattern as every other
+  // premium feature (.deep-work-stats-teaser), instead of the button just
+  // disappearing with no explanation. Kept as its own named function since
+  // it's also re-run after the End Day flow temporarily hides this button
+  // (see endDayBtn's onConfirm) to restore it afterward.
   function updateSearchReflectionsBtnVisibility() {
-    document.getElementById("searchReflectionsBtn").style.display = isPremiumUser() ? "flex" : "none";
+    document.getElementById("searchReflectionsBtn").style.display = "flex";
   }
 
   function escapeHtml(str) {
@@ -5527,8 +5567,19 @@ let currentRange = "week";
   // another call, no changes to the function itself.
   enableModalDragDismiss(reflectionSearchOverlay);
   document.getElementById("searchReflectionsBtn").addEventListener("click", () => {
-    if (!isPremiumUser()) return;
     const input = document.getElementById("reflectionSearchInput");
+    const results = document.getElementById("reflectionSearchResults");
+    if (!isPremiumUser()) {
+      // Same swap-in-a-teaser approach as renderDeepWorkStats()/
+      // renderWeeklyRecapCard() — the input itself is hidden rather than
+      // left visible-but-inert, so there's nothing to type into that goes
+      // nowhere.
+      input.style.display = "none";
+      results.innerHTML = `<div class="deep-work-stats-teaser">Search your past reflections. Upgrade to Premium.</div>`;
+      openModal(reflectionSearchOverlay);
+      return;
+    }
+    input.style.display = "";
     input.value = "";
     renderReflectionSearchResults("");
     openModal(reflectionSearchOverlay);
@@ -5721,6 +5772,15 @@ let currentRange = "week";
   // tell them apart from the two fixed daily ids above when cancelling the
   // previous batch before rescheduling.
   const PRE_TASK_ID_BASE = 10000;
+  // Custom Reminder ids live above THIS offset, comfortably clear of the
+  // highest possible pre-task id (10000 + the 0..999999 hash range), so the
+  // two id ranges never collide and each reschedule pass only ever sweeps
+  // its own notifications. Each reminder gets one id slot per possible
+  // weekday (baseId..baseId+6) so a "weekdays" reminder's several native
+  // schedules — one per selected day, since the plugin can't express "these
+  // 3 weekdays" in a single entry — can all be cancelled/replaced together.
+  const CUSTOM_REMINDER_ID_BASE = 2000000;
+  const CUSTOM_REMINDER_ID_SPAN = 10;
 
   function loadStoredNotificationPrefs() {
     try {
@@ -5815,7 +5875,7 @@ let currentRange = "week";
     const pending = await plugin.getPending();
     const previousPreTaskIds = pending.notifications
       .map(n => n.id)
-      .filter(id => id >= PRE_TASK_ID_BASE);
+      .filter(id => id >= PRE_TASK_ID_BASE && id < CUSTOM_REMINDER_ID_BASE);
     if (previousPreTaskIds.length) {
       await plugin.cancel({ notifications: previousPreTaskIds.map(id => ({ id })) });
     }
@@ -5840,12 +5900,80 @@ let currentRange = "week";
     if (toSchedule.length) await plugin.schedule({ notifications: toSchedule });
   }
 
+  // Custom Reminders are free-standing (no task/goal behind them), so unlike
+  // pre-task reminders there's no daily "what's scheduled today" recompute
+  // needed — each reminder's own recurrence fully determines its native
+  // schedule(s), so this only needs to re-run when a reminder is actually
+  // added/edited/deleted/toggled (via saveCustomReminders()) or the app
+  // resyncs on launch/sign-in, not on every render.
+  async function rescheduleCustomReminders() {
+    const plugin = localNotificationsPlugin();
+    if (!plugin) return;
+    const pending = await plugin.getPending();
+    const previousReminderIds = pending.notifications
+      .map(n => n.id)
+      .filter(id => id >= CUSTOM_REMINDER_ID_BASE);
+    if (previousReminderIds.length) {
+      await plugin.cancel({ notifications: previousReminderIds.map(id => ({ id })) });
+    }
+
+    const now = new Date();
+    const today = toDateStr(now);
+    const toSchedule = [];
+    customReminders.filter(r => r.active).forEach(r => {
+      const [h, m] = r.time.split(":").map(Number);
+      const baseId = CUSTOM_REMINDER_ID_BASE + hashTaskIdToInt(r.id) * CUSTOM_REMINDER_ID_SPAN;
+
+      if (r.recurrence === "weekdays") {
+        (r.weekdays || []).forEach(wd => {
+          toSchedule.push({
+            id: baseId + wd,
+            title: "Reminder",
+            body: r.message,
+            // Capacitor's weekday is 1-7 (1 = Sunday); JS getDay() is 0-6
+            // (0 = Sunday) everywhere else in this file — convert at this
+            // one boundary rather than carrying two conventions around.
+            schedule: { on: { weekday: wd + 1, hour: h, minute: m }, allowWhileIdle: true }
+          });
+        });
+      } else if (r.recurrence === "dateRange") {
+        const endOfRange = new Date(r.endDate + "T23:59:59");
+        if (endOfRange < now) return; // range already fully elapsed
+
+        let firstFire = new Date((r.startDate > today ? r.startDate : today) + "T00:00:00");
+        firstFire.setHours(h, m, 0, 0);
+        if (firstFire <= now) firstFire.setDate(firstFire.getDate() + 1);
+        if (firstFire > endOfRange) return; // nothing left to fire today or later
+
+        // `count` is the OS-enforced stop — once it's used up the plugin
+        // itself never fires again, so an ended range needs no cleanup
+        // pass here or anywhere else.
+        const daysRemaining = Math.round((new Date(r.endDate + "T00:00:00") - new Date(toDateStr(firstFire) + "T00:00:00")) / 86400000) + 1;
+        toSchedule.push({
+          id: baseId,
+          title: "Reminder",
+          body: r.message,
+          schedule: { at: firstFire, every: "day", count: daysRemaining, allowWhileIdle: true }
+        });
+      } else {
+        toSchedule.push({
+          id: baseId,
+          title: "Reminder",
+          body: r.message,
+          schedule: { on: { hour: h, minute: m }, allowWhileIdle: true }
+        });
+      }
+    });
+    if (toSchedule.length) await plugin.schedule({ notifications: toSchedule });
+  }
+
   async function syncNativeNotifications() {
     if (!capacitorAvailable()) return;
     const granted = await ensureLocalNotificationPermission();
     if (!granted) return;
     await rescheduleDailyNotifications();
     await reschedulePreTaskNotifications();
+    await rescheduleCustomReminders();
   }
 
   // Debounced so a burst of task edits (e.g. drag-reordering several rows)
@@ -7005,6 +7133,7 @@ let currentRange = "week";
     reflections = window.firestoreBridge.getReflections();
     lockedDays = window.firestoreBridge.getLockedDays();
     customPresets = window.firestoreBridge.getCustomPresets();
+    customReminders = window.firestoreBridge.getCustomReminders();
     localSelectedTheme = window.firestoreBridge.getSelectedTheme();
     applySelectedTheme();
     // deepWorkSessions isn't a cached top-level variable — getDeepWorkSessions()
@@ -7072,6 +7201,7 @@ let currentRange = "week";
     reflections = {};
     lockedDays = [];
     customPresets = [];
+    customReminders = [];
     localDeepWorkSessions = [];
     localSelectedTheme = null;
     localStorage.removeItem("tasks");
@@ -7079,6 +7209,7 @@ let currentRange = "week";
     localStorage.removeItem("reflections");
     localStorage.removeItem("lockedDays");
     localStorage.removeItem("customPresets");
+    localStorage.removeItem("customReminders");
     localStorage.removeItem("deepWorkSessions");
     localStorage.removeItem("selectedTheme");
     // TEMPORARY: isPremium is still a client-editable localStorage flag
@@ -7217,6 +7348,214 @@ let currentRange = "week";
   NOTIF_FIELD_IDS.forEach(id => {
     document.getElementById(id).addEventListener("change", readNotificationSettingsUIIntoPrefs);
   });
+
+  // --- Custom Reminders settings UI ---
+  // Gated on isSignedIn() the same as the Notifications section above —
+  // see renderCustomRemindersList()'s own comment for why.
+  let reminderSelectedWeekdays = [0, 1, 2, 3, 4, 5, 6];
+  let editingReminderId = null;
+  const reminderWeekdayPicker = document.getElementById("reminderWeekdayPicker");
+  const reminderRecurrenceSelect = document.getElementById("reminderRecurrence");
+  const reminderWeekdaysFields = document.getElementById("reminderWeekdaysFields");
+  const reminderDateRangeFields = document.getElementById("reminderDateRangeFields");
+  const customReminderOverlay = document.getElementById("customReminderModalOverlay");
+  enableModalDragDismiss(customReminderOverlay);
+
+  function buildReminderWeekdayPicker() {
+    reminderWeekdayPicker.innerHTML = "";
+    WEEKDAY_LABELS.forEach((label, i) => {
+      const btn = document.createElement("div");
+      btn.className = "weekday-btn" + (reminderSelectedWeekdays.includes(i) ? " selected" : "");
+      btn.textContent = label;
+      btn.addEventListener("click", () => {
+        const idx = reminderSelectedWeekdays.indexOf(i);
+        if (idx === -1) reminderSelectedWeekdays.push(i); else reminderSelectedWeekdays.splice(idx, 1);
+        buildReminderWeekdayPicker();
+      });
+      reminderWeekdayPicker.appendChild(btn);
+    });
+  }
+
+  function updateReminderRecurrenceFieldsVisibility() {
+    const val = reminderRecurrenceSelect.value;
+    reminderWeekdaysFields.classList.toggle("show", val === "weekdays");
+    reminderDateRangeFields.classList.toggle("show", val === "dateRange");
+  }
+  reminderRecurrenceSelect.addEventListener("change", updateReminderRecurrenceFieldsVisibility);
+
+  function renderCustomRemindersList() {
+    // Same signed-out gate as notifSettingsSection right above — Custom
+    // Reminders is Firestore-synced per-account state the same way
+    // notification prefs are (see saveCustomReminders()'s localStorage
+    // fallback existing only for the brief window before a first sign-in,
+    // not as a supported permanent local-only mode), so a signed-out user
+    // gets the whole section hidden rather than a disabled one.
+    const signedIn = !!(window.firestoreBridge && window.firestoreBridge.isSignedIn());
+    document.getElementById("customRemindersSection").style.display = signedIn ? "" : "none";
+    if (!signedIn) return;
+
+    // Same native-only gate as the Notifications section right above —
+    // reminders only actually fire inside the Capacitor-wrapped app, so
+    // adding one from a plain browser tab would silently never go off.
+    // Existing reminders stay fully manageable (toggle/edit/delete) even
+    // here, since none of those actions create a false expectation of
+    // firing the way adding a new one would.
+    const native = capacitorAvailable();
+    document.getElementById("customRemindersNativeOnlyNote").style.display = native ? "none" : "block";
+    const addBtn = document.getElementById("addCustomReminderBtn");
+    addBtn.disabled = !native;
+    addBtn.title = native ? "" : "Reminders only fire in the Flit app, not in a browser tab.";
+
+    const listEl = document.getElementById("customRemindersList");
+    listEl.innerHTML = "";
+    document.getElementById("customRemindersEmpty").style.display = customReminders.length === 0 ? "block" : "none";
+
+    customReminders.forEach(r => {
+      const row = document.createElement("li");
+      row.className = "custom-reminder-row";
+
+      const info = document.createElement("div");
+      info.className = "custom-reminder-info";
+      const msg = document.createElement("div");
+      msg.className = "custom-reminder-message";
+      msg.textContent = r.message;
+      const schedule = document.createElement("div");
+      schedule.className = "custom-reminder-schedule";
+      schedule.textContent = customReminderScheduleSummary(r);
+      info.appendChild(msg);
+      info.appendChild(schedule);
+
+      const actions = document.createElement("div");
+      actions.className = "custom-reminder-actions";
+
+      const toggle = document.createElement("input");
+      toggle.type = "checkbox";
+      toggle.checked = r.active;
+      toggle.title = r.active ? "Active" : "Paused";
+      toggle.addEventListener("change", () => {
+        r.active = toggle.checked;
+        saveCustomReminders();
+        renderCustomRemindersList();
+      });
+
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.innerHTML = '<i data-lucide="edit-3" class="icon"></i>';
+      editBtn.title = "Edit reminder";
+      editBtn.addEventListener("click", () => openCustomReminderModal(r.id));
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.innerHTML = '<i data-lucide="trash-2" class="icon"></i>';
+      delBtn.title = "Delete reminder";
+      delBtn.addEventListener("click", () => {
+        showConfirm({
+          title: "Delete reminder",
+          message: `Delete "${r.message}"?`,
+          confirmLabel: "Delete",
+          danger: true,
+          onConfirm: () => {
+            customReminders = customReminders.filter(x => x.id !== r.id);
+            saveCustomReminders();
+            renderCustomRemindersList();
+          }
+        });
+      });
+
+      actions.appendChild(toggle);
+      actions.appendChild(editBtn);
+      actions.appendChild(delBtn);
+      row.appendChild(info);
+      row.appendChild(actions);
+      listEl.appendChild(row);
+    });
+    lucide.createIcons();
+  }
+
+  // Pass a reminder id to edit it in place; omit to start a fresh one.
+  function openCustomReminderModal(reminderId) {
+    editingReminderId = reminderId || null;
+    const existing = editingReminderId ? customReminders.find(r => r.id === editingReminderId) : null;
+
+    document.getElementById("customReminderModalTitle").textContent = existing ? "Edit Reminder" : "Add Reminder";
+    document.getElementById("reminderMessage").value = existing ? existing.message : "";
+    document.getElementById("reminderTime").value = existing ? existing.time : "";
+    reminderRecurrenceSelect.value = existing ? existing.recurrence : "daily";
+    reminderSelectedWeekdays = existing && existing.recurrence === "weekdays" ? [...existing.weekdays] : [0, 1, 2, 3, 4, 5, 6];
+    buildReminderWeekdayPicker();
+    document.getElementById("reminderStartDate").value = existing && existing.recurrence === "dateRange" ? existing.startDate : toDateStr(new Date());
+    document.getElementById("reminderEndDate").value = existing && existing.recurrence === "dateRange" ? existing.endDate : "";
+    updateReminderRecurrenceFieldsVisibility();
+    document.getElementById("reminderFormError").classList.remove("show");
+
+    openModal(customReminderOverlay);
+    setTimeout(() => document.getElementById("reminderMessage").focus(), 50);
+  }
+
+  document.getElementById("addCustomReminderBtn").addEventListener("click", () => openCustomReminderModal(null));
+  document.getElementById("reminderCancelBtn").addEventListener("click", () => closeModal(customReminderOverlay));
+
+  document.getElementById("reminderSaveBtn").addEventListener("click", () => {
+    const message = document.getElementById("reminderMessage").value.trim();
+    const time = document.getElementById("reminderTime").value;
+    const recurrence = reminderRecurrenceSelect.value;
+    const startDate = document.getElementById("reminderStartDate").value;
+    const endDate = document.getElementById("reminderEndDate").value;
+    const err = document.getElementById("reminderFormError");
+
+    if (!message || !time) {
+      err.textContent = "Please fill in the message and time.";
+      err.classList.add("show");
+      return;
+    }
+    if (recurrence === "weekdays" && reminderSelectedWeekdays.length === 0) {
+      err.textContent = "Please select at least one day of the week.";
+      err.classList.add("show");
+      return;
+    }
+    if (recurrence === "dateRange" && (!startDate || !endDate || endDate < startDate)) {
+      err.textContent = "Please choose a valid start and end date.";
+      err.classList.add("show");
+      return;
+    }
+    err.classList.remove("show");
+
+    const record = { message, time, recurrence };
+    if (recurrence === "weekdays") record.weekdays = [...reminderSelectedWeekdays].sort();
+    if (recurrence === "dateRange") { record.startDate = startDate; record.endDate = endDate; }
+
+    if (editingReminderId) {
+      // active is preserved as-is — editing a paused reminder must not
+      // silently reactivate it. The other recurrence-type's fields are
+      // explicitly dropped rather than left dangling unused (and Object.
+      // assign can't null them out itself — Firestore rejects `undefined`
+      // field values, so they must actually be absent, not undefined).
+      const existing = customReminders.find(r => r.id === editingReminderId);
+      delete existing.weekdays;
+      delete existing.startDate;
+      delete existing.endDate;
+      Object.assign(existing, record);
+      editingReminderId = null;
+    } else {
+      record.id = Date.now().toString() + Math.random().toString(36).slice(2, 7);
+      record.active = true;
+      customReminders.push(record);
+    }
+
+    saveCustomReminders();
+    closeModal(customReminderOverlay);
+    renderCustomRemindersList();
+  });
+
+  customReminderOverlay.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") document.getElementById("reminderSaveBtn").click();
+    if (e.key === "Escape") closeModal(customReminderOverlay);
+  });
+  customReminderOverlay.addEventListener("input", () => {
+    document.getElementById("reminderFormError").classList.remove("show");
+  });
+
+  document.getElementById("settingsBtn").addEventListener("click", renderCustomRemindersList);
 
   // Checked first: if this load is the browser returning from a Google
   // sign-in redirect triggered mid-onboarding, this already restored the

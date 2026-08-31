@@ -373,6 +373,7 @@
   .settings-verify-banner { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; background: color-mix(in srgb, var(--warning) 14%, var(--bg-card)); color: var(--warning); border-radius: var(--radius-sm); padding: 0.6rem 0.8rem; font-size: var(--text-sm); margin: 0.5rem 0; }
   .settings-verify-banner button { background: none; border: none; color: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; font-family: inherit; font-size: inherit; padding: 0; flex-shrink: 0; }
   .settings-inline-link { display: block; background: none; border: none; padding: 0; margin-top: 0.3rem; color: var(--accent-link); font-size: var(--text-sm); text-decoration: underline; cursor: pointer; font-family: inherit; }
+  .settings-inline-link:disabled { color: var(--text-muted); cursor: not-allowed; }
 
   .confirm-text-input { margin-top: 0.9rem; }
   .auth-google-btn { display: flex; align-items: center; justify-content: center; gap: 0.6rem; width: 100%; padding: 0.7rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); font-family: inherit; font-size: var(--text-base); font-weight: 500; cursor: pointer; transition: background-color 300ms ease, transform 0.1s; }
@@ -408,6 +409,17 @@
   .goal-checkbox-row label { margin: 0; font-size: var(--text-base); color: var(--text-primary); }
   .settings-notif-field { margin-top: 0.4rem; }
 
+  .custom-reminders-list { list-style: none; padding: 0; margin: 0; }
+  .custom-reminder-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; padding: 0.6rem 0; border-bottom: 1px solid var(--border); }
+  .custom-reminder-row:last-child { border-bottom: none; }
+  .custom-reminder-info { min-width: 0; flex: 1; }
+  .custom-reminder-message { font-size: var(--text-base); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .custom-reminder-schedule { font-size: var(--text-xs); color: var(--text-muted); margin-top: 0.15rem; }
+  .custom-reminder-actions { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+  .custom-reminder-actions input[type="checkbox"] { width: auto; }
+  .custom-reminder-actions button { background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 0.2rem; display: flex; align-items: center; }
+  .custom-reminder-actions .icon { width: 16px; height: 16px; }
+
   /* No "at risk"/"behind pace" state exists in the app's goal logic today
      (checked app.js), so unlike .task-item there's no real state left to
      reserve this border for — removed outright rather than kept
@@ -416,7 +428,7 @@
   .goal-card { background: var(--bg-card); border-radius: var(--radius-md); padding: 1.1rem; margin-bottom: 0.7rem; box-shadow: var(--shadow-card); }
   .goal-category-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 0.45rem; vertical-align: 0; }
   .goal-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem; }
-  .goal-name { font-weight: 700; font-size: var(--text-md); letter-spacing: -0.03em; }
+  .goal-name { font-weight: 700; font-size: var(--text-md); letter-spacing: -0.03em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
   .goal-pct { font-size: var(--text-base); color: var(--text-secondary); font-weight: 500; }
   .goal-sub { font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: 0.7rem; }
   .goal-milestone-link { background: none; border: none; padding: 0; color: var(--accent-link); text-decoration: underline; cursor: pointer; font-family: inherit; font-size: inherit; display: inline-flex; align-items: center; gap: 0.2rem; vertical-align: middle; }

@@ -26,6 +26,7 @@ const mirror = {
   lockedDays: [],
   deepWorkSessions: [],
   customPresets: [],
+  customReminders: [],
   selectedTheme: null,
   userDoc: null,
   billing: null
@@ -48,6 +49,7 @@ function resetMirror() {
   mirror.lockedDays = [];
   mirror.deepWorkSessions = [];
   mirror.customPresets = [];
+  mirror.customReminders = [];
   mirror.selectedTheme = null;
   mirror.userDoc = null;
   mirror.billing = null;
@@ -72,7 +74,7 @@ function markSourceReady(uid, sourceKey) {
 function startListening(uid) {
   currentUid = uid;
   resetMirror();
-  pendingSources = new Set(["tasks", "categories", "reflections", "deepWorkSessions", "customPresets", "settings"]);
+  pendingSources = new Set(["tasks", "categories", "reflections", "deepWorkSessions", "customPresets", "customReminders", "settings"]);
   readyDispatchedForUid = null;
 
   const tasksRef = collection(db, "users", uid, "tasks");
@@ -119,6 +121,13 @@ function startListening(uid) {
     mirror.customPresets = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     markSourceReady(uid, "customPresets");
     dispatchDataChanged("customPresets");
+  }));
+
+  const remindersRef = collection(db, "users", uid, "customReminders");
+  unsubscribers.push(onSnapshot(remindersRef, snap => {
+    mirror.customReminders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    markSourceReady(uid, "customReminders");
+    dispatchDataChanged("customReminders");
   }));
 
   const settingsRef = doc(db, "users", uid, "settings", "prefs");
@@ -212,6 +221,16 @@ function syncCustomPresets(presetsArray) {
   const previousIds = mirror.customPresets.map(p => p.id);
   return mirrorCollection(currentUid, "customPresets", presetsArray, (colRef, preset) => {
     const { id, ...rest } = preset;
+    const docId = id || doc(colRef).id;
+    return { ref: doc(colRef, docId), data: rest, id: docId };
+  }, previousIds);
+}
+
+function syncCustomReminders(remindersArray) {
+  if (!currentUid) return;
+  const previousIds = mirror.customReminders.map(r => r.id);
+  return mirrorCollection(currentUid, "customReminders", remindersArray, (colRef, reminder) => {
+    const { id, ...rest } = reminder;
     const docId = id || doc(colRef).id;
     return { ref: doc(colRef, docId), data: rest, id: docId };
   }, previousIds);
@@ -317,7 +336,7 @@ async function saveStreakFreezeState(remaining, refillMonth) {
 // succeeds the ID token is invalidated and these deletes would fail the
 // isOwner() security rule.
 async function deleteAllUserData(uid) {
-  const subcollections = ["tasks", "categories", "reflections", "deepWorkSessions", "customPresets"];
+  const subcollections = ["tasks", "categories", "reflections", "deepWorkSessions", "customPresets", "customReminders"];
   const ops = [];
   for (const name of subcollections) {
     const snap = await getDocs(collection(db, "users", uid, name));
@@ -341,12 +360,14 @@ window.firestoreBridge = {
   getLockedDays: () => mirror.lockedDays,
   getDeepWorkSessions: () => mirror.deepWorkSessions,
   getCustomPresets: () => mirror.customPresets,
+  getCustomReminders: () => mirror.customReminders,
   getSelectedTheme: () => mirror.selectedTheme,
   getAccountInfo: () => mirror.userDoc,
   getBillingStatus: () => mirror.billing,
   syncTasks,
   syncCategories,
   syncCustomPresets,
+  syncCustomReminders,
   syncReflection,
   logDeepWorkSession,
   saveDeepWorkSessionNote,
