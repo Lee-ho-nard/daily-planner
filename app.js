@@ -676,6 +676,13 @@
   // possibly-longer streak.
   const MILESTONE_THRESHOLDS = [7, 30, 100];
 
+  // Goals always have a defined length (goalLength is a required field —
+  // see goalSave), so there's no open-ended case to branch on. Scaled way
+  // down from Smart Insights' 14-day gate: a goal can legitimately be a
+  // 7-day sprint, so 3 scheduled occurrences is enough to stop a 0-1 day
+  // goal from showing a misleadingly precise "100% consistency."
+  const GOAL_PROGRESS_MIN_SCHEDULED_DAYS = 3;
+
   // Mutates task.milestonesEarned in place and returns the newly-earned
   // record if the task's current streak just crossed a threshold it
   // hadn't already earned, else null. Only ever reports (and records) one
@@ -1435,6 +1442,17 @@
 
       const doneCount = scheduledDays.filter(ds => (goal.completedDates || []).includes(ds)).length;
       const pct = scheduledDays.length ? Math.round((doneCount / scheduledDays.length) * 100) : 0;
+
+      // Premium-only progress viz below reuses these: scheduledDaysElapsed
+      // counts only occurrences that have actually happened yet (today
+      // included), separate from `pct`'s target-length denominator, so a
+      // goal can be "40% toward its 30-day target" and "90% consistent so
+      // far" at the same time — both real, neither implying the other.
+      const scheduledDaysElapsed = scheduledDays.filter(ds => ds <= today).length;
+      const consistencyPct = scheduledDaysElapsed ? Math.round((doneCount / scheduledDaysElapsed) * 100) : 0;
+      const todayDate = new Date(today + "T00:00:00");
+      const calendarDaysElapsed = Math.round((Math.min(todayDate, endDate) - startDate) / 86400000) + 1;
+
       const streak = computeStreak(goal);
       const freezesAvailable = getFreezesAvailable(goal);
 
@@ -1541,9 +1559,34 @@
         }, delay);
       });
 
+      const progress = document.createElement("div");
+      if (!isPremiumUser()) {
+        progress.className = "goal-progress-premium deep-work-stats-teaser";
+        progress.textContent = "Unlock consistency tracking with Premium";
+      } else if (scheduledDaysElapsed < GOAL_PROGRESS_MIN_SCHEDULED_DAYS) {
+        progress.className = "goal-progress-premium goal-progress-pending";
+        progress.textContent = "Consistency insights unlock after a few days of tracking.";
+      } else {
+        progress.className = "goal-progress-premium";
+        const track = document.createElement("div");
+        track.className = "progress-bar-track goal-progress-track";
+        const fill = document.createElement("div");
+        fill.className = "progress-bar-fill";
+        fill.style.width = pct + "%";
+        fill.style.background = categoryColor(goal.category);
+        track.appendChild(fill);
+        const line = document.createElement("div");
+        line.className = "goal-progress-line";
+        line.textContent = `${doneCount} of ${scheduledDays.length} day${scheduledDays.length === 1 ? "" : "s"} completed`
+          + (scheduledDaysElapsed < scheduledDays.length ? ` · ${consistencyPct}% consistency over ${calendarDaysElapsed} day${calendarDaysElapsed === 1 ? "" : "s"}` : "");
+        progress.appendChild(track);
+        progress.appendChild(line);
+      }
+
       card.appendChild(top);
       card.appendChild(sub);
       card.appendChild(dots);
+      card.appendChild(progress);
       listEl.appendChild(card);
     });
     lucide.createIcons();
