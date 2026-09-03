@@ -76,6 +76,7 @@ users/{uid}/tasks/{taskId}
   checkoffLabel: string
   why: string
   plan: string
+  note: string              // optional, capped at 200 chars (TASK_NOTE_MAX_LENGTH)
   milestonesEarned: {            // shareable milestone cards (roadmap #6)
     [threshold: "7" | "30" | "100"]: {
       threshold: number,

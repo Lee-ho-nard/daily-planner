@@ -306,6 +306,7 @@
     <h3 id="modalTitle">Add Task</h3>
     <label>Task name</label>
     <input type="text" id="modalName" placeholder="e.g. Read 30 pages">
+    <div class="task-name-suggestions" id="modalNameSuggestions" style="display:none;"></div>
     <label class="label-icon"><i data-lucide="tag" class="icon"></i>Category</label>
     <select id="modalCategory"></select>
     <div class="modal-row">
@@ -320,6 +321,9 @@
     </div>
     <label>Date</label>
     <input type="date" id="modalDate">
+
+    <label>Note (optional)</label>
+    <input type="text" id="modalNote" placeholder="e.g. Bring headphones" maxlength="200">
 
     <div id="copiesRow">
       <label>Repeat this task</label>

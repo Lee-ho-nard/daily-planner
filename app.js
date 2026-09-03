@@ -1888,7 +1888,15 @@
           li.classList.add("completing");
           save();
           maybeCelebrateDailyCompletion();
-          setTimeout(() => renderTasks(), 450);
+          // renderAll() (not just renderTasks()) so syncAllStreakFreezes()
+          // runs and can pop the milestone screen right here — this is the
+          // actual moment a streak count changes; the other renderAll()
+          // call sites (Planner nav, Goals/Analysis tab switches) only
+          // catch a newly-earned milestone on the NEXT visit otherwise.
+          // Same 450ms delay as before, so the celebration takeover
+          // appears after the checkmark/list-reorder animation settles,
+          // not cutting it off mid-flight.
+          setTimeout(() => renderAll(), 450);
         } else {
           checkbox.innerHTML = "";
           save();
@@ -1905,6 +1913,9 @@
       const durText = formatDuration(task.duration);
       const durIcon = durText ? '<i data-lucide="clock" class="icon"></i>' + durText : "";
       const goalIcon = task.isGoal ? '<i data-lucide="target" class="icon"></i>' : "";
+      // Only rendered when a note actually exists — no empty-note
+      // affordance on every row, per the feature's own requirement.
+      const noteIcon = task.note ? '<i data-lucide="sticky-note" class="icon" title="Has a note"></i>' : "";
       let streakIcon = "";
       let freezeIcon = "";
       if (task.isRecurring) {
@@ -1914,7 +1925,7 @@
         const freezesAvailable = getFreezesAvailable(realTask);
         if (freezesAvailable > 0) freezeIcon = `<i data-lucide="snowflake" class="icon"></i>${freezesAvailable}`;
       }
-      const metaParts = [task.time, durIcon, streakIcon, freezeIcon, goalIcon].filter(Boolean);
+      const metaParts = [task.time, durIcon, streakIcon, freezeIcon, goalIcon, noteIcon].filter(Boolean);
       meta.innerHTML = metaParts.join(" · ");
 
       const cat = document.createElement("span");
@@ -2838,6 +2849,84 @@
     }
   });
 
+  // --- Recent task-name quick-add suggestions ---
+  // Non-recurring tasks only: a recurring task/goal is set up once and
+  // never re-typed, so it's not a useful "type this again" suggestion the
+  // way a one-off task name ("Dentist appointment") is. Deduped
+  // case-insensitively (keeping the most recent casing), newest task.date
+  // first, capped at 5.
+  function getRecentTaskNameSuggestions() {
+    const candidates = tasks
+      .filter(t => (!t.recurrence || t.recurrence.type === "none") && t.name && t.name.trim())
+      .slice()
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+    const seen = new Set();
+    const suggestions = [];
+    for (const t of candidates) {
+      const key = t.name.trim().toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      suggestions.push(t.name.trim());
+      if (suggestions.length >= 5) break;
+    }
+    return suggestions;
+  }
+
+  // "Clear historical association" = this name's past occurrences (across
+  // ALL tasks, recurring included — this is about what category the name
+  // itself belongs to, not what's worth re-suggesting) are almost all the
+  // same category. A single past occurrence counts as 100% agreement,
+  // which is the common case since names here are already deduped.
+  function inferCategoryForTaskName(name) {
+    const key = name.trim().toLowerCase();
+    const matches = tasks.filter(t => t.name && t.name.trim().toLowerCase() === key);
+    if (matches.length === 0) return null;
+    const counts = {};
+    matches.forEach(t => { counts[t.category] = (counts[t.category] || 0) + 1; });
+    let topCat = null, topCount = 0;
+    Object.keys(counts).forEach(cat => {
+      if (counts[cat] > topCount) { topCount = counts[cat]; topCat = cat; }
+    });
+    return (topCount / matches.length >= 0.8) ? topCat : null;
+  }
+
+  // Builds the chip row fresh (called once per modal open, not per
+  // keystroke) and sets its initial shown/hidden state off the name
+  // field's current value. The #modalName "input" listener below then only
+  // toggles that same display, rather than rebuilding — the task list
+  // can't change while the modal's open, so there's nothing to recompute.
+  function renderTaskNameSuggestions() {
+    const wrap = document.getElementById("modalNameSuggestions");
+    const suggestions = getRecentTaskNameSuggestions();
+    wrap.innerHTML = "";
+    if (suggestions.length === 0) { wrap.style.display = "none"; return; }
+
+    suggestions.forEach(name => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "cat-pill";
+      chip.textContent = name;
+      chip.title = name;
+      chip.addEventListener("click", () => {
+        document.getElementById("modalName").value = name;
+        const inferredCategory = inferCategoryForTaskName(name);
+        if (inferredCategory && categories.some(c => c.name === inferredCategory)) {
+          document.getElementById("modalCategory").value = inferredCategory;
+        }
+        wrap.style.display = "none";
+      });
+      wrap.appendChild(chip);
+    });
+    wrap.style.display = document.getElementById("modalName").value.trim() === "" ? "flex" : "none";
+  }
+
+  document.getElementById("modalName").addEventListener("input", () => {
+    const wrap = document.getElementById("modalNameSuggestions");
+    if (wrap.children.length === 0) return;
+    wrap.style.display = document.getElementById("modalName").value.trim() === "" ? "flex" : "none";
+  });
+
   function openAddModal() {
     if (isDayLocked(toDateStr(currentDate))) { showToast("This day is locked. You can't add tasks to a day you've already reflected on.", "warning"); return; }
     if (categories.length === 0) { showToast("Add a category first using the + next to the category tabs.", "warning"); return; }
@@ -2848,6 +2937,7 @@
     document.getElementById("modalDuration").value = "";
     document.getElementById("modalDate").value = toDateStr(currentDate);
     document.getElementById("modalEndDate").value = "";
+    document.getElementById("modalNote").value = "";
     document.getElementById("modalInterval").value = 1;
     if (activeCategory !== "All") {
       document.getElementById("modalCategory").value = activeCategory;
@@ -2863,6 +2953,7 @@
     buildWeekdayPicker();
     document.getElementById("copiesRow").style.display = "block";
     document.getElementById("modalCopies").value = 1;
+    renderTaskNameSuggestions();
     openModal(overlay);
     setTimeout(() => document.getElementById("modalName").focus(), 50);
   }
@@ -3013,6 +3104,11 @@
     if (!task) return;
     editingTaskId = taskId;
     document.getElementById("copiesRow").style.display = "none";
+    // Not "add" flow, and modalName won't be empty (it's pre-filled with
+    // the existing name below) — but the same modal/DOM is reused across
+    // opens, so explicitly hide rather than relying on that emptiness
+    // check to avoid a stale chip row left visible from a prior Add.
+    document.getElementById("modalNameSuggestions").style.display = "none";
     document.getElementById("modalTitle").textContent = "Edit Task";
     document.getElementById("modalName").value = task.name;
     document.getElementById("modalCategory").value = task.category;
@@ -3020,6 +3116,7 @@
     document.getElementById("modalDuration").value = task.duration || "";
     document.getElementById("modalDate").value = task.date;
     document.getElementById("modalEndDate").value = task.endDate || "";
+    document.getElementById("modalNote").value = task.note || "";
     document.getElementById("modalIsGoal").checked = !!task.isGoal;
     document.getElementById("modalGoalFields").classList.toggle("show", !!task.isGoal);
     document.getElementById("modalGoalName").value = task.checkoffLabel || task.name;
@@ -3055,13 +3152,19 @@
   // createTaskFromSiri() below, so both entry points create a new task
   // identically. Only covers new-task creation — editing an existing task
   // stays inline in submitTaskForm(), since Siri never edits, only creates.
-  function createTaskRecord({ name, category, time = "", duration = "", date, endDate = "", recurrence = { type: "none" }, isGoal = false, why = "", plan = "", checkoffLabel = "", sourceUrl = "" }) {
+  // Short free-text only — not a full document field. Every caller (manual
+  // form, Siri, Quick Capture) funnels through here, so the 200-char cap
+  // lives in one place rather than being re-enforced per entry point.
+  const TASK_NOTE_MAX_LENGTH = 200;
+
+  function createTaskRecord({ name, category, time = "", duration = "", date, endDate = "", recurrence = { type: "none" }, isGoal = false, why = "", plan = "", checkoffLabel = "", sourceUrl = "", note = "" }) {
     const resolvedDate = date || toDateStr(currentDate);
     const maxOrder = tasks.filter(t => t.date === resolvedDate).reduce((max, t) => Math.max(max, t.order ?? 0), -1);
     const id = Date.now().toString() + Math.random().toString(36).slice(2, 7);
     const task = {
       id, name, category, time, duration, date: resolvedDate, endDate,
-      done: false, order: maxOrder + 1, recurrence, completedDates: [], isGoal, why, plan, checkoffLabel, sourceUrl
+      done: false, order: maxOrder + 1, recurrence, completedDates: [], isGoal, why, plan, checkoffLabel, sourceUrl,
+      note: (note || "").trim().slice(0, TASK_NOTE_MAX_LENGTH)
     };
     tasks.push(task);
     lastAddedTaskId = id;
@@ -3075,6 +3178,7 @@
     const duration = document.getElementById("modalDuration").value;
     const date = document.getElementById("modalDate").value || toDateStr(currentDate);
     const endDate = document.getElementById("modalEndDate").value;
+    const note = document.getElementById("modalNote").value.trim().slice(0, TASK_NOTE_MAX_LENGTH);
     const repeatType = repeatSelect.value;
     const isGoal = repeatType !== "none" && document.getElementById("modalIsGoal").checked;
     const why = isGoal ? document.getElementById("modalGoalWhy").value.trim() : "";
@@ -3097,13 +3201,13 @@
       const task = tasks.find(t => t.id === editingTaskId);
       task.name = name; task.category = category; task.time = time; task.duration = duration;
       task.date = date; task.endDate = endDate; task.recurrence = recurrence; task.isGoal = isGoal;
-      task.why = why; task.plan = plan; task.checkoffLabel = checkoffLabel;
+      task.why = why; task.plan = plan; task.checkoffLabel = checkoffLabel; task.note = note;
       if (!task.completedDates) task.completedDates = [];
     } else {
       let copies = parseInt(document.getElementById("modalCopies").value) || 1;
       copies = Math.max(1, Math.min(10, copies));
       for (let i = 0; i < copies; i++) {
-        createTaskRecord({ name, category, time, duration, date, endDate, recurrence, isGoal, why, plan, checkoffLabel });
+        createTaskRecord({ name, category, time, duration, date, endDate, recurrence, isGoal, why, plan, checkoffLabel, note });
       }
     }
     save();
@@ -3572,6 +3676,7 @@
     document.getElementById("modalDate").value = parsedDate;
     document.getElementById("modalDuration").value = parsedDuration;
     document.getElementById("modalEndDate").value = "";
+    document.getElementById("modalNote").value = "";
     document.getElementById("modalIsGoal").checked = false;
     document.getElementById("modalGoalFields").classList.remove("show");
     document.getElementById("modalGoalName").value = "";
@@ -3588,6 +3693,11 @@
     }
     buildWeekdayPicker();
     if (parsedCategory) document.getElementById("modalCategory").value = parsedCategory;
+    // The name field is already filled with the transcribed text here, so
+    // renderTaskNameSuggestions() will correctly leave the row hidden on
+    // its own — called anyway so a prior Add-modal open's chips don't
+    // linger stale underneath.
+    renderTaskNameSuggestions();
     openModal(overlay);
   }
 
@@ -6137,7 +6247,8 @@ let currentRange = "week";
       duration: (params.durationMinutes !== undefined && params.durationMinutes !== null && params.durationMinutes !== "")
         ? String(params.durationMinutes) : "",
       date: siriDateToDateStr(params.date),
-      recurrence
+      recurrence,
+      note: params.note || ""
     });
     save();
     renderAll();
@@ -6148,7 +6259,8 @@ let currentRange = "week";
       name: task.name,
       category: resolvedCategory,
       categoryWasMatched,
-      repeatsDaily: !!params.repeatDaily
+      repeatsDaily: !!params.repeatDaily,
+      note: task.note || null
     };
   }
 
@@ -6278,6 +6390,13 @@ let currentRange = "week";
       return { success: false, error: "Nothing to create a task from." };
     }
 
+    // text becomes the note only when it wasn't already consumed as the
+    // name above (i.e. a title was present) and there's a URL alongside it
+    // — the classic "share a link with your own comment" case. Without a
+    // title, text IS the name already; storing it again as a note would
+    // just duplicate what's already the task's own name.
+    const note = (url && text && text !== name) ? text : "";
+
     if (!categories.length) {
       return { success: false, error: "No categories exist yet to assign this task to." };
     }
@@ -6294,7 +6413,8 @@ let currentRange = "week";
       // whether it also ended up as the task's name — e.g. a shared
       // article keeps its link even though the task name is the article's
       // title, not the URL.
-      sourceUrl: url
+      sourceUrl: url,
+      note
     });
     save();
     renderAll();
@@ -6304,7 +6424,8 @@ let currentRange = "week";
       taskId: task.id,
       name: task.name,
       category: resolvedCategory,
-      sourceUrl: task.sourceUrl || null
+      sourceUrl: task.sourceUrl || null,
+      note: task.note || null
     };
   }
 
