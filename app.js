@@ -4914,7 +4914,19 @@ let currentRange = "week";
     }
     const sessions = getDeepWorkSessions();
     if (sessions.length === 0) {
-      el.innerHTML = `<div class="deep-work-stats-teaser">Deep Work sessions help you focus on one task without distractions. Pick a session length below and start your first one.</div>`;
+      // A first-time-use hint, not a locked-feature upsell (that's the
+      // isPremiumUser() branch above) — same .empty-msg treatment as
+      // Goals/Analysis/Reflection's own empty states, not
+      // .deep-work-stats-teaser, which reads as "locked."
+      el.innerHTML = `
+        <div class="empty-msg">
+          <i data-lucide="timer" class="icon" style="width:28px;height:28px;color:var(--text-muted);display:block;margin:0 auto 0.5rem;"></i>
+          <div class="big">No sessions yet</div>
+          Deep Work sessions help you focus on one task without distractions.
+          <span class="empty-msg-instruction">Pick a session length below to start your first one</span>
+        </div>
+      `;
+      lucide.createIcons();
       return;
     }
     const today = new Date();
