@@ -683,6 +683,23 @@
   // goal from showing a misleadingly precise "100% consistency."
   const GOAL_PROGRESS_MIN_SCHEDULED_DAYS = 3;
 
+  // Scheduled-occurrence dates for `goal` within [rangeStart, rangeEnd],
+  // clamped to the goal's own defined start/end — shared by renderGoals()'s
+  // full-lifetime progress bar (called with the goal's own date/endDate as
+  // the range, a no-op clamp) and Weekly Recap's week-scoped goal-progress
+  // line, so "what counts as a scheduled day" never drifts between the two.
+  function computeGoalScheduledDays(goal, rangeStart, rangeEnd) {
+    const goalStart = new Date(goal.date + "T00:00:00");
+    const goalEnd = new Date((goal.endDate || goal.date) + "T00:00:00");
+    const clampStart = new Date(Math.max(goalStart, new Date(rangeStart + "T00:00:00")));
+    const clampEnd = new Date(Math.min(goalEnd, new Date(rangeEnd + "T00:00:00")));
+    const scheduledDays = [];
+    for (let d = new Date(clampStart); d <= clampEnd; d.setDate(d.getDate() + 1)) {
+      if (occursOn(goal, d)) scheduledDays.push(toDateStr(d));
+    }
+    return scheduledDays;
+  }
+
   // Mutates task.milestonesEarned in place and returns the newly-earned
   // record if the task's current streak just crossed a threshold it
   // hadn't already earned, else null. Only ever reports (and records) one
@@ -1435,10 +1452,7 @@
       const startDate = new Date(goal.date + "T00:00:00");
       const endDate = new Date((goal.endDate || goal.date) + "T00:00:00");
 
-      let scheduledDays = [];
-      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-        if (occursOn(goal, d)) scheduledDays.push(toDateStr(d));
-      }
+      const scheduledDays = computeGoalScheduledDays(goal, goal.date, goal.endDate || goal.date);
 
       const doneCount = scheduledDays.filter(ds => (goal.completedDates || []).includes(ds)).length;
       const pct = scheduledDays.length ? Math.round((doneCount / scheduledDays.length) * 100) : 0;
@@ -3930,6 +3944,28 @@ let currentRange = "week";
     return { status: "held", text: `You held your ${bestGoal.name} streak all ${scheduledDays.length} day${scheduledDays.length === 1 ? "" : "s"} this week.` };
   }
 
+  // Per-goal "[name]: X of N days this week" lines for Weekly Recap, reusing
+  // computeGoalScheduledDays() (the same denominator renderGoals()'s own
+  // progress bar uses) rather than a fixed "7" — N is 7 for a daily goal,
+  // but a Mon/Wed/Fri goal only has 3 real chances in a week, and showing
+  // "X of 7" for it would misreport a goal it was never possible to do
+  // daily. "Active" = the goal's own [date, endDate] window overlaps this
+  // week at all. Caps at 2 goals shown; with 3+, only the single
+  // highest-completion-rate one, so the card doesn't get crowded.
+  function computeWeekGoalProgress(range) {
+    const activeGoals = tasks.filter(t => t.isGoal && t.date <= range.end && (t.endDate || t.date) >= range.start);
+    if (activeGoals.length === 0) return [];
+
+    const results = activeGoals.map(g => {
+      const scheduledDays = computeGoalScheduledDays(g, range.start, range.end);
+      const doneCount = scheduledDays.filter(ds => (g.completedDates || []).includes(ds)).length;
+      return { name: g.checkoffLabel || g.name, doneCount, scheduledCount: scheduledDays.length };
+    }).filter(r => r.scheduledCount > 0);
+
+    if (results.length <= 2) return results;
+    return [results.reduce((best, r) => (r.doneCount / r.scheduledCount) > (best.doneCount / best.scheduledCount) ? r : best)];
+  }
+
   // Stats for the 7-day period ending on endDate (defaults to today), so the
   // Analysis card can show a rolling "this week" while the rollover banner
   // can pass yesterday to summarize the most recently completed week.
@@ -3982,7 +4018,8 @@ let currentRange = "week";
       deepWorkSessions, reflectionsWritten, currentStreak,
       bestDay: weekBestDay(range),
       weekInsight: getWeekInsight(range),
-      streakStatus: computeWeekStreakStatus(range)
+      streakStatus: computeWeekStreakStatus(range),
+      goalProgress: computeWeekGoalProgress(range)
     };
   }
 
@@ -4033,7 +4070,13 @@ let currentRange = "week";
       ? `<div style="font-size:var(--text-sm);color:var(--text-secondary);">${recap.topCategory.category} received the most completed tasks this week (${recap.topCategory.count}).</div>`
       : "";
 
-    card.innerHTML = heading + rowsHtml + insightHtml + categoryHtml;
+    // Final section — omitted entirely with no active goals, same pattern
+    // as every other section here, rather than an empty placeholder.
+    const goalProgressHtml = recap.goalProgress && recap.goalProgress.length
+      ? recap.goalProgress.map(g => `<div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:0.3rem;">${g.name}: ${g.doneCount} of ${g.scheduledCount} day${g.scheduledCount === 1 ? "" : "s"} this week.</div>`).join("")
+      : "";
+
+    card.innerHTML = heading + rowsHtml + insightHtml + categoryHtml + goalProgressHtml;
     lucide.createIcons();
   }
 
