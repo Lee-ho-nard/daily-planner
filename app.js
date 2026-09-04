@@ -5928,11 +5928,20 @@ let currentRange = "week";
     morningTime: "08:00",
     eveningEnabled: true,
     eveningTime: "20:00",
+    // Separate from the evening reminder (a plain daily nudge that fires
+    // unconditionally) rather than folded into it — this one has its own
+    // gating logic (zero completions today AND an active streak) and needs
+    // its own on/off switch someone might want independently of whether
+    // they also get the generic evening reminder. Opt-in default, same as
+    // preTaskEnabled below, since it's a new, easy-to-find-naggy notification.
+    streakRiskEnabled: false,
+    streakRiskTime: "21:00",
     preTaskEnabled: false,
     preTaskMinutesBefore: 10
   };
   const MORNING_NOTIF_ID = 1;
   const EVENING_NOTIF_ID = 2;
+  const STREAK_RISK_NOTIF_ID = 3;
   // Pre-task notification ids live above this offset so getPending() can
   // tell them apart from the two fixed daily ids above when cancelling the
   // previous batch before rescheduling.
@@ -6132,6 +6141,68 @@ let currentRange = "week";
     if (toSchedule.length) await plugin.schedule({ notifications: toSchedule });
   }
 
+  // Any task at all counts, matching maybeCelebrateDailyCompletion()'s own
+  // "today" definition — not scoped to just the tasks carrying a streak,
+  // per the feature's own plain-language spec ("zero tasks completed
+  // today").
+  function hasCompletedAnyTaskToday() {
+    const today = toDateStr(new Date());
+    return tasks.some(t => {
+      const isRecurring = t.recurrence && t.recurrence.type !== "none";
+      return isRecurring ? (t.completedDates || []).includes(today) : (t.date === today && t.done);
+    });
+  }
+
+  // The longest currently-active streak across every recurring task (goals
+  // and plain repeating tasks alike, same as computeStreak() itself treats
+  // them) — this is "the streak that's at risk" the notification warns
+  // about, and the number it quotes.
+  function getMaxActiveStreak() {
+    let max = 0;
+    tasks.forEach(t => {
+      if (!t.recurrence || t.recurrence.type === "none") return;
+      const s = computeStreak(t);
+      if (s > max) max = s;
+    });
+    return max;
+  }
+
+  // No plugin hook exists to evaluate "is this still true" right at fire
+  // time, so this re-derives the decision and fully cancels+reschedules
+  // every time it's called (same as reschedulePreTaskNotifications()) —
+  // called from every save() via scheduleNativeNotificationsSync(), so a
+  // task completed after this was scheduled correctly cancels it before it
+  // ever fires. A one-time `at:` schedule (not a recurring on{}) is what
+  // makes "once per day" work without separate tracking: each call
+  // recomputes today's fire time fresh, and tomorrow's first resync
+  // recomputes tomorrow's independently.
+  async function rescheduleStreakRiskNotification() {
+    const plugin = localNotificationsPlugin();
+    if (!plugin) return;
+    await plugin.cancel({ notifications: [{ id: STREAK_RISK_NOTIF_ID }] });
+
+    const prefs = getNotificationPrefs();
+    if (!prefs.streakRiskEnabled) return;
+    if (hasCompletedAnyTaskToday()) return;
+    const streak = getMaxActiveStreak();
+    if (streak <= 0) return;
+
+    const [h, m] = prefs.streakRiskTime.split(":").map(Number);
+    const now = new Date();
+    const fireAt = new Date(now);
+    fireAt.setHours(h, m, 0, 0);
+    if (fireAt <= now) return;
+
+    await plugin.schedule({
+      notifications: [{
+        id: STREAK_RISK_NOTIF_ID,
+        title: "Streak at risk",
+        body: `You haven't completed a task today. Your streak is at ${streak} day${streak === 1 ? "" : "s"}.`,
+        schedule: { at: fireAt, allowWhileIdle: true }
+      }]
+    });
+  }
+
   async function syncNativeNotifications() {
     if (!capacitorAvailable()) return;
     const granted = await ensureLocalNotificationPermission();
@@ -6139,6 +6210,7 @@ let currentRange = "week";
     await rescheduleDailyNotifications();
     await reschedulePreTaskNotifications();
     await rescheduleCustomReminders();
+    await rescheduleStreakRiskNotification();
   }
 
   // Debounced so a burst of task edits (e.g. drag-reordering several rows)
@@ -7484,7 +7556,7 @@ let currentRange = "week";
   // Settings' Notifications section — kept here rather than in auth-ui.js,
   // which deliberately stays self-contained to Account-related fields only
   // (same reasoning as enableModalDragDismiss above).
-  const NOTIF_FIELD_IDS = ["notifMorningEnabled", "notifMorningTime", "notifEveningEnabled", "notifEveningTime", "notifPreTaskEnabled", "notifPreTaskMinutes"];
+  const NOTIF_FIELD_IDS = ["notifMorningEnabled", "notifMorningTime", "notifEveningEnabled", "notifEveningTime", "notifStreakRiskEnabled", "notifStreakRiskTime", "notifPreTaskEnabled", "notifPreTaskMinutes"];
   function populateNotificationSettingsUI() {
     // Notification preferences are Firestore-synced per-account state (see
     // saveNotificationPrefs()) — a signed-out/local-only user has nothing
@@ -7503,6 +7575,8 @@ let currentRange = "week";
     document.getElementById("notifMorningTime").value = prefs.morningTime;
     document.getElementById("notifEveningEnabled").checked = prefs.eveningEnabled;
     document.getElementById("notifEveningTime").value = prefs.eveningTime;
+    document.getElementById("notifStreakRiskEnabled").checked = prefs.streakRiskEnabled;
+    document.getElementById("notifStreakRiskTime").value = prefs.streakRiskTime;
     document.getElementById("notifPreTaskEnabled").checked = prefs.preTaskEnabled;
     document.getElementById("notifPreTaskMinutes").value = String(prefs.preTaskMinutesBefore);
     const native = capacitorAvailable();
@@ -7516,6 +7590,8 @@ let currentRange = "week";
       morningTime: document.getElementById("notifMorningTime").value || DEFAULT_NOTIFICATION_PREFS.morningTime,
       eveningEnabled: document.getElementById("notifEveningEnabled").checked,
       eveningTime: document.getElementById("notifEveningTime").value || DEFAULT_NOTIFICATION_PREFS.eveningTime,
+      streakRiskEnabled: document.getElementById("notifStreakRiskEnabled").checked,
+      streakRiskTime: document.getElementById("notifStreakRiskTime").value || DEFAULT_NOTIFICATION_PREFS.streakRiskTime,
       preTaskEnabled: document.getElementById("notifPreTaskEnabled").checked,
       preTaskMinutesBefore: Number(document.getElementById("notifPreTaskMinutes").value)
     });
