@@ -13,7 +13,15 @@
       "notes.md",
       "**/.*",
       "**/.*/**",
-      "**/node_modules/**"
+      "**/node_modules/**",
+      "android/**",
+      "ios/**",
+      "www/**",
+      "scripts/**",
+      "package.json",
+      "package-lock.json",
+      "capacitor.config.json",
+      "flit-session-handoff.md"
     ]
   }
 }

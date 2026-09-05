@@ -130,6 +130,18 @@ export async function runMigrationIfNeeded(uid) {
   };
 }
 
+// Lightweight, read-only existence check — used by auth-ui.js as a
+// fallback new-vs-existing signal for the "create account" Google flow
+// when checkGoogleRedirectResult() fails to resolve with a UserCredential
+// (real-device testing showed it consistently resolving null even after a
+// successful sign-in). Deliberately not runMigrationIfNeeded() itself:
+// that path is skipped on purpose for onboarding sign-ups (skipNextMigration())
+// so it can't double-write against writeOnboardingData() — this only reads.
+export async function userDocExists(uid) {
+  const snap = await getDoc(doc(db, "users", uid));
+  return snap.exists();
+}
+
 // Called directly by auth-ui.js right after onboarding's account-creation
 // step succeeds, with the in-memory draft built by app.js's
 // finalizeOnboardingData() — this never reads localStorage. The matching

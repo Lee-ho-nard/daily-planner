@@ -782,7 +782,7 @@
   }
 
   function formatMilestoneDate(dateStr) {
-    return new Date(dateStr + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    return new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   }
 
   // Rebuilds the exact scheduled-occurrence dates between the milestone's
@@ -1618,8 +1618,8 @@
     else if (diffDays === 1) prefix = "Tomorrow, ";
     else if (diffDays === -1) prefix = "Yesterday, ";
 
-    document.getElementById("weekday").textContent = prefix + currentDate.toLocaleDateString(undefined, { weekday: "long" });
-    document.getElementById("fulldate").textContent = currentDate.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
+    document.getElementById("weekday").textContent = prefix + currentDate.toLocaleDateString("en-US", { weekday: "long" });
+    document.getElementById("fulldate").textContent = currentDate.toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" });
   }
 
   function renderProgress(dayTasks) {
@@ -4662,7 +4662,7 @@ let currentRange = "week";
     if (range === "week") {
       for (let i = 6; i >= 0; i--) {
         const d = new Date(today); d.setDate(d.getDate() - i);
-        dataPoints.push({ label: d.toLocaleDateString(undefined, { weekday: "short" }), pct: dayPct(d) });
+        dataPoints.push({ label: d.toLocaleDateString("en-US", { weekday: "short" }), pct: dayPct(d) });
       }
     } else if (range === "month") {
       const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
@@ -4682,7 +4682,7 @@ let currentRange = "week";
           const p = dayPct(d);
           if (p !== null) { sum += p; count++; }
         }
-        dataPoints.push({ label: monthDate.toLocaleDateString(undefined, { month: "short" }), pct: count ? Math.round(sum / count) : null });
+        dataPoints.push({ label: monthDate.toLocaleDateString("en-US", { month: "short" }), pct: count ? Math.round(sum / count) : null });
       }
     }
 
@@ -5578,8 +5578,8 @@ let currentRange = "week";
   }
 
   function renderReflection() {
-    document.getElementById("reflWeekday").textContent = reflectionDate.toLocaleDateString(undefined, { weekday: "long" });
-    document.getElementById("reflFulldate").textContent = reflectionDate.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
+    document.getElementById("reflWeekday").textContent = reflectionDate.toLocaleDateString("en-US", { weekday: "long" });
+    document.getElementById("reflFulldate").textContent = reflectionDate.toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" });
 
     const dateStr = toDateStr(reflectionDate);
     const entry = reflections[dateStr] || { wentWell: "", improve: "" };
@@ -5651,7 +5651,7 @@ let currentRange = "week";
   }
 
   function formatReflectionDate(dateStr) {
-    return new Date(dateStr + "T00:00:00").toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+    return new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   }
 
   // Builds an ~80-100 char snippet centered on the match, with the match
@@ -5765,8 +5765,8 @@ let currentRange = "week";
     if (diffDays === 0) prefix = "Today, ";
     else if (diffDays === 1) prefix = "Tomorrow, ";
     else if (diffDays === -1) prefix = "Yesterday, ";
-    const weekday = prefix + dateForDisplay.toLocaleDateString(undefined, { weekday: "long" });
-    const fulldate = dateForDisplay.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
+    const weekday = prefix + dateForDisplay.toLocaleDateString("en-US", { weekday: "long" });
+    const fulldate = dateForDisplay.toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" });
     document.getElementById("sealDate").textContent = `${weekday}, ${fulldate}`;
 
     sealScreen.classList.add("visible");
@@ -6676,6 +6676,21 @@ let currentRange = "week";
     goToOnboardingStep(13);
   }
 
+  // Lets auth-ui.js tell "someone is actively creating an account from
+  // onboarding's own account-creation screen" (step 12 — both the email
+  // and Google create-account paths only ever fire from here) apart from
+  // "an existing user just signed in from some other onboarding screen"
+  // (step 1's escape hatch, or a leftover non-12 step) — without leaking
+  // the step-12 magic number itself across the module boundary. The two
+  // cases need different auth-state-change handling: the former is
+  // already mid-sequence (flushOnboardingDraft() about to run, or an
+  // isNewUser collision check in flight) and must not have its onboarding
+  // draft/step state torn down out from under it; the latter has nothing
+  // in flight and should just exit onboarding immediately.
+  function isOnboardingAtAccountCreationStep() {
+    return currentOnboardingStep === 12;
+  }
+
   document.addEventListener("onboarding-auth-changed", () => {
     if (currentOnboardingStep === 12) renderOnboardingStep();
   });
@@ -7305,6 +7320,13 @@ let currentRange = "week";
     }));
   }
 
+  // Read by the auth-state-resolved listener below to decide whether it's
+  // safe to reveal the app immediately or whether the screen it's about to
+  // show is only a guess pending a real routing decision — see that
+  // listener's own comment for why this exists (the "Save your progress"
+  // flash-before-Planner bug).
+  let restoredOnboardingFromGoogleRedirect = false;
+
   // Called once at bootstrap (see this file's tail) to restore what
   // saveOnboardingStateForGoogleRedirect() saved, if anything's there.
   // One-shot: removes its own sessionStorage entry as soon as it's read, so
@@ -7327,6 +7349,7 @@ let currentRange = "week";
     document.body.classList.add("onboarding-active");
     document.getElementById("onboardingView").classList.add("visible");
     renderOnboardingStep();
+    restoredOnboardingFromGoogleRedirect = true;
     return true;
   }
 
@@ -7413,8 +7436,18 @@ let currentRange = "week";
     }
 
     const wasOnboarding = document.body.classList.contains("onboarding-active");
-    console.log("[flit-auth-debug] hydrateFromFirestore(): wasOnboarding =", wasOnboarding, "categories.length =", categories.length, "currentOnboardingStep =", currentOnboardingStep);
-    if (wasOnboarding && categories.length > 0) {
+    console.log("[flit-auth-debug] hydrateFromFirestore(): wasOnboarding =", wasOnboarding, "categories.length =", categories.length, "account =", !!account, "currentOnboardingStep =", currentOnboardingStep);
+    // categories.length > 0 alone used to gate this — a proxy for "real
+    // account data has actually loaded" that breaks for any existing
+    // account with zero categories (a legitimate first-day-with-no-data
+    // state, or a doc left partial by an earlier interrupted sign-up):
+    // categories.length would never satisfy it, leaving that user stuck on
+    // whatever onboarding step bootstrap guessed, forever. The top-level
+    // users/{uid} doc (account, fetched above) has its own onSnapshot
+    // listener independent of the categories/tasks/etc. group, so its mere
+    // existence is a more reliable "this is a real signed-in account"
+    // signal than waiting for categories specifically to be non-empty.
+    if (wasOnboarding && (categories.length > 0 || account)) {
       // Signing up on the account-creation step (12) migrates this
       // session's local data in, landing right here with categories now
       // populated. Let step 12's own logic decide whether that means
@@ -7423,7 +7456,20 @@ let currentRange = "week";
       // which would otherwise skip past both.
       if (currentOnboardingStep === 12) {
         advanceOnboardingAfterAccountStep();
-      } else {
+      } else if (currentOnboardingStep !== 13) {
+        // Step 13 (trial explainer) is deliberately excluded from the
+        // "onboarding must be over, exit to planner" case below — it's a
+        // real, interactive final screen a Google signup can auto-advance
+        // to from step 12 above (no email-verification gate, unlike email
+        // signups), and Firestore's onSnapshot fires once per collection —
+        // several firestore-data-changed events land in quick succession
+        // right after a fresh sign-up, each re-running this function. Once
+        // the first one advances currentOnboardingStep to 13, every
+        // following one used to see "not 12 anymore" and immediately force
+        // the user to the planner before they'd had any chance to read the
+        // trial explainer or tap "Start my free trial" — the exact flash
+        // this branch exists to prevent. Only completeOnboarding() (that
+        // button's own handler) should ever exit onboarding from step 13.
         localStorage.setItem("onboardingComplete", "true");
         onboardingDraft = null;
         document.getElementById("onboardingView").classList.remove("visible");
@@ -7494,10 +7540,28 @@ let currentRange = "week";
   // chance to be seen before auth state resolves it needs correcting.
   // Idempotent, so every call site below can call it unconditionally.
   let appRevealed = false;
+  let revealAppFallbackTimer = null;
   function revealApp() {
     if (appRevealed) return;
     appRevealed = true;
+    clearTimeout(revealAppFallbackTimer);
     document.body.classList.remove("app-loading");
+  }
+
+  // Used only for the restoredOnboardingFromGoogleRedirect case below —
+  // delays revealing the app instead of skipping the reveal outright, so a
+  // genuine "nothing ever corrects this" edge case (firestore-auth-ready/
+  // firestore-data-changed never firing) can't leave the user staring at
+  // an invisible page forever. Both of those already call revealApp()
+  // themselves the moment the real screen is known, so this timer is a
+  // safety net, not the primary path — it only ever fires if that took
+  // longer than 5s, which normal Firestore listener setup never does.
+  function scheduleRevealAppFallback() {
+    clearTimeout(revealAppFallbackTimer);
+    revealAppFallbackTimer = setTimeout(() => {
+      console.warn("[flit-auth-debug] revealApp() fallback timeout fired — the normal firestore-auth-ready/firestore-data-changed reveal never ran in time");
+      revealApp();
+    }, 5000);
   }
 
   // auth.js's "auth-state-resolved" (see auth.js) fires synchronously as
@@ -7513,12 +7577,28 @@ let currentRange = "week";
   // already-onboarded planner) is correct as constructed or self-corrects
   // later via hydrateFromFirestore() once real data arrives — per product
   // decision, only the verification screen needs refresh-restoration.
-  document.addEventListener("auth-state-resolved", () => {
+  document.addEventListener("auth-state-resolved", (e) => {
     if (onboardingAccountNeedsEmailVerification()) {
       document.body.classList.add("onboarding-active");
       document.getElementById("onboardingView").classList.add("visible");
       currentOnboardingStep = 12;
       renderOnboardingStep();
+      revealApp();
+      return;
+    }
+    // A Google-redirect draft was restored (bootstrap's optimistic guess —
+    // see saveOnboardingStateForGoogleRedirect()) and someone is actually
+    // signed in: the real routing decision (stay in onboarding for a
+    // genuine new signup, or correct to the Planner for an existing
+    // account signing in from elsewhere) isn't known yet — that requires
+    // auth.js's migration check (a network read) to resolve first, which
+    // hasn't happened by this point. Revealing now would flash the
+    // restored "Save your progress" screen before that correction lands a
+    // moment later. Delay instead of skipping the reveal outright — see
+    // scheduleRevealAppFallback()'s own comment for why.
+    if (restoredOnboardingFromGoogleRedirect && e.detail.user) {
+      scheduleRevealAppFallback();
+      return;
     }
     revealApp();
   });

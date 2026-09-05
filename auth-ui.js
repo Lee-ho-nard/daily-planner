@@ -18,7 +18,7 @@ import {
   skipNextMigration,
   cancelSkipMigration
 } from "./auth.js";
-import { writeOnboardingData } from "./migrate.js";
+import { writeOnboardingData, userDocExists } from "./migrate.js";
 
 // Local open/close helpers matching app.js's .modal-overlay "open" class
 // pattern (styles.css), kept self-contained rather than depending on
@@ -98,7 +98,7 @@ function formatDate(dateInput) {
   if (!dateInput) return null;
   const d = dateInput.toDate ? dateInput.toDate() : new Date(dateInput);
   if (isNaN(d.getTime())) return null;
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+  return d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 }
 
 // Subscription status is derived from users/{uid}/billing/status (server-
@@ -363,6 +363,79 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+  // Shared by handleGoogleRedirectResult()'s main branch and
+  // handleGoogleCreateAccountFallback() below — the create-account flow's
+  // Google account turned out to already have a Flit account behind it,
+  // whichever way that was determined.
+  async function handleGoogleAccountCollision() {
+    cancelSkipMigration();
+    try { await signOutUser(); } catch (signOutErr) { /* best-effort */ }
+    window.pendingGoogleAccountCheck = false;
+    const stillSignedIn = getCurrentUser();
+    if (stillSignedIn) {
+      console.error("Sign-out after existing-account Google collision did not take effect — still signed in as", stillSignedIn.uid);
+    }
+    errorEl.textContent = "Looks like you already have a Flit account.";
+    errorEl.classList.add("show");
+    existingAccountLink.style.display = "block";
+    existingAccountDetected = true;
+    // The modal starts closed on this fresh page load (unlike the old
+    // popup flow, where it had stayed open the whole time) — reopen it so
+    // the error is actually visible.
+    openModal(overlay);
+  }
+
+  // Fallback for the "create account" flow specifically, when
+  // checkGoogleRedirectResult() fails to resolve with a UserCredential
+  // (real-device testing showed this happening consistently, across
+  // multiple devices/accounts/networks — a genuine Firebase/browser
+  // storage issue, not something code alone can force to resolve). Polls
+  // briefly for auth.currentUser in case onAuthStateChanged just hasn't
+  // caught up yet by this exact tick, then substitutes a direct Firestore
+  // existence check for getAdditionalUserInfo(result).isNewUser, which
+  // needs a result this path doesn't have.
+  async function handleGoogleCreateAccountFallback() {
+    let user = getCurrentUser();
+    for (let i = 0; i < 10 && !user; i++) {
+      await wait(200);
+      user = getCurrentUser();
+    }
+
+    if (!user) {
+      // Genuinely never signed in (cancelled, or the redirect truly
+      // failed) — nothing more to do. Leaves the restored onboarding
+      // screen as-is so the user can just try again.
+      console.log("[flit-auth-debug] create-account fallback: no signed-in user found after polling — treating as a failed/cancelled attempt");
+      sessionStorage.removeItem(GOOGLE_REDIRECT_REQUIRE_NEW_ACCOUNT_KEY);
+      window.pendingGoogleAccountCheck = false;
+      return;
+    }
+
+    let alreadyExists;
+    try {
+      alreadyExists = await userDocExists(user.uid);
+    } catch (err) {
+      console.error("[flit-auth-debug] create-account fallback: userDocExists() threw:", err);
+      // Can't tell either way — safer to treat as a collision (back out)
+      // than risk flushing a fresh draft over an existing account's data.
+      alreadyExists = true;
+    }
+    console.log("[flit-auth-debug] create-account fallback: uid =", user.uid, "alreadyExists =", alreadyExists);
+
+    if (alreadyExists) {
+      await handleGoogleAccountCollision();
+      return;
+    }
+
+    await flushOnboardingDraft(user.uid);
+    window.pendingGoogleAccountCheck = false;
+    if (typeof window.hydrateFromFirestore === "function") window.hydrateFromFirestore();
+    closeModal(overlay);
+    notifyOnboardingAuthChanged();
+  }
+
   // Called once below, on every load. Resolves non-null exactly when this
   // load is the browser returning from the signInWithGoogle() redirect
   // above — every other load (fresh visit, refresh of an already-signed-in
@@ -395,7 +468,30 @@ document.addEventListener("DOMContentLoaded", () => {
     // 1 instead of the main app. Remove once a real-account retest
     // confirms the fix below actually resolves it.
     console.log("[flit-auth-debug] checkGoogleRedirectResult() resolved:", result ? { uid: result.user.uid, email: result.user.email } : null);
-    if (!result) return; // not a redirect return — nothing to do
+
+    if (!result) {
+      // Real-device testing showed this resolving null even after a
+      // visibly successful Google sign-in — a genuine, reproducible
+      // Firebase/browser-storage issue, not an app logic bug on its own.
+      // The plain "existing user" case is already covered independently
+      // by onAuthChange above (Firebase's core auth-state listener, which
+      // keeps firing correctly regardless of this promise). The one thing
+      // that still depended entirely on `result` was the "create account"
+      // flow's collision check — and returning here unconditionally used
+      // to leave window.pendingGoogleAccountCheck stuck true forever,
+      // which also silently blocks app.js's own firestore-auth-ready/
+      // firestore-data-changed listeners (see their own guards) — the
+      // exact "stuck on the restored 'Save your progress' screen forever"
+      // symptom. Fall back to a direct Firestore existence check instead
+      // of giving up when this was a create-account attempt.
+      if (!wasDeleteReauth && sessionStorage.getItem(GOOGLE_REDIRECT_REQUIRE_NEW_ACCOUNT_KEY) === "1") {
+        console.log("[flit-auth-debug] result is null but this was a create-account attempt — falling back to a direct sign-in-state check");
+        await handleGoogleCreateAccountFallback();
+      } else {
+        window.pendingGoogleAccountCheck = false;
+      }
+      return;
+    }
 
     if (wasDeleteReauth) {
       sessionStorage.removeItem(GOOGLE_REDIRECT_DELETE_REAUTH_KEY);
@@ -449,21 +545,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // this Google account already has a Flit account behind it — back
       // out rather than letting them land in the app as if they'd just
       // finished setup on someone else's account.
-      cancelSkipMigration();
-      try { await signOutUser(); } catch (signOutErr) { /* best-effort */ }
-      window.pendingGoogleAccountCheck = false;
-      const stillSignedIn = getCurrentUser();
-      if (stillSignedIn) {
-        console.error("Sign-out after existing-account Google collision did not take effect — still signed in as", stillSignedIn.uid);
-      }
-      errorEl.textContent = "Looks like you already have a Flit account.";
-      errorEl.classList.add("show");
-      existingAccountLink.style.display = "block";
-      existingAccountDetected = true;
-      // The modal starts closed on this fresh page load (unlike the old
-      // popup flow, where it had stayed open the whole time) — reopen it
-      // so the error is actually visible.
-      openModal(overlay);
+      await handleGoogleAccountCollision();
       return;
     } else {
       // An existing account signing in normally (onboarding's "already
@@ -774,6 +856,38 @@ document.addEventListener("DOMContentLoaded", () => {
     } else {
       signInBtn.style.display = "flex";
       statusPill.style.display = "none";
+    }
+
+    // The actual fix for "Google sign-in from onboarding lands on the
+    // wrong screen": onAuthChange fires via auth.js's onAuthStateChanged —
+    // Firebase's own core auth-state listener, which reliably fires
+    // whenever a session is established by ANY means (redirect, popup,
+    // persisted reload) — completely independent of whether
+    // checkGoogleRedirectResult() happens to resolve with a UserCredential.
+    // Real-device testing showed getRedirectResult() consistently
+    // resolving null even after Google sign-in visibly succeeded, which
+    // silently broke the whole isNewUser-branching path in
+    // handleGoogleRedirectResult() below (gated entirely behind that
+    // promise) — while this listener, and email/password sign-in which
+    // already routed through it correctly, kept working the whole time.
+    // Two separate reasons this must not fire while an account-creation
+    // attempt is actually in flight from onboarding's own account-creation
+    // screen (step 12): window.pendingGoogleAccountCheck covers the narrow
+    // window while Google's isNewUser collision check is unresolved, and
+    // isOnboardingAtAccountCreationStep() covers the email create-account
+    // path (which never sets that flag at all) — without it, this would
+    // fire the instant the new email account's onAuthStateChanged lands,
+    // wiping onboardingDraft to null via clearRestoredOnboardingState()
+    // before the submit handler's own flushOnboardingDraft(uid) call ever
+    // gets to read it, silently dropping the new user's entire onboarding
+    // setup. Both create-account paths get their own dedicated handling
+    // elsewhere; this is only for "existing user signed in from some
+    // other onboarding screen."
+    if (user && document.body.classList.contains("onboarding-active") && !window.pendingGoogleAccountCheck
+        && !(typeof window.isOnboardingAtAccountCreationStep === "function" && window.isOnboardingAtAccountCreationStep())) {
+      console.log("[flit-auth-debug] onAuthChange: signed-in user while onboarding-active (not a pending create-account check) — treating as existing-account sign-in, exiting onboarding");
+      if (typeof window.clearRestoredOnboardingState === "function") window.clearRestoredOnboardingState();
+      if (typeof window.hydrateFromFirestore === "function") window.hydrateFromFirestore();
     }
 
     if (migrationResult && migrationResult.reason === "onboarding") {
