@@ -352,8 +352,15 @@
   .modal-overlay.open .modal { transform: scale(1); opacity: 1; pointer-events: auto; }
   .modal h3 { margin-bottom: 1rem; font-weight: 700; letter-spacing: -0.03em; }
   .modal label { display: block; font-size: var(--text-sm); color: var(--text-secondary); margin: 0.8rem 0 0.3rem; font-weight: 500; }
-  .modal input, .modal select { width: 100%; padding: 0.65rem 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-page); color: var(--text-primary); font-size: var(--text-base); font-family: inherit; transition: border-color 0.15s, box-shadow 0.15s, background 0.15s; }
-  .modal input:focus, .modal select:focus { outline: none; border-color: var(--accent); background: var(--bg-card); box-shadow: 0 0 0 3px var(--accent-bg); }
+  .modal input, .modal select, .modal textarea { width: 100%; padding: 0.65rem 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-page); color: var(--text-primary); font-size: var(--text-base); font-family: inherit; transition: border-color 0.15s, box-shadow 0.15s, background 0.15s; }
+  .modal input:focus, .modal select:focus, .modal textarea:focus { outline: none; border-color: var(--accent); background: var(--bg-card); box-shadow: 0 0 0 3px var(--accent-bg); }
+  /* Task Notes is the first modal textarea — same field chrome as every
+     other .modal input, just tall enough (2 lines) to review a longer note
+     without the horizontal-scrolling-inside-a-single-line feel a plain
+     <input> gave it at 200 characters. Not resizable, matching Reflection's
+     own textareas (a fixed, predictable field height in a modal that's
+     already scroll-if-needed). */
+  .modal textarea { resize: none; }
   .modal-row { display: flex; gap: 0.5rem; }
   .modal-row > div { flex: 1; }
   .bulk-field-group { margin-bottom: 0.5rem; }
