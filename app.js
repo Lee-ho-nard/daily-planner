@@ -2869,11 +2869,36 @@
   // way a one-off task name ("Dentist appointment") is. Deduped
   // case-insensitively (keeping the most recent casing), newest task.date
   // first, capped at 5.
+  // "Most recent" has to mean when the task was actually typed in, not
+  // `date` (the day it's scheduled for) — a task dated for next week that
+  // was created just now is more recent than one dated today that was
+  // created three days ago. Bug found via real testing: sorting by `date`
+  // was pushing genuinely newer tasks (dated today or in the past) below
+  // older tasks that happened to be scheduled further out.
+  //
+  // Falls back through the best signal actually available on a given task:
+  // 1. createdAt — stamped on every task created after this fix (both
+  //    createTaskRecord() and onboarding's seeded tasks).
+  // 2. The creation timestamp already embedded in a pre-fix local task's
+  //    own id (createTaskRecord() has always built ids as
+  //    `Date.now() + random suffix`) — covers existing tasks without
+  //    re-dating anything.
+  // 3. `date` itself, only for the rare task with neither (e.g. an
+  //    onboarding-seeded task from before this fix, which gets a Firestore
+  //    auto-id with no embedded timestamp) — better than no signal at all.
+  function taskCreationRecency(t) {
+    if (typeof t.createdAt === "number") return t.createdAt;
+    const idMatch = /^(\d{13})/.exec(t.id || "");
+    if (idMatch) return Number(idMatch[1]);
+    const d = new Date((t.date || "") + "T00:00:00");
+    return isNaN(d.getTime()) ? 0 : d.getTime();
+  }
+
   function getRecentTaskNameSuggestions() {
     const candidates = tasks
       .filter(t => (!t.recurrence || t.recurrence.type === "none") && t.name && t.name.trim())
       .slice()
-      .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+      .sort((a, b) => taskCreationRecency(b) - taskCreationRecency(a));
 
     const seen = new Set();
     const suggestions = [];
@@ -3178,7 +3203,13 @@
     const task = {
       id, name, category, time, duration, date: resolvedDate, endDate,
       done: false, order: maxOrder + 1, recurrence, completedDates: [], isGoal, why, plan, checkoffLabel, sourceUrl,
-      note: (note || "").trim().slice(0, TASK_NOTE_MAX_LENGTH)
+      note: (note || "").trim().slice(0, TASK_NOTE_MAX_LENGTH),
+      // Actual creation time, distinct from `date` (the day it's scheduled
+      // for, which a user can freely set to the past/future independent of
+      // when they typed it in) — see getRecentTaskNameSuggestions()'s own
+      // taskCreationRecency(), which needs this instead of `date` to sort
+      // by true recency.
+      createdAt: Date.now()
     };
     tasks.push(task);
     lastAddedTaskId = id;
@@ -7257,10 +7288,17 @@ let currentRange = "week";
 
     const draftTasks = [];
     const today = toDateStr(new Date());
+    // Same field createTaskRecord() stamps every regular task with — see
+    // its own comment. All three onboarding-seeded kinds below skip
+    // createTaskRecord() entirely (built straight into the draft that gets
+    // flushed to Firestore later), so they'd otherwise be the one task
+    // shape in the app missing it.
+    const onboardingCompletedAt = Date.now();
     onboardingSeedTasks.forEach(({ category, taskName }) => {
       draftTasks.push({
         name: taskName, category, time: "", duration: "", date: today, endDate: "",
-        done: false, order: draftTasks.length, recurrence: { type: "none" }, completedDates: [], isGoal: false
+        done: false, order: draftTasks.length, recurrence: { type: "none" }, completedDates: [], isGoal: false,
+        createdAt: onboardingCompletedAt
       });
     });
 
@@ -7275,7 +7313,8 @@ let currentRange = "week";
         name: onboardingGoalName, category: goalCategory, time: "", duration: "",
         date: today, endDate: toDateStr(endD),
         done: false, order: draftTasks.length, recurrence: { type: "daily" }, completedDates: [],
-        isGoal: true, checkoffLabel: onboardingGoalCheckoff || onboardingGoalName, why: onboardingGoalWhy, plan: onboardingGoalPlan
+        isGoal: true, checkoffLabel: onboardingGoalCheckoff || onboardingGoalName, why: onboardingGoalWhy, plan: onboardingGoalPlan,
+        createdAt: onboardingCompletedAt
       });
     }
 
@@ -7284,7 +7323,8 @@ let currentRange = "week";
         name: onboardingDailyTaskName.trim(),
         category: draftCategories[0] ? draftCategories[0].name : "",
         time: "", duration: "", date: today, endDate: "",
-        done: false, order: draftTasks.length, recurrence: { type: "daily" }, completedDates: [], isGoal: false
+        done: false, order: draftTasks.length, recurrence: { type: "daily" }, completedDates: [], isGoal: false,
+        createdAt: onboardingCompletedAt
       });
     }
 
