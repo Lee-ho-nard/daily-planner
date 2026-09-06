@@ -2912,6 +2912,31 @@
     return suggestions;
   }
 
+  // Names used 2+ times among non-recurring tasks (same pool as "Recent"),
+  // ranked by usage count — this is what naturally filters out one-off
+  // entries (a specific homework assignment typed once) and surfaces
+  // genuinely repeated ones (Gym, Piano Practice). Ties broken by most
+  // recent use, and the most-recently-used casing variant is what's shown,
+  // same convention "Recent" already uses. Deliberately not deduplicated
+  // against getRecentTaskNameSuggestions() — a name can legitimately
+  // appear in both rows.
+  function getFrequentTaskNameSuggestions() {
+    const candidates = tasks.filter(t => (!t.recurrence || t.recurrence.type === "none") && t.name && t.name.trim());
+    const counts = {};
+    candidates.forEach(t => {
+      const key = t.name.trim().toLowerCase();
+      const recency = taskCreationRecency(t);
+      if (!counts[key]) counts[key] = { count: 0, name: t.name.trim(), recency };
+      counts[key].count++;
+      if (recency > counts[key].recency) { counts[key].recency = recency; counts[key].name = t.name.trim(); }
+    });
+    return Object.values(counts)
+      .filter(c => c.count >= 2)
+      .sort((a, b) => b.count - a.count || b.recency - a.recency)
+      .slice(0, 5)
+      .map(c => c.name);
+  }
+
   // "Clear historical association" = this name's past occurrences (across
   // ALL tasks, recurring included — this is about what category the name
   // itself belongs to, not what's worth re-suggesting) are almost all the
@@ -2930,18 +2955,18 @@
     return (topCount / matches.length >= 0.8) ? topCat : null;
   }
 
-  // Builds the chip row fresh (called once per modal open, not per
-  // keystroke) and sets its initial shown/hidden state off the name
-  // field's current value. The #modalName "input" listener below then only
-  // toggles that same display, rather than rebuilding — the task list
-  // can't change while the modal's open, so there's nothing to recompute.
-  function renderTaskNameSuggestions() {
-    const wrap = document.getElementById("modalNameSuggestions");
-    const suggestions = getRecentTaskNameSuggestions();
-    wrap.innerHTML = "";
-    if (suggestions.length === 0) { wrap.style.display = "none"; return; }
-
-    suggestions.forEach(name => {
+  // Fills one chip row + its label, hiding both when there's nothing to
+  // show — the label and its row are always shown/hidden together. Tapping
+  // a chip fills the name (and category, when there's a clear match) the
+  // same way regardless of which row it came from.
+  function renderSuggestionChipRow(rowId, labelId, names, wrap) {
+    const row = document.getElementById(rowId);
+    const label = document.getElementById(labelId);
+    row.innerHTML = "";
+    if (names.length === 0) { row.style.display = "none"; label.style.display = "none"; return; }
+    row.style.display = "flex";
+    label.style.display = "";
+    names.forEach(name => {
       const chip = document.createElement("button");
       chip.type = "button";
       chip.className = "cat-pill";
@@ -2955,15 +2980,34 @@
         }
         wrap.style.display = "none";
       });
-      wrap.appendChild(chip);
+      row.appendChild(chip);
     });
-    wrap.style.display = document.getElementById("modalName").value.trim() === "" ? "flex" : "none";
+  }
+
+  // Builds both chip rows fresh (called once per modal open, not per
+  // keystroke) and sets the outer wrap's initial shown/hidden state off
+  // the name field's current value. The #modalName "input" listener below
+  // then only toggles that same display, rather than rebuilding — the
+  // task list can't change while the modal's open, so there's nothing to
+  // recompute. Recent and Frequent are deliberately not deduplicated
+  // against each other — the same name can appear in both.
+  function renderTaskNameSuggestions() {
+    const wrap = document.getElementById("modalNameSuggestions");
+    const recent = getRecentTaskNameSuggestions();
+    const frequent = getFrequentTaskNameSuggestions();
+    renderSuggestionChipRow("modalNameSuggestionsRecent", "modalNameSuggestionsRecentLabel", recent, wrap);
+    renderSuggestionChipRow("modalNameSuggestionsFrequent", "modalNameSuggestionsFrequentLabel", frequent, wrap);
+
+    if (recent.length === 0 && frequent.length === 0) { wrap.style.display = "none"; return; }
+    wrap.style.display = document.getElementById("modalName").value.trim() === "" ? "block" : "none";
   }
 
   document.getElementById("modalName").addEventListener("input", () => {
     const wrap = document.getElementById("modalNameSuggestions");
-    if (wrap.children.length === 0) return;
-    wrap.style.display = document.getElementById("modalName").value.trim() === "" ? "flex" : "none";
+    const hasAnyRow = document.getElementById("modalNameSuggestionsRecent").children.length > 0
+      || document.getElementById("modalNameSuggestionsFrequent").children.length > 0;
+    if (!hasAnyRow) return;
+    wrap.style.display = document.getElementById("modalName").value.trim() === "" ? "block" : "none";
   });
 
   function openAddModal() {

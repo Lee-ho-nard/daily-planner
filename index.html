@@ -306,7 +306,12 @@
     <h3 id="modalTitle">Add Task</h3>
     <label>Task name</label>
     <input type="text" id="modalName" placeholder="e.g. Read 30 pages">
-    <div class="task-name-suggestions" id="modalNameSuggestions" style="display:none;"></div>
+    <div class="task-name-suggestions-wrap" id="modalNameSuggestions" style="display:none;">
+      <div class="ob-section-label task-name-suggestions-label" id="modalNameSuggestionsRecentLabel" style="display:none;">Recent</div>
+      <div class="task-name-suggestions" id="modalNameSuggestionsRecent"></div>
+      <div class="ob-section-label task-name-suggestions-label" id="modalNameSuggestionsFrequentLabel" style="display:none;">Frequent</div>
+      <div class="task-name-suggestions" id="modalNameSuggestionsFrequent"></div>
+    </div>
     <label class="label-icon"><i data-lucide="tag" class="icon"></i>Category</label>
     <select id="modalCategory"></select>
     <div class="modal-row">

@@ -189,12 +189,21 @@
   .cat-pill:active { transform: scale(0.95); }
   .cat-add { width: 34px; height: 34px; border-radius: 50%; background: var(--bg-card); border: none; box-shadow: var(--shadow-card); cursor: pointer; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; }
 
-  /* Recent-task-name quick-add chips below #modalName — reuses .cat-pill
-     as-is (per design direction: same visual language as the category
-     filter pills, not a new component). Individual chips get a max-width
-     + ellipsis since a task name can run much longer than a category name. */
-  .task-name-suggestions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin: 0.5rem 0 0.25rem; }
+  /* Recent/Frequent task-name quick-add chips below #modalName — reuses
+     .cat-pill as-is (per design direction: same visual language as the
+     category filter pills, not a new component) and .ob-section-label for
+     the "Recent"/"Frequent" row headers (same one onboarding already
+     uses). Individual chips get a max-width + ellipsis since a task name
+     can run much longer than a category name. */
+  .task-name-suggestions-wrap { margin-top: 0.5rem; }
+  .task-name-suggestions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin: 0 0 0.4rem; }
   .task-name-suggestions .cat-pill { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* .ob-section-label's own margin (1.5rem 0 0.5rem) is sized for
+     onboarding's full-page spacing — too much between a compact modal's
+     input and its first suggestion row. Two classes on the same element
+     for specificity, so this wins regardless of stylesheet order. */
+  .ob-section-label.task-name-suggestions-label { margin: 0.7rem 0 0.3rem; }
+  .task-name-suggestions-wrap > .task-name-suggestions-label:first-child { margin-top: 0; }
 
   .task-list-toolbar { display: flex; justify-content: flex-end; gap: 0.5rem; margin-bottom: 0.75rem; }
 
