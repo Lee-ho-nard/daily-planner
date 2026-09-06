@@ -778,9 +778,37 @@
      auth state resolves. Opacity/visibility only, so layout is unaffected
      and removing the class is all revealApp() needs to do. */
   body.app-loading > .container,
-  body.app-loading > #onboardingView {
+  body.app-loading > #onboardingView,
+  body.app-loading > .fab,
+  body.app-loading > .mic-fab,
+  body.app-loading > .fab-guide-arrow {
     opacity: 0;
     visibility: hidden;
+  }
+  /* Static, JS-free loading indicator: visible purely because body already
+     carries app-loading in the raw HTML, so it paints on the very first
+     frame with no script needed. Its own visibility is driven by the same
+     class revealApp() already removes, so no extra JS wiring is needed to
+     hide it either. */
+  #appLoadingIndicator { display: none; }
+  body.app-loading #appLoadingIndicator {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-page);
+  }
+  .app-loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: app-loading-spin 0.8s linear infinite;
+  }
+  @keyframes app-loading-spin {
+    to { transform: rotate(360deg); }
   }
   .onboarding-container { max-width: 420px; margin: 0 auto; }
   .onboarding-progress-wrap { max-width: 420px; margin: 2rem auto 2rem; }
