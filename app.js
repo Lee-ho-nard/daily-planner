@@ -7404,13 +7404,6 @@ let currentRange = "week";
     }));
   }
 
-  // Read by the auth-state-resolved listener below to decide whether it's
-  // safe to reveal the app immediately or whether the screen it's about to
-  // show is only a guess pending a real routing decision — see that
-  // listener's own comment for why this exists (the "Save your progress"
-  // flash-before-Planner bug).
-  let restoredOnboardingFromGoogleRedirect = false;
-
   // Called once at bootstrap (see this file's tail) to restore what
   // saveOnboardingStateForGoogleRedirect() saved, if anything's there.
   // One-shot: removes its own sessionStorage entry as soon as it's read, so
@@ -7433,7 +7426,6 @@ let currentRange = "week";
     document.body.classList.add("onboarding-active");
     document.getElementById("onboardingView").classList.add("visible");
     renderOnboardingStep();
-    restoredOnboardingFromGoogleRedirect = true;
     return true;
   }
 
@@ -7632,7 +7624,8 @@ let currentRange = "week";
     document.body.classList.remove("app-loading");
   }
 
-  // Used only for the restoredOnboardingFromGoogleRedirect case below —
+  // Used by the auth-state-resolved listener below whenever the bootstrap
+  // guessed "show onboarding" but a signed-in user needs that corrected —
   // delays revealing the app instead of skipping the reveal outright, so a
   // genuine "nothing ever corrects this" edge case (firestore-auth-ready/
   // firestore-data-changed never firing) can't leave the user staring at
@@ -7657,10 +7650,7 @@ let currentRange = "week";
   // never flash step 1: a signed-in, unverified user refreshing mid-
   // verification. onboardingAccountNeedsEmailVerification() depends only on
   // Firebase Auth state (not Firestore data), so it's safe to decide and
-  // render here immediately. Every other bootstrap guess (fresh onboarding,
-  // already-onboarded planner) is correct as constructed or self-corrects
-  // later via hydrateFromFirestore() once real data arrives — per product
-  // decision, only the verification screen needs refresh-restoration.
+  // render here immediately.
   document.addEventListener("auth-state-resolved", (e) => {
     if (onboardingAccountNeedsEmailVerification()) {
       document.body.classList.add("onboarding-active");
@@ -7670,17 +7660,32 @@ let currentRange = "week";
       revealApp();
       return;
     }
-    // A Google-redirect draft was restored (bootstrap's optimistic guess —
-    // see saveOnboardingStateForGoogleRedirect()) and someone is actually
-    // signed in: the real routing decision (stay in onboarding for a
-    // genuine new signup, or correct to the Planner for an existing
-    // account signing in from elsewhere) isn't known yet — that requires
-    // auth.js's migration check (a network read) to resolve first, which
-    // hasn't happened by this point. Revealing now would flash the
-    // restored "Save your progress" screen before that correction lands a
-    // moment later. Delay instead of skipping the reveal outright — see
-    // scheduleRevealAppFallback()'s own comment for why.
-    if (restoredOnboardingFromGoogleRedirect && e.detail.user) {
+    // General rule, not a per-entry-point patch: if the bootstrap's
+    // synchronous, localStorage-only guess (see this file's tail, and
+    // restoreOnboardingStateAfterGoogleRedirect() above) landed on "show
+    // onboarding" but Firebase says someone IS actually signed in, that
+    // guess cannot be trusted yet. localStorage isn't kept in sync for a
+    // signed-in user — save() writes tasks/categories to Firestore only
+    // (see its own comment) — so "categories.length === 0" locally just
+    // means nothing is cached on THIS device (a fresh browser, or an
+    // account that signed in via onboarding's own "already have an
+    // account" escape hatch and so never ran completeOnboarding() here),
+    // not that the account is actually new. The real answer needs either
+    // Firestore's data (hydrateFromFirestore(), via firestore-auth-ready/
+    // firestore-data-changed below) or, for a restored Google-redirect
+    // draft specifically, auth.js's migration check — neither of which
+    // has resolved yet at this point. Revealing now would flash the
+    // wrong screen (onboarding, or a stale restored draft) right before
+    // that correction lands a moment later. This one condition covers
+    // every way the guess can be wrong — a plain refresh with no local
+    // onboardingComplete flag, a restored Google-redirect draft, or any
+    // future entry point that shows onboarding optimistically — rather
+    // than requiring a new patch each time another such path is found.
+    // Delayed instead of skipped outright — see scheduleRevealAppFallback()
+    // for why (firestore-auth-ready/firestore-data-changed normally
+    // reveal it themselves, moments later, once the real screen is known).
+    const bootstrapGuessedOnboarding = document.body.classList.contains("onboarding-active");
+    if (bootstrapGuessedOnboarding && e.detail.user) {
       scheduleRevealAppFallback();
       return;
     }
