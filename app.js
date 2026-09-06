@@ -5132,12 +5132,20 @@ let currentRange = "week";
   let remainingSeconds = 0;
   let totalSeconds = 0;
   let timerRunning = false;
-  // How far (ms) into the current whole-second window the countdown had
-  // gotten when it was last paused, and when that window last started —
-  // together these let resume pick up exactly where pause left off instead
-  // of always waiting a fresh full second (see pauseResumeBtn handler).
-  let tickElapsedMs = 0;
-  let lastTickAt = 0;
+  // Deadline-based countdown: sessionEndAt is the wall-clock timestamp the
+  // current phase reaches zero at (valid only while running), and
+  // pausedRemainingMs is the exact number of milliseconds left (valid only
+  // while paused). remainingSeconds (used everywhere else for display/ring
+  // drawing) is always re-derived FROM one of these, never decremented on
+  // its own — so no rounding ever accumulates across any number of
+  // pause/resume cycles. This replaced a design where resuming rescheduled
+  // the next tick after an artificially short, capped delay to feel
+  // instant; that shortened tick still did a full remainingSeconds--,
+  // so the countdown actually advanced faster than real time on every
+  // pause/resume — imperceptible once, but it compounded badly under
+  // rapid toggling (the bug this fixes).
+  let sessionEndAt = 0;
+  let pausedRemainingMs = 0;
 
   function scheduleTick(delayMs) {
     timerInterval = setTimeout(tick, delayMs);
@@ -5307,10 +5315,16 @@ let currentRange = "week";
     document.getElementById("sessionNoteSkipBtn").addEventListener("click", () => finish(null), { once: true });
   }
 
+  // Re-derives remainingSeconds from sessionEndAt on every call rather than
+  // decrementing a counter — a late-firing setTimeout (rapid pause/resume,
+  // a throttled background tab, whatever) never leaves residual drift,
+  // since the very next tick recomputes from the real deadline instead of
+  // compounding whatever error came before it.
   function tick() {
     if (!timerRunning) return;
-    remainingSeconds--;
-    if (remainingSeconds <= 0) {
+    const remainingMs = sessionEndAt - Date.now();
+    if (remainingMs <= 0) {
+      remainingSeconds = 0;
       clearInterval(timerInterval);
       updateTimerDisplay();
       // Calling finishWorkPhase/finishBreakPhase synchronously here means the
@@ -5329,10 +5343,14 @@ let currentRange = "week";
       }, 500);
       return;
     }
+    // Ceiling, not floor/round — "1" must stay on screen for the entirety
+    // of the last second, not disappear as soon as under 1000ms remains.
+    remainingSeconds = Math.ceil(remainingMs / 1000);
     updateTimerDisplay();
-    lastTickAt = Date.now();
-    tickElapsedMs = 0;
-    scheduleTick(1000);
+    // Aligned to the real deadline's own second boundaries (not just "1000ms
+    // from whenever this tick happened to fire"), so display updates land
+    // right as each whole second actually elapses.
+    scheduleTick(remainingMs % 1000 || 1000);
   }
 
   function finishWorkPhase() {
@@ -5373,6 +5391,7 @@ let currentRange = "week";
     totalSeconds = workMinutes * 60;
     remainingSeconds = totalSeconds;
     timerRunning = true;
+    sessionEndAt = Date.now() + totalSeconds * 1000;
 
     document.getElementById("focusTimerScreen").classList.remove("break-mode", "repeat-mode");
     document.getElementById("skipBreakBtn").style.display = "none";
@@ -5385,8 +5404,6 @@ let currentRange = "week";
 
     updateTimerDisplay();
     clearInterval(timerInterval);
-    lastTickAt = Date.now();
-    tickElapsedMs = 0;
     scheduleTick(1000);
   }
 
@@ -5395,6 +5412,7 @@ let currentRange = "week";
     totalSeconds = breakMinutes * 60;
     remainingSeconds = totalSeconds;
     timerRunning = true;
+    sessionEndAt = Date.now() + totalSeconds * 1000;
 
     document.getElementById("focusTimerScreen").classList.add("break-mode");
     document.getElementById("timerLabel").textContent = "Break";
@@ -5407,8 +5425,6 @@ let currentRange = "week";
 
     updateTimerDisplay();
     clearInterval(timerInterval);
-    lastTickAt = Date.now();
-    tickElapsedMs = 0;
     scheduleTick(1000);
   }
 
@@ -5585,22 +5601,19 @@ let currentRange = "week";
     // (freezeTimerRing), since clearInterval alone doesn't stop an already-
     // animating stroke-dasharray from gliding on to its last-set target.
     //
-    // Resuming must feel instant, not wait out however much of the current
-    // whole-second window is left (that could be up to ~1s if pause landed
-    // right after a tick, which reads as exactly the "delay" this is fixing).
-    // Cap the wait for the very next tick short regardless of tickElapsedMs
-    // (captured on pause, below) — it costs a shaved fraction of a second off
-    // one countdown step per pause/resume, imperceptible for a focus timer,
-    // in exchange for resume always feeling immediate. Normal 1s cadence
-    // resumes right after that first tick (see tick()'s own reschedule).
+    // pausedRemainingMs/sessionEndAt (not a rounded remainingSeconds, and
+    // not a "reschedule the next tick early" shortcut — see the shared
+    // declaration's own comment) are what let this stay exact no matter how
+    // many times pause/resume gets toggled. Resuming still feels instant:
+    // scheduleTick(0) redraws immediately from the restored deadline
+    // instead of waiting out a real second.
     clearInterval(timerInterval);
     if (timerRunning) {
       unfreezeTimerRing();
-      const remainderMs = Math.min(Math.max(0, 1000 - tickElapsedMs), 150);
-      lastTickAt = Date.now();
-      scheduleTick(remainderMs);
+      sessionEndAt = Date.now() + pausedRemainingMs;
+      scheduleTick(0);
     } else {
-      tickElapsedMs = Date.now() - lastTickAt;
+      pausedRemainingMs = Math.max(0, sessionEndAt - Date.now());
       freezeTimerRing();
     }
   });
