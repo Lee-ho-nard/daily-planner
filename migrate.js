@@ -6,7 +6,7 @@ import {
   collection,
   writeBatch,
   serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+} from "./vendor/firebase/firebase-firestore.js";
 
 const BATCH_LIMIT = 500;
 

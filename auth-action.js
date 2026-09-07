@@ -5,7 +5,7 @@ import {
   checkActionCode,
   sendEmailVerification,
   onAuthStateChanged
-} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+} from "./vendor/firebase/firebase-auth.js";
 
 const iconWrap = document.getElementById("authActionIconWrap");
 const titleEl = document.getElementById("authActionTitle");

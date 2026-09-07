@@ -11,8 +11,17 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400..800&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
-<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<!-- Self-hosted (vendor/) rather than loaded from jsdelivr/unpkg: the
+     service worker only caches same-origin requests (see sw.js's own
+     comment on why it never touches cross-origin ones, to stay clear of
+     Firestore's offline persistence), so a CDN script would silently fail
+     to load offline every time -- lucide.createIcons() throwing mid-render
+     for a missing `lucide` global was the actual cause of the blank/chunky
+     offline load this replaced. Pinned versions: sortablejs 1.15.0,
+     lucide 1.42.0 (was loaded as "@latest", now frozen at whatever
+     "latest" resolved to when vendored). -->
+<script src="vendor/sortable.min.js"></script>
+<script src="vendor/lucide.js"></script>
 <link rel="stylesheet" href="styles.css">
 <script>
   (function() {

@@ -18,7 +18,16 @@ const WEB_FILES = [
   "firebase-init.js",
   "firestore-sync.js",
   "migrate.js",
-  "styles.css"
+  "styles.css",
+  // Self-hosted vendor scripts index.html now points at (see its own
+  // comment) instead of jsdelivr/unpkg/gstatic CDN URLs -- without these,
+  // the Android WebView would 404 on every one of them, since it has no
+  // CDN fallback to fall through to the way the old absolute URLs did.
+  "vendor/lucide.js",
+  "vendor/sortable.min.js",
+  "vendor/firebase/firebase-app.js",
+  "vendor/firebase/firebase-auth.js",
+  "vendor/firebase/firebase-firestore.js"
 ];
 
 fs.rmSync(wwwDir, { recursive: true, force: true });
@@ -30,7 +39,9 @@ for (const file of WEB_FILES) {
     console.warn(`sync-www: skipping missing file ${file}`);
     continue;
   }
-  fs.copyFileSync(src, path.join(wwwDir, file));
+  const dest = path.join(wwwDir, file);
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(src, dest);
 }
 
 console.log(`sync-www: copied ${WEB_FILES.length} files into www/`);

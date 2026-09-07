@@ -1,10 +1,10 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import { getAuth } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+import { initializeApp } from "./vendor/firebase/firebase-app.js";
+import { getAuth } from "./vendor/firebase/firebase-auth.js";
 import {
   initializeFirestore,
   persistentLocalCache,
   persistentMultipleTabManager
-} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+} from "./vendor/firebase/firebase-firestore.js";
 
 // Firebase web config isn't a traditional secret — access control is
 // enforced entirely by firestore.rules, not by hiding these values. Replace

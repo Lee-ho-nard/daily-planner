@@ -10,7 +10,7 @@
 // respondWith()), so Firestore's own persistentLocalCache offline
 // persistence (see firebase-init.js) keeps working exactly as it did before
 // this file existed. The two caching layers never see each other.
-const CACHE_VERSION = "flit-shell-v1";
+const CACHE_VERSION = "flit-shell-v2";
 
 const SHELL_ASSETS = [
   "/",
@@ -26,7 +26,20 @@ const SHELL_ASSETS = [
   "/styles.css",
   "/manifest.json",
   "/icons/icon-192.png",
-  "/icons/icon-512.png"
+  "/icons/icon-512.png",
+  // Self-hosted (see index.html's own comment) so they're actually
+  // cacheable here -- the whole point of vendoring them off jsdelivr/
+  // unpkg/gstatic. Without these, the app shell's HTML/CSS/JS loaded fine
+  // offline but lucide.createIcons() and the Firebase SDK's own module
+  // imports failed on every cross-origin fetch, which is what produced the
+  // blank/chunky offline load this fixes: icons never rendering, and (for
+  // a signed-in user) Firestore's offline persistence never even getting a
+  // chance to run since the SDK modules that own it hadn't loaded.
+  "/vendor/lucide.js",
+  "/vendor/sortable.min.js",
+  "/vendor/firebase/firebase-app.js",
+  "/vendor/firebase/firebase-auth.js",
+  "/vendor/firebase/firebase-firestore.js"
 ];
 
 self.addEventListener("install", (event) => {

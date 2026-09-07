@@ -10,7 +10,7 @@ import {
   onSnapshot,
   writeBatch,
   Timestamp
-} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+} from "./vendor/firebase/firebase-firestore.js";
 
 // Live in-memory mirrors of the signed-in user's Firestore data, kept fresh
 // by onSnapshot listeners. app.js reads these synchronously via

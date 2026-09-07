@@ -14,7 +14,7 @@ import {
   reauthenticateWithCredential,
   reauthenticateWithRedirect,
   getAdditionalUserInfo
-} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+} from "./vendor/firebase/firebase-auth.js";
 
 export { getAdditionalUserInfo };
 import { runMigrationIfNeeded } from "./migrate.js";
