@@ -1279,6 +1279,7 @@
     // bar's own styling, not the content that's fading out.
     if (!enteringFocus) {
       document.documentElement.setAttribute("data-theme", view === "focus" ? "dark" : "light");
+      updateThemeColorMeta();
     }
 
     const prevEl = CROSSFADE_VIEW_IDS[previousView] ? document.getElementById(CROSSFADE_VIEW_IDS[previousView]) : null;
@@ -1404,10 +1405,12 @@
           // prevEl instantly repaint in the new theme's colors while still
           // fully on screen for this entire 150ms window.
           document.documentElement.setAttribute("data-theme", "dark");
+          updateThemeColorMeta();
           showFocusView();
         }, 150);
       } else {
         document.documentElement.setAttribute("data-theme", "dark");
+        updateThemeColorMeta();
         showFocusView();
       }
     }
@@ -3801,6 +3804,20 @@
     localStorage.setItem("selectedTheme", theme);
   }
 
+  // Keeps <meta name="theme-color"> (the browser tab/PWA-chrome tint) in
+  // sync with whatever --accent currently resolves to — reads the live
+  // computed value rather than looking it up in THEMES, so it automatically
+  // reflects both the selected premium theme AND [data-theme="dark"] (Deep
+  // Work's own dark styling, see switchView()'s three setAttribute calls)
+  // without this needing to know about either one separately. Every call
+  // site that changes data-selected-theme or data-theme calls this right
+  // after, the same way each already triggers a repaint.
+  function updateThemeColorMeta() {
+    const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (accent && meta) meta.setAttribute("content", accent);
+  }
+
   function applySelectedTheme() {
     const stored = getSelectedTheme();
     const themeName = (stored && THEMES[stored]) ? stored : null;
@@ -3809,6 +3826,7 @@
     } else {
       document.documentElement.removeAttribute("data-selected-theme");
     }
+    updateThemeColorMeta();
   }
 
   function updateThemesBtnVisibility() {

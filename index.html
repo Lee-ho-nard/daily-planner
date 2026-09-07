@@ -21,11 +21,20 @@
         var t = localStorage.getItem("selectedTheme");
         if (t && t !== "forest") document.documentElement.setAttribute("data-selected-theme", t);
       }
+      // Matches the theme-color <meta> to whichever theme the line above just
+      // applied, so a premium user with a non-default theme never sees a
+      // flash of the plain forest-green status bar before app.js's own
+      // updateThemeColorMeta() runs. styles.css is a blocking stylesheet
+      // link right above this script, so --accent already reflects the
+      // right theme by the time this executes.
+      var accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+      if (accent) document.querySelector('meta[name="theme-color"]').setAttribute("content", accent);
     } catch (e) {}
   })();
 </script>
 </head>
 <body class="app-loading">
+<div class="theme-color-fade" aria-hidden="true"></div>
 <div id="appLoadingIndicator" aria-hidden="true"><div class="app-loading-spinner"></div></div>
 <div class="container">
 
