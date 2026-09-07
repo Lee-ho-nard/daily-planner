@@ -3,7 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Daily Planner</title>
+<title>Flit</title>
+<meta name="theme-color" content="#2F5233">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400..800&display=swap" rel="stylesheet">
@@ -422,7 +426,7 @@
     </div>
     <div class="settings-section" id="notifSettingsSection">
       <div class="settings-section-label">Notifications</div>
-      <div id="notifNativeOnlyNote" class="settings-account-meta" style="display:none;">Notifications only run in the Flit app, not in a browser tab.</div>
+      <div id="notifNativeOnlyNote" class="settings-account-meta" style="display:none;">Notifications aren't supported in this browser. Try the Flit app, or a browser with notification support (Chrome, Edge, Firefox).</div>
       <div id="notifControlsWrap">
         <div class="goal-checkbox-row">
           <input type="checkbox" id="notifMorningEnabled">
@@ -448,7 +452,7 @@
     </div>
     <div class="settings-section" id="customRemindersSection">
       <div class="settings-section-label">Custom Reminders</div>
-      <div id="customRemindersNativeOnlyNote" class="settings-account-meta" style="display:none;">Reminders only fire in the Flit app, not in a browser tab.</div>
+      <div id="customRemindersNativeOnlyNote" class="settings-account-meta" style="display:none;">Reminders aren't supported in this browser. Try the Flit app, or a browser with notification support (Chrome, Edge, Firefox).</div>
       <ul class="custom-reminders-list" id="customRemindersList"></ul>
       <div class="settings-account-meta" id="customRemindersEmpty" style="display:none;">No custom reminders yet.</div>
       <button class="settings-inline-link" id="addCustomReminderBtn" type="button">+ Add reminder</button>
@@ -653,7 +657,7 @@
     </div>
     <div class="settings-section" id="streakNotifSection" style="margin-top:1.1rem;">
       <div class="settings-section-label">Notifications</div>
-      <div id="streakNotifNativeOnlyNote" class="settings-account-meta" style="display:none;">Notifications only run in the Flit app, not in a browser tab.</div>
+      <div id="streakNotifNativeOnlyNote" class="settings-account-meta" style="display:none;">Notifications aren't supported in this browser. Try the Flit app, or a browser with notification support (Chrome, Edge, Firefox).</div>
       <div id="streakNotifControlsWrap">
         <div class="goal-checkbox-row" style="margin-top:0;">
           <input type="checkbox" id="notifStreakRiskEnabled">
@@ -672,5 +676,14 @@
 <script type="module" src="firebase-init.js"></script>
 <script type="module" src="auth-ui.js"></script>
 <script type="module" src="firestore-sync.js"></script>
+<script>
+  // Skipped inside the Capacitor Android WebView — www/index.html doesn't
+  // even carry sw.js/manifest.json (see scripts/sync-www.js's WEB_FILES),
+  // and the app shell those cache is bundled into the APK already, so there's
+  // nothing for a service worker to add there.
+  if ("serviceWorker" in navigator && !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
+  }
+</script>
 </body>
 </html>

@@ -28,6 +28,18 @@ users/{uid}
   trialEndDate: timestamp | null     // trialStartDate + 7 days, same null-
                                       // until-Day-1 rule
   dataImportedAt: timestamp | null   // set once, after first localStorage import
+  notificationPreferences: object | undefined  // see app.js's DEFAULT_NOTIFICATION_PREFS
+  pushToken: string | null                      // Capacitor mobile push token — see
+                                                 // app.js's registerPushToken(); no
+                                                 // server send capability exists yet
+  webPushSubscription: object | null            // desktop-browser PushSubscription (via
+                                                 // registerWebPushSubscription()) — same
+                                                 // "no server send capability yet" caveat
+                                                 // as pushToken above, just for the web
+  premiumStreakFreezesRemaining: number | undefined  // Streak Insurance pool, see
+                                                 // saveStreakFreezeState()
+  lastFreezeRefillMonth: string | undefined     // "YYYY-MM", same pool as above
+  selectedTheme: string | undefined             // premium theme picker
 ```
 
 Client can read/write this doc (except see billing note below).
@@ -146,7 +158,6 @@ users/{uid}/settings/prefs
   selectedTheme: string
   notificationsEnabled: boolean
   smartRemindersEnabled: boolean   // premium
-  pushToken: string | null          // for Web Push, added when that phase starts
 ```
 
 ## `users/{uid}/weeklyInsights/{weekKey}` (future — AI insight feature, not built yet)

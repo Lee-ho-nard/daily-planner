@@ -313,6 +313,15 @@ async function savePushToken(token) {
   await setDoc(ref, { pushToken: token }, { merge: true });
 }
 
+// Desktop-browser counterpart to savePushToken() above (see app.js's
+// registerWebPushSubscription()) — same "no server send capability yet"
+// caveat, just a PushSubscription object instead of a platform token.
+async function saveWebPushSubscription(subscription) {
+  if (!currentUid) return;
+  const ref = doc(db, "users", currentUid);
+  await setDoc(ref, { webPushSubscription: subscription }, { merge: true });
+}
+
 // Streak Insurance's shared premium freeze pool — client-side/localStorage-
 // mirrored like everything else premium-related in this app today (see
 // isPremiumUser()'s own comment), not a server-verified balance. A real
@@ -376,5 +385,6 @@ window.firestoreBridge = {
   saveStreakFreezeState,
   saveNotificationPreferences,
   savePushToken,
+  saveWebPushSubscription,
   deleteAllUserData
 };

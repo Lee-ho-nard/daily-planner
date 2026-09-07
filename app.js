@@ -447,6 +447,7 @@
       localStorage.setItem("categories", JSON.stringify(categories));
     }
     scheduleNativeNotificationsSync();
+    scheduleDesktopNotificationsSync();
   }
   // Signed-in users' identity now lives only on users/{uid} (written by
   // onboarding's Firestore flush, never localStorage) — fall back to
@@ -3411,6 +3412,42 @@
   enableFabPressSpring(document.getElementById("openAdd"));
   document.getElementById("cancelAdd").addEventListener("click", () => closeModal(overlay));
 
+  // Desktop-only quick-add shortcut for the same Add Task modal the FAB
+  // opens. Never registers its effect inside the Capacitor app
+  // (capacitorAvailable() below), and is scoped to the planner view,
+  // matching #openAdd's own visibility — the Goals view's FAB opens a
+  // different (Add Goal) modal this key isn't for.
+  //
+  // Deliberately NOT gated on a coarse-pointer media query as an extra
+  // "skip touch devices" check — touch-capable Windows laptops report
+  // pointer:coarse too (tested live: a normal desktop viewport here still
+  // reports maxTouchPoints:10 and pointer:coarse), which would wrongly
+  // disable this for real desktop/laptop users. Requiring an actual
+  // Ctrl/Cmd/Alt modifier already does the real job: a touchscreen or
+  // mobile virtual keyboard has no way to dispatch a keydown with those
+  // modifiers set, so this can't fire from touch input regardless.
+  //
+  // Two bindings, not one: Cmd+N on Mac / Ctrl+N elsewhere is the
+  // conventional "new item" chord, but live testing showed Chrome/Edge
+  // intercept Ctrl+N at the browser-chrome level (reserved for "new
+  // window") before the page's keydown listener ever sees it — no amount
+  // of preventDefault() from here changes that in an ordinary tab. It may
+  // still work once Flit is installed as a standalone PWA (no tab chrome
+  // left to reserve it), but that's unverified, so Alt+N is bound
+  // alongside it as a chord no browser reserves, guaranteeing the feature
+  // actually works in a plain tab.
+  document.addEventListener("keydown", (e) => {
+    if (capacitorAvailable()) return;
+    const key = e.key.toLowerCase();
+    const isCtrlCmdN = key === "n" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey;
+    const isAltN = key === "n" && e.altKey && !e.shiftKey && !e.metaKey && !e.ctrlKey;
+    if (!isCtrlCmdN && !isAltN) return;
+    if (currentView !== "planner") return;
+    if (overlay.classList.contains("open") || goalOverlay.classList.contains("open")) return;
+    e.preventDefault();
+    openAddModal();
+  });
+
   // Shared by submitTaskForm() (manual Add Task modal) and the Siri bridge's
   // createTaskFromSiri() below, so both entry points create a new task
   // identically. Only covers new-task creation — editing an existing task
@@ -5030,6 +5067,7 @@ let currentRange = "week";
       localStorage.setItem("customReminders", JSON.stringify(customReminders));
     }
     scheduleNativeNotificationsSync();
+    scheduleDesktopNotificationsSync();
   }
 
   // A short, human-readable schedule line for the Settings list — e.g.
@@ -6253,6 +6291,7 @@ let currentRange = "week";
       localStorage.setItem("notificationPreferences", JSON.stringify(localNotificationPrefs));
     }
     scheduleNativeNotificationsSync();
+    scheduleDesktopNotificationsSync();
   }
 
   function capacitorAvailable() {
@@ -6548,6 +6587,217 @@ let currentRange = "week";
     }
     await plugin.register();
   }
+
+  // --- Desktop web push (browser tabs / installed PWA, non-Capacitor) ---
+  // Two separate pieces, same split as the native pair above:
+  //   1. registerWebPushSubscription() — real Push API subscription plumbing,
+  //      parked on the user doc for whenever a Cloud Function + this VAPID
+  //      key's private half exists to actually send from. No server-side
+  //      send capability exists yet, exactly like registerPushToken() above;
+  //      this never triggers a notification by itself.
+  //   2. syncDesktopNotifications() and everything below it — the mechanism
+  //      that actually shows notifications today. There's no web equivalent
+  //      of LocalNotifications' OS-level scheduler, so this re-implements
+  //      the same "schedule from notificationPreferences" idea with plain
+  //      setTimeout()s calling the service worker's showNotification(), and
+  //      re-derives the next occurrence from scratch each time one fires —
+  //      same one-shot-and-recompute shape reschedulePreTaskNotifications()
+  //      etc. already use for the native side.
+  function desktopNotificationsAvailable() {
+    return !capacitorAvailable() && "serviceWorker" in navigator && "Notification" in window && "PushManager" in window;
+  }
+
+  // Whichever delivery mechanism applies to this runtime — the native app
+  // or a desktop browser capable enough for Web Push — reminders can
+  // actually fire, so the Settings UI below unlocks on either one rather
+  // than gating everything to capacitorAvailable() alone.
+  function notificationDeliveryAvailable() {
+    return capacitorAvailable() || desktopNotificationsAvailable();
+  }
+
+  // Generated once for this project — the public half is safe to ship in
+  // client code (that's how VAPID keys work); the private half lives with
+  // whoever eventually builds the sending Cloud Function, not in this repo.
+  const DESKTOP_VAPID_PUBLIC_KEY = "BNhnVhqBC8n91WyAnXbPBD1DmYum1KonkxPV-js4cvoQnHaxKou9GsVBk9oVFkP0wkCaZudD1mpAdRm4MTirOCs";
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = atob(base64);
+    return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+  }
+
+  function saveWebPushSubscriptionAnywhere(subscription) {
+    if (window.firestoreBridge && window.firestoreBridge.isSignedIn() && window.firestoreBridge.saveWebPushSubscription) {
+      window.firestoreBridge.saveWebPushSubscription(subscription);
+    } else {
+      localStorage.setItem("webPushSubscription", JSON.stringify(subscription));
+    }
+  }
+
+  async function registerWebPushSubscription() {
+    if (!desktopNotificationsAvailable()) return;
+    if (Notification.permission !== "granted") return;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      let subscription = await reg.pushManager.getSubscription();
+      if (!subscription) {
+        subscription = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(DESKTOP_VAPID_PUBLIC_KEY)
+        });
+      }
+      saveWebPushSubscriptionAnywhere(subscription.toJSON());
+    } catch (err) {
+      // Subscription can fail (permission revoked mid-flight, browser
+      // policy, etc.) — nothing depends on it succeeding today since it
+      // only feeds infrastructure that doesn't exist yet.
+    }
+  }
+
+  async function ensureDesktopNotificationPermission() {
+    if (!desktopNotificationsAvailable()) return false;
+    if (Notification.permission === "granted") return true;
+    if (Notification.permission === "denied") return false;
+    const result = await Notification.requestPermission();
+    return result === "granted";
+  }
+
+  // id -> timeout handle, so a resync can cancel every previously-scheduled
+  // notification before recomputing — same cancel-then-reschedule shape as
+  // the native plugin.cancel()/plugin.schedule() pairs above.
+  let desktopNotificationTimers = {};
+  function clearDesktopNotificationTimers() {
+    Object.values(desktopNotificationTimers).forEach(id => clearTimeout(id));
+    desktopNotificationTimers = {};
+  }
+
+  function scheduleDesktopNotification(id, fireAt, title, body) {
+    const delay = fireAt.getTime() - Date.now();
+    if (delay <= 0) return;
+    // setTimeout's own 32-bit delay cap (~24.8 days) is a non-issue here —
+    // every caller below only ever schedules within the next day or so.
+    desktopNotificationTimers[id] = setTimeout(async () => {
+      delete desktopNotificationTimers[id];
+      const reg = await navigator.serviceWorker.ready;
+      reg.showNotification(title, { body, icon: "/icons/icon-192.png", badge: "/icons/icon-192.png", tag: id });
+      // One-shot timers need re-arming for their next occurrence — full
+      // resync rather than a per-id reschedule, same reasoning as the
+      // native side recomputing everything fresh on every sync pass.
+      syncDesktopNotifications();
+    }, delay);
+  }
+
+  function nextDailyFireTime(hour, minute) {
+    const now = new Date();
+    const fireAt = new Date(now);
+    fireAt.setHours(hour, minute, 0, 0);
+    if (fireAt <= now) fireAt.setDate(fireAt.getDate() + 1);
+    return fireAt;
+  }
+
+  function scheduleDesktopDailyNotifications() {
+    const prefs = getNotificationPrefs();
+    if (prefs.morningEnabled) {
+      const [h, m] = prefs.morningTime.split(":").map(Number);
+      scheduleDesktopNotification("morning", nextDailyFireTime(h, m), "Plan your day", "Check today's tasks and get your anchor done first.");
+    }
+    if (prefs.eveningEnabled) {
+      const [h, m] = prefs.eveningTime.split(":").map(Number);
+      scheduleDesktopNotification("evening", nextDailyFireTime(h, m), "Reflect on your day", "Lock in today before it resets.");
+    }
+  }
+
+  function scheduleDesktopPreTaskNotifications() {
+    const prefs = getNotificationPrefs();
+    if (!prefs.preTaskEnabled) return;
+    const now = new Date();
+    const todaysTasks = getTasksForDate(now).filter(t => !t.occurrenceDone && t.time);
+    todaysTasks.forEach(task => {
+      const [h, m] = task.time.split(":").map(Number);
+      const taskTime = new Date(now);
+      taskTime.setHours(h, m, 0, 0);
+      const fireAt = new Date(taskTime.getTime() - prefs.preTaskMinutesBefore * 60000);
+      if (fireAt <= now) return;
+      scheduleDesktopNotification("pretask-" + task.id, fireAt, task.name, `Starts in ${prefs.preTaskMinutesBefore} minutes.`);
+    });
+  }
+
+  function scheduleDesktopStreakRiskNotification() {
+    const prefs = getNotificationPrefs();
+    if (!prefs.streakRiskEnabled) return;
+    if (hasCompletedAnyTaskToday()) return;
+    const streak = getMaxActiveStreak();
+    if (streak <= 0) return;
+    const [h, m] = prefs.streakRiskTime.split(":").map(Number);
+    const now = new Date();
+    const fireAt = new Date(now);
+    fireAt.setHours(h, m, 0, 0);
+    if (fireAt <= now) return;
+    scheduleDesktopNotification("streak-risk", fireAt, "Streak at risk", `You haven't completed a task today. Your streak is at ${streak} day${streak === 1 ? "" : "s"}.`);
+  }
+
+  function scheduleDesktopCustomReminders() {
+    const now = new Date();
+    const today = toDateStr(now);
+    customReminders.filter(r => r.active).forEach(r => {
+      const [h, m] = r.time.split(":").map(Number);
+      if (r.recurrence === "weekdays") {
+        (r.weekdays || []).forEach(wd => {
+          const fireAt = new Date(now);
+          fireAt.setHours(h, m, 0, 0);
+          let daysUntil = (wd - now.getDay() + 7) % 7;
+          if (daysUntil === 0 && fireAt <= now) daysUntil = 7;
+          fireAt.setDate(fireAt.getDate() + daysUntil);
+          scheduleDesktopNotification(`reminder-${r.id}-${wd}`, fireAt, "Reminder", r.message);
+        });
+      } else if (r.recurrence === "dateRange") {
+        const endOfRange = new Date(r.endDate + "T23:59:59");
+        if (endOfRange < now) return; // range already fully elapsed
+        let firstFire = new Date((r.startDate > today ? r.startDate : today) + "T00:00:00");
+        firstFire.setHours(h, m, 0, 0);
+        if (firstFire <= now) firstFire.setDate(firstFire.getDate() + 1);
+        if (firstFire > endOfRange) return; // nothing left to fire today or later
+        scheduleDesktopNotification(`reminder-${r.id}`, firstFire, "Reminder", r.message);
+      } else {
+        scheduleDesktopNotification(`reminder-${r.id}`, nextDailyFireTime(h, m), "Reminder", r.message);
+      }
+    });
+  }
+
+  async function syncDesktopNotifications() {
+    clearDesktopNotificationTimers();
+    if (!desktopNotificationsAvailable()) return;
+    const granted = await ensureDesktopNotificationPermission();
+    if (!granted) return;
+    registerWebPushSubscription();
+    scheduleDesktopDailyNotifications();
+    scheduleDesktopPreTaskNotifications();
+    scheduleDesktopStreakRiskNotification();
+    scheduleDesktopCustomReminders();
+  }
+
+  // Debounced the same way scheduleNativeNotificationsSync() is, and called
+  // from every one of that function's own call sites (see save(),
+  // saveCustomReminders(), saveNotificationPrefs(), hydrateFromFirestore())
+  // plus completeOnboarding() — so desktop notification permission is asked
+  // for at the same natural moments the native prompt already is, not
+  // eagerly on a fresh page load before anyone's signed up or done anything.
+  let desktopNotificationsSyncTimer = null;
+  function scheduleDesktopNotificationsSync() {
+    if (!desktopNotificationsAvailable()) return;
+    clearTimeout(desktopNotificationsSyncTimer);
+    desktopNotificationsSyncTimer = setTimeout(syncDesktopNotifications, 400);
+  }
+
+  // setTimeout delays don't run while a laptop is asleep or a background
+  // tab is heavily throttled, so a scheduled fire time can silently slip —
+  // resyncing whenever the tab/window becomes visible again catches both a
+  // missed "today" (pre-task/streak-risk recompute against the new day) and
+  // any notification whose delay simply never got to run.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") scheduleDesktopNotificationsSync();
+  });
 
   // --- Siri Shortcuts JS bridge ---
   // Called by native Swift App Intents (a future Mac/Xcode session, once
@@ -7668,6 +7918,12 @@ let currentRange = "week";
     document.body.classList.remove("onboarding-active");
     renderAll();
     switchView("planner");
+    // First point a brand-new desktop user could reasonably be asked for
+    // notification permission — not on first page load, before they've
+    // even seen the app. Still called from this same click's call stack
+    // (the "Start my free trial" tap), so the permission prompt keeps the
+    // user-gesture context browsers expect it to fire from.
+    scheduleDesktopNotificationsSync();
   }
 
   // --- Firestore sync (signed-in users only) ---
@@ -7706,6 +7962,7 @@ let currentRange = "week";
     }
     scheduleNativeNotificationsSync();
     registerPushToken();
+    scheduleDesktopNotificationsSync();
 
     // A signed-in-but-unverified user must never reach the planner — not
     // even via a stale currentOnboardingStep. That variable lives in memory
@@ -7967,12 +8224,12 @@ let currentRange = "week";
     document.getElementById("notifStreakRiskTime").value = prefs.streakRiskTime;
     document.getElementById("notifPreTaskEnabled").checked = prefs.preTaskEnabled;
     document.getElementById("notifPreTaskMinutes").value = String(prefs.preTaskMinutesBefore);
-    const native = capacitorAvailable();
-    document.getElementById("notifNativeOnlyNote").style.display = native ? "none" : "block";
-    document.getElementById("notifControlsWrap").style.opacity = native ? "1" : "0.5";
-    document.getElementById("streakNotifNativeOnlyNote").style.display = native ? "none" : "block";
-    document.getElementById("streakNotifControlsWrap").style.opacity = native ? "1" : "0.5";
-    NOTIF_FIELD_IDS.forEach(id => { document.getElementById(id).disabled = !native; });
+    const notifsAvailable = notificationDeliveryAvailable();
+    document.getElementById("notifNativeOnlyNote").style.display = notifsAvailable ? "none" : "block";
+    document.getElementById("notifControlsWrap").style.opacity = notifsAvailable ? "1" : "0.5";
+    document.getElementById("streakNotifNativeOnlyNote").style.display = notifsAvailable ? "none" : "block";
+    document.getElementById("streakNotifControlsWrap").style.opacity = notifsAvailable ? "1" : "0.5";
+    NOTIF_FIELD_IDS.forEach(id => { document.getElementById(id).disabled = !notifsAvailable; });
   }
   function readNotificationSettingsUIIntoPrefs() {
     saveNotificationPrefs({
@@ -8036,17 +8293,18 @@ let currentRange = "week";
     document.getElementById("customRemindersSection").style.display = signedIn ? "" : "none";
     if (!signedIn) return;
 
-    // Same native-only gate as the Notifications section right above —
-    // reminders only actually fire inside the Capacitor-wrapped app, so
-    // adding one from a plain browser tab would silently never go off.
-    // Existing reminders stay fully manageable (toggle/edit/delete) even
-    // here, since none of those actions create a false expectation of
-    // firing the way adding a new one would.
-    const native = capacitorAvailable();
-    document.getElementById("customRemindersNativeOnlyNote").style.display = native ? "none" : "block";
+    // Same delivery gate as the Notifications section right above —
+    // reminders only actually fire inside the Capacitor-wrapped app or a
+    // desktop browser capable of Web Push, so adding one anywhere else
+    // would silently never go off. Existing reminders stay fully
+    // manageable (toggle/edit/delete) even here, since none of those
+    // actions create a false expectation of firing the way adding a new
+    // one would.
+    const notifsAvailable = notificationDeliveryAvailable();
+    document.getElementById("customRemindersNativeOnlyNote").style.display = notifsAvailable ? "none" : "block";
     const addBtn = document.getElementById("addCustomReminderBtn");
-    addBtn.disabled = !native;
-    addBtn.title = native ? "" : "Reminders only fire in the Flit app, not in a browser tab.";
+    addBtn.disabled = !notifsAvailable;
+    addBtn.title = notifsAvailable ? "" : "Reminders only fire in the Flit app, or a browser with notifications enabled.";
 
     const listEl = document.getElementById("customRemindersList");
     listEl.innerHTML = "";
