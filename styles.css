@@ -359,7 +359,15 @@
 
   .empty-msg { text-align: center; color: var(--text-secondary); padding: 3rem 1rem; font-size: var(--text-base); line-height: 1.6; }
   .empty-msg .big { font-size: var(--text-lg); color: var(--text-primary); font-weight: 500; margin-bottom: 0.3rem; }
-  .empty-msg .empty-msg-instruction { display: block; margin-top: 0.6rem; font-weight: 500; color: var(--text-primary); }
+  /* Deliberately no font-weight/color override here — this reads as a
+     continuation of the plain sentence above it (inheriting .empty-msg's
+     own secondary color and normal weight), not a second bold/dark
+     element next to .big. It used to match .big's own weight/color,
+     which made it look like a tappable call-to-action even though it has
+     no click handler and isn't meant to (the FAB already covers this
+     action) — display: block + the top margin alone are enough to set it
+     apart as its own line without implying it's interactive. */
+  .empty-msg .empty-msg-instruction { display: block; margin-top: 0.6rem; }
 
   .fab { position: fixed; bottom: var(--fab-bottom); right: var(--fab-right); width: var(--fab-size); height: var(--fab-size); border-radius: 50%; background: var(--accent); color: var(--on-accent); border: none; cursor: pointer; box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 35%, transparent); transition: background-color 0.3s ease, box-shadow 0.3s ease; display: grid; place-items: center; padding-top: 1px; }
   .fab:hover { transform: scale(1.06); }
