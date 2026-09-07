@@ -30,11 +30,29 @@
        and size (see the --text-2xl/--text-display consumers below), not a
        typeface switch. */
     --font-family: "Hanken Grotesk", system-ui, -apple-system, sans-serif;
-    /* .fab's own position/size, shared so .fab-guide-arrow can anchor off
-       it via calc() instead of a separately hand-tuned fixed position —
-       stays correctly aimed if .fab ever moves. */
+    /* .container's own responsive width (bumped for desktop below) — every
+       other centered/max-width element (#bulkActionBar, .focus-container)
+       reads this same variable instead of repeating 480px, so they all
+       widen together instead of one getting left behind. */
+    --container-max-width: 480px;
+    /* Distance from the viewport's edge to .container's actual edge once
+       it's narrower than the viewport and centered via margin: 0 auto —
+       0 on mobile (container is full-bleed there), growing on anything
+       wider. Corner-anchored fixed elements (.fab, .settings-corner, etc.)
+       add their own inset on top of this instead of a bare viewport-edge
+       offset, so they track .container's edge as it widens on desktop
+       rather than drifting away from the content column into empty
+       margin. max(0px, ...) is what preserves today's exact mobile
+       position: when the viewport is narrower than --container-max-width,
+       (100vw - max-width) goes negative and clamps to 0, same as if this
+       variable didn't exist at all. */
+    --container-edge-gap: max(0px, calc((100vw - var(--container-max-width)) / 2));
+    /* .fab's own position/size, shared so .fab-guide-arrow (and .mic-fab,
+       positioned relative to it) can anchor off it via calc() instead of a
+       separately hand-tuned fixed position — stays correctly aimed if .fab
+       ever moves. */
     --fab-bottom: 1.5rem;
-    --fab-right: 1.5rem;
+    --fab-right: calc(var(--container-edge-gap) + 1.5rem);
     --fab-size: 56px;
     --radius-sm: 8px;
     --radius-md: 14px;
@@ -111,7 +129,7 @@
      while non-zero), and with overflow-y flipped to auto that flashed in a
      real, if tiny, scrollbar on every switch. overflow-y: hidden (not
      "visible" — see above) is what actually stops the flip. */
-  .container { max-width: 480px; margin: 0 auto; overflow-x: hidden; overflow-y: hidden; }
+  .container { max-width: var(--container-max-width); margin: 0 auto; overflow-x: hidden; overflow-y: hidden; }
 
   /* Shared press-feedback class for tappable rows/cards that don't already
      have their own bespoke :active rule (checkbox/date-nav/cat-pill/
@@ -136,9 +154,20 @@
      export/themes are hidden: they're unpositioned, so #focusView's fixed,
      opaque, higher-stacked overlay covers them the moment it's .visible,
      for the whole time you're on that tab, not just once a session starts. */
-  .settings-corner { position: fixed; top: 1.5rem; right: 1.5rem; z-index: 1; display: flex; gap: 0.5rem; }
+  .settings-corner { position: fixed; top: 1.5rem; right: calc(var(--container-edge-gap) + 1.5rem); z-index: 1; display: flex; gap: 0.5rem; }
   .app-header-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem; }
   .app-header-row .view-tabs { flex: 1; }
+
+  /* Desktop-width windows otherwise sit on a 480px column with a lot of
+     empty space either side — widen it once there's clearly room to
+     (900px is comfortably past a tablet in portrait), short of stretching
+     into an unreadably wide single-column layout. Every corner-anchored
+     fixed element and every other max-width: var(--container-max-width)
+     consumer picks this up automatically through the variable, no direct
+     changes needed here. */
+  @media (min-width: 900px) {
+    :root { --container-max-width: 760px; }
+  }
 
   /* Below ~520px the .container (max-width: 480px, centered) stops being
      inset from the viewport, so .settings-corner's viewport-fixed position
@@ -320,7 +349,7 @@
   .task-item.select-mode .checkbox { pointer-events: none; opacity: 0.4; }
   .task-item.select-mode.item-selected { border-left-color: var(--accent); background: var(--accent-bg); }
 
-  #bulkActionBar { position: fixed; left: 1rem; right: 1rem; bottom: 1rem; max-width: 480px; margin: 0 auto; display: flex; gap: 0.3rem; background: var(--bg-card); box-shadow: var(--shadow-elevated); border-radius: var(--radius-md); padding: 0.7rem 0.6rem; z-index: 8; }
+  #bulkActionBar { position: fixed; left: 1rem; right: 1rem; bottom: 1rem; max-width: var(--container-max-width); margin: 0 auto; display: flex; gap: 0.3rem; background: var(--bg-card); box-shadow: var(--shadow-elevated); border-radius: var(--radius-md); padding: 0.7rem 0.6rem; z-index: 8; }
   .bulk-action-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 0.3rem; background: none; border: none; color: var(--text-secondary); font-family: inherit; font-size: var(--text-xs); cursor: pointer; padding: 0.4rem 0.15rem; border-radius: var(--radius-sm); transition: background 0.15s, color 0.15s; }
   .bulk-action-btn:hover { background: var(--bg-page); color: var(--text-primary); }
   .bulk-action-btn .icon { width: 18px; height: 18px; color: inherit; }
@@ -359,7 +388,14 @@
     50% { transform: translateX(5px); opacity: 1; }
   }
 
-  .mic-fab { position: fixed; bottom: 1.5rem; right: 5.5rem; width: 56px; height: 56px; border-radius: 50%; background: var(--bg-card); border: none; color: var(--accent); font-size: var(--text-xl); cursor: pointer; box-shadow: var(--shadow-elevated); transition: transform 0.15s, color 0.3s ease; }
+  .mic-fab { position: fixed; bottom: 1.5rem; right: calc(var(--fab-right) + var(--fab-size) + 0.5rem); width: 56px; height: 56px; border-radius: 50%; background: var(--bg-card); border: none; color: var(--accent); font-size: var(--text-xl); cursor: pointer; box-shadow: var(--shadow-elevated); transition: transform 0.15s, color 0.3s ease; }
+  /* Third button in the same row as .fab/.mic-fab — was a hardcoded
+     right: 9.5rem inline style (1.5rem fab-right + 3.5rem fab-size + 0.5rem
+     gap, twice over); expressed the same way as .mic-fab's own right now,
+     via the shared variables, so it stays correctly spaced next to the
+     other two instead of drifting once --fab-right responds to a wider
+     desktop .container. */
+  #todayBtn { right: calc(var(--fab-right) + (var(--fab-size) * 2) + 1rem); }
   .mic-fab:active { transform: scale(0.94); }
   .mic-fab.listening { background: var(--danger); color: var(--on-accent); animation: pulse 1s infinite; }
   @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08); } }
@@ -615,7 +651,7 @@
     visibility: visible;
     transition: opacity 0.5s ease, visibility 0s linear 0s, background 0.5s ease, color 0.5s ease;
   }
-  .focus-container{ max-width:480px; margin:0 auto; position: relative; z-index: 1; padding-top: 5.5rem; }
+  .focus-container{ max-width: var(--container-max-width); margin:0 auto; position: relative; z-index: 1; padding-top: 5.5rem; }
   .focus-title{ font-size:var(--text-2xl); font-weight:700; letter-spacing:-0.035em; margin-top:1.25rem; margin-bottom:0.5rem; }
   .focus-subtitle{ color: var(--text-secondary); line-height:1.6; margin-bottom:2rem; font-size: var(--text-md); }
   .focus-session-grid{ display:grid; grid-template-columns:1fr 1fr; gap:0.7rem; margin-bottom:2rem; }
@@ -661,7 +697,7 @@
   .timer-ring-wrap { position: relative; display: inline-block; margin-bottom: 1.5rem; }
   .timer-time { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: var(--text-display); font-weight: 800; color: var(--text-primary); letter-spacing: -0.04em; }
   .timer-label { color: var(--text-secondary); font-size: var(--text-base); margin-bottom: 1rem; }
-  .timer-icon-controls { position: fixed; top: 1.5rem; right: 1.5rem; display: none; gap: 0.75rem; z-index: 6; }
+  .timer-icon-controls { position: fixed; top: 1.5rem; right: calc(var(--container-edge-gap) + 1.5rem); display: none; gap: 0.75rem; z-index: 6; }
   body.timer-active .timer-icon-controls { display: flex; }
   .timer-icon-btn { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); font-family: inherit; cursor: pointer; font-size: var(--text-lg); display: flex; align-items: center; justify-content: center; line-height: 1; padding: 0; }
   .timer-icon-btn:hover { color: var(--text-primary); border-color: var(--accent); }
