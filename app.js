@@ -3556,7 +3556,15 @@
         id: Date.now().toString() + Math.random().toString(36).slice(2, 7),
         order: maxOrder + 1,
         done: false,
-        completedDates: []
+        completedDates: [],
+        // "Track as a goal" is a deliberate, explicit action tied to a
+        // specific goal's own identity (name, why, plan) — duplicating an
+        // unrelated task copy shouldn't silently carry that over and
+        // create a second goal entry alongside the original.
+        isGoal: false,
+        why: "",
+        plan: "",
+        checkoffLabel: ""
       });
     });
     const n = toDuplicate.length;
