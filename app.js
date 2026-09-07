@@ -512,22 +512,36 @@
   // so an ongoing streak that's already the longest ever gets picked up
   // naturally as the run still in progress at the end of the scan.
   function computeLongestStreakEver(task) {
+    return computeLongestStreakRange(task).length;
+  }
+
+  // Same scan as above but also tracks the calendar dates bounding the
+  // longest run, for the Streak screen's Highlights section (e.g. "18 days,
+  // Mar 4 - Mar 22") — computeLongestStreakEver() just needs the number, so
+  // it delegates here rather than duplicating the walk.
+  function computeLongestStreakRange(task) {
     const today = toDateStr(new Date());
     const start = new Date(task.date + "T00:00:00");
     const end = new Date((task.endDate || today) + "T00:00:00");
-    let longest = 0, current = 0;
+    let longest = 0, current = 0, currentStart = null;
+    let longestStart = null, longestEnd = null;
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       if (!occursOn(task, d)) continue;
       const ds = toDateStr(d);
       if (ds > today) continue;
       if ((task.completedDates || []).includes(ds) || (task.frozenDates || []).includes(ds)) {
+        if (current === 0) currentStart = ds;
         current++;
-        if (current > longest) longest = current;
+        if (current > longest) {
+          longest = current;
+          longestStart = currentStart;
+          longestEnd = ds;
+        }
       } else {
         current = 0;
       }
     }
-    return longest;
+    return { length: longest, startDate: longestStart, endDate: longestEnd };
   }
 
   // Streak freeze economy (Snapchat-style), free tier: every 7 consecutive
@@ -570,7 +584,18 @@
       const isCompleted = completedDates.includes(ds);
       const isFrozen = existingFrozen.has(ds);
 
-      if (isCompleted || isFrozen) {
+      if (isCompleted) {
+        consecutive++;
+      } else if (isFrozen) {
+        // Already frozen by an earlier call to this function — replay must
+        // debit the bank for it exactly like the original spend did.
+        // Treating it as a free pass here (the way a completed day is) would
+        // let a freeze that's already been spent look unspent again on the
+        // next replay, refilling the bank for free and letting it consume an
+        // extra day further down the gap — one more each time this function
+        // is re-run (every app reload), since it's a pure re-simulation with
+        // no other record of which bank credit paid for which frozen day.
+        freezesBanked = Math.max(0, freezesBanked - 1);
         consecutive++;
       } else if (freezesBanked > 0) {
         newlyFrozen.push(ds);
@@ -1719,6 +1744,39 @@
       // subject the rest of this screen is already built around.
       const available = bestGoal ? getFreezesAvailable(bestGoal) : 0;
       freezeEl.textContent = `❄ ${available} freeze${available === 1 ? "" : "s"} available`;
+    }
+
+    const highlightsSection = document.getElementById("streakHighlightsSection");
+    const highlightsBody = document.getElementById("streakHighlightsBody");
+    highlightsBody.innerHTML = "";
+    if (bestGoal) {
+      const fmt = ds => new Date(ds + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const currentStreakStart = getCurrentStreakDates(bestGoal)[0];
+      const longestRange = computeLongestStreakRange(bestGoal);
+      const totalFreezesUsed = goalTasks.reduce((sum, t) => sum + (t.frozenDates || []).length, 0);
+
+      // A brand-new account's longest-ever run IS its current one and no
+      // freeze has ever been used — showing those alongside the current
+      // streak would just repeat the same number and a zero, so only the
+      // start date earns a line.
+      const hasHistoryBeyondCurrent = longestRange.length > bestStreak || totalFreezesUsed > 0;
+
+      const lines = [];
+      if (hasHistoryBeyondCurrent) {
+        lines.push(`Longest streak: ${longestRange.length} day${longestRange.length === 1 ? "" : "s"}, ${fmt(longestRange.startDate)} - ${fmt(longestRange.endDate)}`);
+        lines.push(`Freezes used: ${totalFreezesUsed} all-time`);
+      }
+      lines.push(`Current streak started: ${fmt(currentStreakStart)}`);
+
+      lines.forEach(line => {
+        const row = document.createElement("div");
+        row.className = "settings-account-meta";
+        row.textContent = line;
+        highlightsBody.appendChild(row);
+      });
+      highlightsSection.style.display = "";
+    } else {
+      highlightsSection.style.display = "none";
     }
 
     openModal(streakOverlay);
