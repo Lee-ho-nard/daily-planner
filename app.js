@@ -3032,6 +3032,53 @@
     repeatExtra.classList.toggle("show", repeatSelect.value !== "none");
   });
 
+  // "Repeat this task" copies and "Track as a goal" are mutually exclusive
+  // — copies creates N independent one-off tasks by looping
+  // createTaskRecord() (see submitTaskForm() below), and it used to loop
+  // right over isGoal/why/plan/checkoffLabel too, silently creating N
+  // separate goal entries from one submission instead of one (or none).
+  // Rather than trying to merge N goal creations into one, each field
+  // simply disables the other: a goal's own recurrence (the Repeat select
+  // above) is the correct way to make a tracked goal repeat, so there's
+  // never a legitimate reason to want both at once. copiesRow is already
+  // hidden entirely in edit mode (openEditModal()), so this only ever
+  // matters during Add.
+  function syncGoalCopiesExclusivity() {
+    const copiesInput = document.getElementById("modalCopies");
+    const copiesRow = document.getElementById("copiesRow");
+    const copiesNote = document.getElementById("copiesNote");
+    const isGoalCheckbox = document.getElementById("modalIsGoal");
+    const goalCheckboxRow = document.getElementById("goalCheckboxRow");
+    const goalCopiesNote = document.getElementById("goalCopiesNote");
+    const DEFAULT_COPIES_NOTE = "Creates independent copies on save, e.g. 4 = 4 separate tasks (not recurring)";
+
+    const copies = parseInt(copiesInput.value) || 1;
+
+    if (isGoalCheckbox.checked) {
+      copiesInput.value = 1;
+      copiesInput.disabled = true;
+      copiesRow.style.opacity = "0.5";
+      copiesNote.textContent = "Goals use their own repeat schedule instead";
+      goalCopiesNote.style.display = "none";
+    } else if (copies > 1) {
+      isGoalCheckbox.disabled = true;
+      goalCheckboxRow.style.opacity = "0.5";
+      goalCopiesNote.style.display = "block";
+      copiesInput.disabled = false;
+      copiesRow.style.opacity = "1";
+      copiesNote.textContent = DEFAULT_COPIES_NOTE;
+    } else {
+      copiesInput.disabled = false;
+      copiesRow.style.opacity = "1";
+      copiesNote.textContent = DEFAULT_COPIES_NOTE;
+      isGoalCheckbox.disabled = false;
+      goalCheckboxRow.style.opacity = "1";
+      goalCopiesNote.style.display = "none";
+    }
+  }
+
+  document.getElementById("modalCopies").addEventListener("input", syncGoalCopiesExclusivity);
+
   document.getElementById("modalIsGoal").addEventListener("change", () => {
     const checked = document.getElementById("modalIsGoal").checked;
     document.getElementById("modalGoalFields").classList.toggle("show", checked);
@@ -3042,6 +3089,7 @@
     if (checked && !goalNameInput.value.trim()) {
       goalNameInput.value = document.getElementById("modalName").value.trim();
     }
+    syncGoalCopiesExclusivity();
   });
 
   // --- Recent task-name quick-add suggestions ---
@@ -3217,6 +3265,7 @@
     buildWeekdayPicker();
     document.getElementById("copiesRow").style.display = "block";
     document.getElementById("modalCopies").value = 1;
+    syncGoalCopiesExclusivity();
     renderTaskNameSuggestions();
     openModal(overlay);
     setTimeout(() => document.getElementById("modalName").focus(), 50);
@@ -3255,6 +3304,7 @@
     buildWeekdayPicker();
     document.getElementById("copiesRow").style.display = "block";
     document.getElementById("modalCopies").value = 1;
+    syncGoalCopiesExclusivity();
 
     const fab = document.getElementById("openAdd");
     const modal = overlay.querySelector(".modal");

@@ -364,7 +364,7 @@
     <div id="copiesRow">
       <label>Repeat this task</label>
       <input type="number" id="modalCopies" min="1" max="10" value="1">
-      <div style="font-size:var(--text-xs);color:var(--text-muted);margin-top:0.3rem;">Creates independent copies on save, e.g. 4 = 4 separate tasks (not recurring)</div>
+      <div id="copiesNote" style="font-size:var(--text-xs);color:var(--text-muted);margin-top:0.3rem;">Creates independent copies on save, e.g. 4 = 4 separate tasks (not recurring)</div>
     </div>
 
     <label>Repeat</label>
@@ -382,10 +382,11 @@
       <label>End date (optional)</label>
       <input type="date" id="modalEndDate">
 
-      <div class="goal-checkbox-row">
+      <div class="goal-checkbox-row" id="goalCheckboxRow">
         <input type="checkbox" id="modalIsGoal">
         <label for="modalIsGoal">Track as a goal</label>
       </div>
+      <div id="goalCopiesNote" style="display:none;font-size:var(--text-xs);color:var(--text-muted);margin-top:0.3rem;">Only available for a single task — set "Repeat this task" back to 1 to track it as a goal</div>
 
       <div class="repeat-extra" id="modalGoalFields">
         <label>Goal name</label>
