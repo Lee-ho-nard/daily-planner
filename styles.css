@@ -161,28 +161,49 @@
   /* Desktop-width windows otherwise sit on a 480px column with a lot of
      empty space either side — widen it once there's clearly room to
      (900px is comfortably past a tablet in portrait), short of stretching
-     into an unreadably wide single-column layout. Every corner-anchored
-     fixed element and every other max-width: var(--container-max-width)
-     consumer picks this up automatically through the variable, no direct
-     changes needed here. */
+     into an unreadably wide single-column layout. 760px read as stretched
+     in practice; 620px fills noticeably more than 480px without losing the
+     single-column app's proportions. Every corner-anchored fixed element
+     and every other max-width: var(--container-max-width) consumer picks
+     this up automatically through the variable, no direct changes needed
+     here. */
   @media (min-width: 900px) {
-    :root { --container-max-width: 760px; }
+    :root { --container-max-width: 620px; }
   }
 
-  /* Below ~520px the .container (max-width: 480px, centered) stops being
-     inset from the viewport, so .settings-corner's viewport-fixed position
-     lands directly over .view-tabs' right edge instead of past it. Since
-     .view-tabs sits at z-index 6 (needed to clear other content) and
-     .settings-corner deliberately stays low (z-index 1, so #focusView's
-     overlay can cover it during Deep Work — see below), raising
-     .settings-corner's z-index isn't an option; reserving room on the row
-     instead keeps the tabs from ever extending underneath the fixed
-     buttons. Width below is two .cat-add buttons (34px each) plus the gap
-     between them, plus the icon row's own 1.5rem right offset plus a small
-     safety gap. */
-  @media (max-width: 520px) {
-    .app-header-row { padding-right: calc(34px + 34px + 0.5rem + 1.5rem + 1rem); }
-  }
+  /* Unconditional, not just a narrow-width fix — #themesBtn is the one
+     .app-header-row child this actually protects at every width, not just
+     below ~520px. .view-tabs (flex: 1) naturally stops short of
+     .container's true right edge once .container is inset from the
+     viewport, so it alone would clear .settings-corner above ~520px. But
+     #themesBtn sits after .view-tabs in the same row as a fixed-size
+     sibling, so it always lands at the row's/.container's true right edge
+     regardless of viewport width — including at the 900px+ desktop
+     breakpoint, where .container widens to 760px but .settings-corner
+     still tracks that same edge via --container-edge-gap. Since both this
+     reservation and .settings-corner's own footprint (icon widths, gaps,
+     offset) are fixed pixel quantities rather than viewport-relative ones,
+     the same 116px clears the corner icons at every width, not just small
+     ones. Since .view-tabs sits at z-index 6 (needed to clear other
+     content) and .settings-corner deliberately stays low (z-index 1, so
+     #focusView's overlay can cover it during Deep Work — see below),
+     raising .settings-corner's z-index isn't an option; reserving room on
+     the row instead keeps content from ever extending underneath the
+     fixed buttons. Width below is two .cat-add buttons (34px each) plus
+     the gap between them, plus the icon row's own 1.5rem right offset,
+     plus a small safety gap. */
+  .app-header-row { padding-right: calc(34px + 34px + 0.5rem + 1.5rem + 1rem); }
+  /* #themesBtn sits next to .view-tabs (flex: 1, i.e. flex-basis: 0%) in
+     the same row. With themesBtn left at its flex default (flex-shrink: 1,
+     flex-basis: auto), a flex-basis of 0 contributes zero weight to the
+     browser's shrink-distribution math — so on a narrow viewport where the
+     row doesn't have room for both, ALL of the shrinkage lands on
+     themesBtn instead of .view-tabs, squashing the 34px circle down into a
+     thin, non-circular sliver that no longer clears the reserved zone
+     above. flex-shrink: 0 keeps it a fixed 34px always, so .view-tabs (the
+     element actually meant to flex) absorbs the narrow-viewport squeeze
+     instead, same as .view-tabs already does at the 400px breakpoint. */
+  #themesBtn { flex-shrink: 0; }
   /* .view-tabs' 4 buttons don't shrink below their own text+padding
      floor — on a narrow phone (~375px) that floor was already tight
      against a single reserved corner button, and two buttons' worth of
