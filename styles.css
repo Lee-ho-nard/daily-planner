@@ -136,7 +136,7 @@
      export/themes are hidden: they're unpositioned, so #focusView's fixed,
      opaque, higher-stacked overlay covers them the moment it's .visible,
      for the whole time you're on that tab, not just once a session starts. */
-  .settings-corner { position: fixed; top: 1.5rem; right: 1.5rem; z-index: 1; }
+  .settings-corner { position: fixed; top: 1.5rem; right: 1.5rem; z-index: 1; display: flex; gap: 0.5rem; }
   .app-header-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem; }
   .app-header-row .view-tabs { flex: 1; }
 
@@ -147,11 +147,21 @@
      .settings-corner deliberately stays low (z-index 1, so #focusView's
      overlay can cover it during Deep Work — see below), raising
      .settings-corner's z-index isn't an option; reserving room on the row
-     instead keeps the tabs from ever extending underneath the fixed gear
-     button. Width below is .cat-add's 34px plus the icon's own 1.5rem
-     right offset plus a small gap. */
+     instead keeps the tabs from ever extending underneath the fixed
+     buttons. Width below is two .cat-add buttons (34px each) plus the gap
+     between them, plus the icon row's own 1.5rem right offset plus a small
+     safety gap. */
   @media (max-width: 520px) {
-    .app-header-row { padding-right: calc(34px + 1.5rem + 0.5rem); }
+    .app-header-row { padding-right: calc(34px + 34px + 0.5rem + 1.5rem + 1rem); }
+  }
+  /* .view-tabs' 4 buttons don't shrink below their own text+padding
+     floor — on a narrow phone (~375px) that floor was already tight
+     against a single reserved corner button, and two buttons' worth of
+     reserved space (above) no longer leaves room for it without this.
+     Horizontal-only reduction, vertical untouched, so tap targets stay
+     the same height. */
+  @media (max-width: 400px) {
+    .view-tab { padding: 0.55rem 0.3rem; }
   }
   .view-tabs { display: flex; gap: 0.4rem; background: var(--border); padding: 0.3rem; border-radius: var(--radius-md); position: relative; z-index: 6; }
   .view-tab { flex: 1; text-align: center; padding: 0.55rem; border-radius: 10px; border: 1px solid transparent; background: transparent; cursor: pointer; font-family: inherit; font-size: var(--text-sm); font-weight: 500; color: var(--text-secondary); transition: background 300ms ease, color 300ms ease, box-shadow 300ms ease, border-color 300ms ease; }
@@ -272,6 +282,23 @@
      only the text darken/lighten treatment differs per mode. */
   .status-badge.frozen { background: color-mix(in srgb, #6FA8DC 22%, transparent); color: color-mix(in srgb, #6FA8DC 52%, black); }
   :root[data-theme="dark"] .status-badge.frozen { color: color-mix(in srgb, #6FA8DC 60%, white); }
+  /* Streak screen's "today is complete" state — same tinted-pill treatment,
+     accent (the app's own green) rather than a --success token since none
+     exists and accent already reads as "good" everywhere else (progress
+     bar fill, done checkboxes). */
+  .status-badge.streak-safe { background: color-mix(in srgb, var(--accent) 22%, transparent); color: color-mix(in srgb, var(--accent) 52%, black); }
+  :root[data-theme="dark"] .status-badge.streak-safe { color: color-mix(in srgb, var(--accent) 60%, white); }
+
+  /* Flame button's longest-ever-streak badge — small filled circle at the
+     icon's corner, same shadow token as the button itself sits on. Sized
+     with min-width + horizontal padding (not a fixed width) so it stays a
+     circle for single digits and grows into a pill for larger streaks
+     without clipping. */
+  .streak-flame-btn { position: relative; }
+  .streak-flame-badge:empty { display: none; }
+  .streak-flame-badge { position: absolute; top: -3px; right: -3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; box-shadow: var(--shadow-card); }
+
+  .streak-screen-headline { font-size: var(--text-xl); font-weight: 700; letter-spacing: -0.03em; margin-top: 0.25rem; }
 
   .delete-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: var(--text-lg); transition: color 0.15s; }
   .delete-btn:hover { color: var(--danger); }

@@ -506,6 +506,30 @@
     return getCurrentStreakDates(task).length;
   }
 
+  // Longest run this task has EVER had (completed or frozen, same
+  // definition as the current-streak walk above), not just the current
+  // unbroken one — scans the task's full scheduled history through today,
+  // so an ongoing streak that's already the longest ever gets picked up
+  // naturally as the run still in progress at the end of the scan.
+  function computeLongestStreakEver(task) {
+    const today = toDateStr(new Date());
+    const start = new Date(task.date + "T00:00:00");
+    const end = new Date((task.endDate || today) + "T00:00:00");
+    let longest = 0, current = 0;
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      if (!occursOn(task, d)) continue;
+      const ds = toDateStr(d);
+      if (ds > today) continue;
+      if ((task.completedDates || []).includes(ds) || (task.frozenDates || []).includes(ds)) {
+        current++;
+        if (current > longest) longest = current;
+      } else {
+        current = 0;
+      }
+    }
+    return longest;
+  }
+
   // Streak freeze economy (Snapchat-style), free tier: every 7 consecutive
   // streak days (completed or already-frozen) banks 1 freeze, capped at a
   // stockpile of 1 (Streak Insurance reserves the higher, 2-freeze tier for
@@ -582,6 +606,15 @@
   function currentYearMonth() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  // Premium's shared pool refills on the 1st of next month (see
+  // ensurePremiumFreezeRefill() above) — the Streak screen's freeze status
+  // quotes this date so "refills [date]" always matches what actually happens.
+  function formatNextFreezeRefillDate() {
+    const now = new Date();
+    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    return next.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   }
 
   function getStreakFreezeState() {
@@ -689,8 +722,18 @@
   // the range, a no-op clamp) and Weekly Recap's week-scoped goal-progress
   // line, so "what counts as a scheduled day" never drifts between the two.
   function computeGoalScheduledDays(goal, rangeStart, rangeEnd) {
+    // Every caller so far has only ever passed real Goals here, which
+    // always have an endDate set by the creation form's "Goal length"
+    // field — so this fallback was never actually exercised as "no
+    // endDate" in practice. The Streak screen is the first caller to pass
+    // an open-ended plain recurring task (isGoal: false, endDate: null)
+    // through this same dot-row logic, which needs "ongoing through
+    // today" here, not "ends the day it starts" — the same today fallback
+    // getCurrentStreakDates()/computeLongestStreakEver()/etc. already use
+    // for task.endDate elsewhere.
+    const today = toDateStr(new Date());
     const goalStart = new Date(goal.date + "T00:00:00");
-    const goalEnd = new Date((goal.endDate || goal.date) + "T00:00:00");
+    const goalEnd = new Date((goal.endDate || today) + "T00:00:00");
     const clampStart = new Date(Math.max(goalStart, new Date(rangeStart + "T00:00:00")));
     const clampEnd = new Date(Math.min(goalEnd, new Date(rangeEnd + "T00:00:00")));
     const scheduledDays = [];
@@ -1404,6 +1447,51 @@
   document.getElementById("tabFocus").addEventListener("click", () => switchView("focus"));
 
   // --- Goals ---
+
+  // Shared by each goal card's own row (renderGoals(), which already has
+  // scheduledDays/today computed and passes them through to avoid
+  // recomputing) and the Streak screen (openStreakModal(), which has
+  // neither and lets this derive them).
+  function buildGoalDotsRow(goal, scheduledDays, today) {
+    today = today || toDateStr(new Date());
+    scheduledDays = scheduledDays || computeGoalScheduledDays(goal, goal.date, goal.endDate || today);
+    const dots = document.createElement("div");
+    dots.className = "goal-dots";
+    let consecutiveDone = 0;
+    scheduledDays.forEach((ds, idx) => {
+      const dot = document.createElement("div");
+      const isDone = (goal.completedDates || []).includes(ds);
+      // A frozen day must never look like a completed one — see the
+      // .goal-dot.frozen rule in styles.css for the distinct treatment.
+      const isFrozen = !isDone && (goal.frozenDates || []).includes(ds);
+      const isFuture = ds > today;
+      dot.className = "goal-dot" + (isDone ? " done" : "") + (isFrozen ? " frozen" : "") + (isFuture && !isDone && !isFrozen ? " future" : "");
+      if (isDone || isFrozen) {
+        if (isDone) dot.style.background = categoryColor(goal.category);
+        consecutiveDone++;
+        if (consecutiveDone % 7 === 0) dot.classList.add("milestone");
+      } else {
+        consecutiveDone = 0;
+      }
+      dot.title = isFrozen ? `${ds}: streak freeze used` : ds;
+      // Spring drives the entrance scale/opacity directly; keep CSS only
+      // for background (dots are discarded and rebuilt on every render, so
+      // there's no need to restore the dropped transform/opacity here).
+      dot.style.transition = "background 200ms";
+      dot.style.opacity = "0";
+      dot.style.transform = "scale(0.7)";
+      dots.appendChild(dot);
+
+      const targetOpacity = (isFuture && !isDone) ? 0.4 : 1;
+      const delay = Math.min(idx * 12, 300);
+      setTimeout(() => {
+        spring(0, targetOpacity, {}, (v) => { dot.style.opacity = v; });
+        spring(0.7, 1, {}, (v) => { dot.style.transform = `scale(${v})`; });
+      }, delay);
+    });
+    return dots;
+  }
+
   function renderGoalsIdentityCard(goalTasks) {
     const card = document.getElementById("goalsIdentityCard");
     const identity = getUserIdentity();
@@ -1538,39 +1626,12 @@
         sub.appendChild(viewLink);
       }
 
-      const dots = document.createElement("div");
-      dots.className = "goal-dots";
-      let consecutiveDone = 0;
-      scheduledDays.forEach((ds, idx) => {
-        const dot = document.createElement("div");
-        const isDone = (goal.completedDates || []).includes(ds);
-        // A frozen day must never look like a completed one — see the
-        // .goal-dot.frozen rule in styles.css for the distinct treatment.
-        const isFrozen = !isDone && (goal.frozenDates || []).includes(ds);
-        const isFuture = ds > today;
-        dot.className = "goal-dot" + (isDone ? " done" : "") + (isFrozen ? " frozen" : "") + (isFuture && !isDone && !isFrozen ? " future" : "");
-        if (isDone || isFrozen) {
-          if (isDone) dot.style.background = categoryColor(goal.category);
-          consecutiveDone++;
-          if (consecutiveDone % 7 === 0) dot.classList.add("milestone");
-        } else {
-          consecutiveDone = 0;
-        }
-        dot.title = isFrozen ? `${ds}: streak freeze used` : ds;
-        // Spring drives the entrance scale/opacity directly; keep CSS only
-        // for background (dots are discarded and rebuilt on every render, so
-        // there's no need to restore the dropped transform/opacity here).
-        dot.style.transition = "background 200ms";
-        dot.style.opacity = "0";
-        dot.style.transform = "scale(0.7)";
-        dots.appendChild(dot);
-
-        const targetOpacity = (isFuture && !isDone) ? 0.4 : 1;
-        const delay = Math.min(idx * 12, 300);
-        setTimeout(() => {
-          spring(0, targetOpacity, {}, (v) => { dot.style.opacity = v; });
-          spring(0.7, 1, {}, (v) => { dot.style.transform = `scale(${v})`; });
-        }, delay);
+      const dots = buildGoalDotsRow(goal, scheduledDays, today);
+      dots.style.cursor = "pointer";
+      dots.title = "View streak";
+      dots.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openStreakModal();
       });
 
       const progress = document.createElement("div");
@@ -1606,7 +1667,67 @@
     lucide.createIcons();
   }
 
-   
+  // --- Streak screen ---
+  // A single "current streak" headline reuses the same best-goal selection
+  // getMaxActiveStreak()/renderGoalsIdentityCard() already use elsewhere
+  // (the streak-risk notification quotes this exact number) — there's no
+  // separate app-wide streak concept to build, just this screen composing
+  // the winning task's own data.
+  const streakOverlay = document.getElementById("streakModalOverlay");
+  // Same drag-to-dismiss as the other simple modals — enableModalDragDismiss()
+  // is written against a generic overlay/modal pair, so this is just
+  // another call, no changes to the function itself.
+  enableModalDragDismiss(streakOverlay);
+
+  function openStreakModal() {
+    populateNotificationSettingsUI();
+
+    const goalTasks = tasks.filter(t => t.recurrence && t.recurrence.type !== "none");
+    let bestStreak = 0, bestGoal = null;
+    goalTasks.forEach(t => {
+      const s = computeStreak(t);
+      if (s > bestStreak) { bestStreak = s; bestGoal = t; }
+    });
+
+    document.getElementById("streakScreenHeadline").textContent =
+      bestStreak > 0 ? `${bestStreak} day${bestStreak === 1 ? "" : "s"} streak` : "No streak yet";
+
+    const statusEl = document.getElementById("streakScreenStatus");
+    if (bestStreak > 0) {
+      const safe = hasCompletedAnyTaskToday();
+      statusEl.textContent = safe ? "Today is complete" : "At risk — complete a task today to keep your streak";
+      statusEl.className = "status-badge " + (safe ? "streak-safe" : "overdue");
+      statusEl.style.display = "";
+    } else {
+      statusEl.textContent = "";
+      statusEl.style.display = "none";
+    }
+
+    const dotsWrap = document.getElementById("streakScreenDots");
+    dotsWrap.innerHTML = "";
+    dotsWrap.style.display = bestGoal ? "block" : "none";
+    if (bestGoal) dotsWrap.appendChild(buildGoalDotsRow(bestGoal));
+
+    const freezeEl = document.getElementById("streakScreenFreeze");
+    if (isPremiumUser()) {
+      const remaining = getStreakFreezeState().remaining;
+      freezeEl.textContent = `❄ ${remaining} freeze${remaining === 1 ? "" : "s"} available, refills ${formatNextFreezeRefillDate()}`;
+    } else {
+      // Free tier's bank is per-task, not one account-wide number (see
+      // updateFreezeStatusDisplay()'s own comment in auth-ui.js) — tied to
+      // whichever goal is driving the headline streak above, the same
+      // subject the rest of this screen is already built around.
+      const available = bestGoal ? getFreezesAvailable(bestGoal) : 0;
+      freezeEl.textContent = `❄ ${available} freeze${available === 1 ? "" : "s"} available`;
+    }
+
+    openModal(streakOverlay);
+    lucide.createIcons();
+  }
+
+  document.getElementById("streakBtn").addEventListener("click", openStreakModal);
+  document.getElementById("streakModalCloseBtn").addEventListener("click", () => closeModal(streakOverlay));
+  streakOverlay.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(streakOverlay); });
 
   function renderDate() {
     const today = new Date(); today.setHours(0,0,0,0);
@@ -2282,6 +2403,7 @@
 
   function renderAll() {
     syncAllStreakFreezes();
+    renderStreakFlameBadge();
     renderDate();
     renderCategoryTabs();
     renderTasks();
@@ -6255,6 +6377,27 @@ let currentRange = "week";
     return max;
   }
 
+  // All-time best across every recurring task — the flame button's badge
+  // number. Recomputed on every renderAll() the same way getMaxActiveStreak()
+  // is (no separate cache), consistent with how the rest of this streak
+  // system already treats a full task scan as cheap enough to redo per render.
+  function getMaxLongestStreakEver() {
+    let max = 0;
+    tasks.forEach(t => {
+      if (!t.recurrence || t.recurrence.type === "none") return;
+      const s = computeLongestStreakEver(t);
+      if (s > max) max = s;
+    });
+    return max;
+  }
+
+  function renderStreakFlameBadge() {
+    const badge = document.getElementById("streakFlameBadge");
+    if (!badge) return;
+    const max = getMaxLongestStreakEver();
+    badge.textContent = max > 0 ? String(max) : "";
+  }
+
   // No plugin hook exists to evaluate "is this still true" right at fire
   // time, so this re-derives the decision and fully cancels+reschedules
   // every time it's called (same as reschedulePreTaskNotifications()) —
@@ -7750,6 +7893,11 @@ let currentRange = "week";
     // live state to keep in sync while it's already open.
     const signedIn = !!(window.firestoreBridge && window.firestoreBridge.isSignedIn());
     document.getElementById("notifSettingsSection").style.display = signedIn ? "" : "none";
+    // Streak-risk's toggle+time input now live on the Streak screen instead
+    // of here (moved, not duplicated — same element ids, same
+    // NOTIF_FIELD_IDS entry below), but that screen has no signed-out gate
+    // of its own, so this same section-hiding needs to cover its wrapper too.
+    document.getElementById("streakNotifSection").style.display = signedIn ? "" : "none";
     if (!signedIn) return;
 
     const prefs = getNotificationPrefs();
@@ -7764,6 +7912,8 @@ let currentRange = "week";
     const native = capacitorAvailable();
     document.getElementById("notifNativeOnlyNote").style.display = native ? "none" : "block";
     document.getElementById("notifControlsWrap").style.opacity = native ? "1" : "0.5";
+    document.getElementById("streakNotifNativeOnlyNote").style.display = native ? "none" : "block";
+    document.getElementById("streakNotifControlsWrap").style.opacity = native ? "1" : "0.5";
     NOTIF_FIELD_IDS.forEach(id => { document.getElementById(id).disabled = !native; });
   }
   function readNotificationSettingsUIIntoPrefs() {
