@@ -1,6 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>
+  // See index.html's own comment — same redirect, same reason (Firebase
+  // can't disable one of its two default domains independently, and its
+  // hosting redirects only match on path, not hostname).
+  if (location.hostname === "flit-96c38.web.app") {
+    location.replace("https://flit-96c38.firebaseapp.com" + location.pathname + location.search + location.hash);
+  }
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Flit</title>

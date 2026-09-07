@@ -1,6 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>
+  // flit-96c38.web.app and flit-96c38.firebaseapp.com are both Firebase
+  // Hosting's auto-provisioned default domains for this project, serving
+  // identical content -- Firebase has no way to disable/remove just one of
+  // them (confirmed: only the whole Hosting site is deletable, which would
+  // take .firebaseapp.com down too, and firebase.json's redirect/rewrite
+  // rules match on URL path only, with no hostname-matching field, so a
+  // host-conditional redirect can't be expressed there either). Google
+  // sign-in has a confirmed tracking-prevention/authDomain mismatch bug on
+  // .web.app specifically, so this is the only place left to redirect from.
+  // First line in <head>, before any other resource request, to leave as
+  // little as possible loaded before the navigation actually happens.
+  if (location.hostname === "flit-96c38.web.app") {
+    location.replace("https://flit-96c38.firebaseapp.com" + location.pathname + location.search + location.hash);
+  }
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Flit</title>
