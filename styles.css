@@ -97,19 +97,6 @@
      one — same fix as .container below, for the same reason. */
   body { overflow-y: hidden; }
   body { font-family: var(--font-family); font-weight: 400; background: var(--bg-page); color: var(--text-primary); padding: 1.75rem 1.25rem; transition: background 0.5s ease, color 0.5s ease; -webkit-font-smoothing: antialiased; }
-  /* Softens the hard seam between the OS/PWA-chrome status bar (tinted via
-     <meta name="theme-color">, kept in sync with --accent by
-     updateThemeColorMeta() in app.js) and this page's own background right
-     below it. The status bar itself is flat-colored with no way to blend
-     it from here, so this fakes the transition from the content side:  a
-     short fade from --accent down to fully transparent, fixed to the very
-     top of the viewport (which is already exactly where the status bar's
-     bottom edge sits, since there's no viewport-fit=cover pulling content
-     underneath it). Pure CSS color, no JS involved — it rides --accent's
-     existing theme/dark-mode cascade for free. pointer-events: none and a
-     z-index above every modal keep it a purely visual overlay that never
-     blocks interaction, matching how the real status bar behaves. */
-  .theme-color-fade { position: fixed; top: 0; left: 0; right: 0; height: 2.25rem; background: linear-gradient(to bottom, var(--accent), transparent); pointer-events: none; z-index: 200; }
   button, input, select, textarea { font-family: inherit; }
   /* Without this, Chrome on Windows can apply its own native Fluent button
      chrome on top of custom styling in certain interaction states (hover
