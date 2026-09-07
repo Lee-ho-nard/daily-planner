@@ -698,6 +698,35 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="plansInfoModalOverlay">
+  <div class="modal">
+    <h3>What's included</h3>
+    <p style="font-size:var(--text-base);color:var(--text-secondary);line-height:1.5;margin-top:0.25rem;">Every plan gets the same four things — there's no feature tier to pick between, just whether your trial is active.</p>
+    <div style="display:flex;flex-direction:column;gap:0.85rem;margin-top:1.25rem;">
+      <div style="background:var(--bg-page-alt);padding:1rem;border-radius:var(--radius-sm);">
+        <div style="font-size:var(--text-base);font-weight:500;color:var(--text-primary);">Charts</div>
+        <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:0.25rem;">See how your time and effort break down by category, filterable by day, week, or month.</div>
+      </div>
+      <div style="background:var(--bg-page-alt);padding:1rem;border-radius:var(--radius-sm);">
+        <div style="font-size:var(--text-base);font-weight:500;color:var(--text-primary);">Deep Work</div>
+        <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:0.25rem;">Full session history, custom timer presets, and space for notes on every session.</div>
+      </div>
+      <div style="background:var(--bg-page-alt);padding:1rem;border-radius:var(--radius-sm);">
+        <div style="font-size:var(--text-base);font-weight:500;color:var(--text-primary);">Insights</div>
+        <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:0.25rem;">Specific, data-backed findings about your patterns — based on your actual days, not generic tips.</div>
+      </div>
+      <div style="background:var(--bg-page-alt);padding:1rem;border-radius:var(--radius-sm);">
+        <div style="font-size:var(--text-base);font-weight:500;color:var(--text-primary);">Weekly Recap</div>
+        <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:0.25rem;">An automatic summary of your week, delivered every week.</div>
+      </div>
+    </div>
+    <p style="font-size:var(--text-sm);color:var(--text-secondary);line-height:1.5;margin-top:1.25rem;">Pricing isn't finalized yet. For now, everything above is included free for your first 7 days.</p>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="plansInfoCloseBtn">Close</button>
+    </div>
+  </div>
+</div>
+
 <script src="app.js"></script>
 <script type="module" src="firebase-init.js"></script>
 <script type="module" src="auth-ui.js"></script>

@@ -17,6 +17,23 @@
   const PALETTE = ["#B8D8BA", "#F4C7A8", "#A8C8E8", "#D4B8E8", "#F4D48A", "#9EDAD1", "#F0B8D4", "#C5C9D4", "#F4B8AA", "#C7BFD4", "#B8E0C8", "#E8CB8A", "#A8B8E8", "#E0C9A6", "#F0C2CE", "#C3D4B0"];
   const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
 
+  // Soft starting-point suggestion for a new category's color, based on a
+  // simple keyword match against its name — never a lock-in, the user can
+  // still click any other swatch at zero cost. Kept small and sensible
+  // rather than trying to cover every possible category name.
+  const CATEGORY_COLOR_KEYWORDS = [
+    { keywords: ["health", "fitness", "gym", "sport"], color: PALETTE[0] },
+    { keywords: ["work", "school", "study", "job"], color: PALETTE[2] },
+    { keywords: ["personal", "life"], color: PALETTE[3] },
+    { keywords: ["building", "business", "startup"], color: PALETTE[1] }
+  ];
+  function suggestCategoryColor(name) {
+    const lower = name.trim().toLowerCase();
+    if (!lower) return null;
+    const match = CATEGORY_COLOR_KEYWORDS.find(entry => entry.keywords.some(kw => lower.includes(kw)));
+    return match ? match.color : null;
+  }
+
   // Trial: 7 days from the Day 1 seal (first "End Day" completion), not
   // from account creation or first app load — matches roadmap #7 ("trial
   // placed after Day 1 seal, not before onboarding"). Works whether or not
@@ -1704,6 +1721,10 @@
   // is written against a generic overlay/modal pair, so this is just
   // another call, no changes to the function itself.
   enableModalDragDismiss(streakOverlay);
+
+  const plansInfoOverlay = document.getElementById("plansInfoModalOverlay");
+  enableModalDragDismiss(plansInfoOverlay);
+  document.getElementById("plansInfoCloseBtn").addEventListener("click", () => closeModal(plansInfoOverlay));
 
   function openStreakModal() {
     populateNotificationSettingsUI();
@@ -3760,11 +3781,22 @@
   });
 
   function openCategoryModal() {
-    document.getElementById("catName").value = "";
+    const nameInput = document.getElementById("catName");
+    const swatchWrap = document.getElementById("colorSwatches");
+    nameInput.value = "";
     selectedColor = PALETTE[0];
-    buildColorSwatches(document.getElementById("colorSwatches"), selectedColor, (color) => { selectedColor = color; });
+    let colorManuallyPicked = false;
+    buildColorSwatches(swatchWrap, selectedColor, (color) => { selectedColor = color; colorManuallyPicked = true; });
     openModal(catOverlay);
-    setTimeout(() => document.getElementById("catName").focus(), 50);
+    setTimeout(() => nameInput.focus(), 50);
+
+    nameInput.oninput = () => {
+      if (colorManuallyPicked) return;
+      const nextColor = suggestCategoryColor(nameInput.value) || PALETTE[0];
+      if (nextColor === selectedColor) return;
+      selectedColor = nextColor;
+      buildColorSwatches(swatchWrap, selectedColor, (color) => { selectedColor = color; colorManuallyPicked = true; });
+    };
   }
 
   document.getElementById("catCancel").addEventListener("click", () => closeModal(catOverlay));
@@ -5192,12 +5224,15 @@ let currentRange = "week";
     return trialDaysRemaining() > 0;
   }
 
-  // Called from the Day 1 seal moment (see reflSaveBtn's handler below) —
-  // a no-op if a trial has already been started, so sealing every
-  // subsequent day doesn't reset the clock. Safe to call unconditionally
-  // on every seal rather than needing to separately track "is this
-  // actually Day 1".
-  function startTrialOnDayOneSeal() {
+  // Two call sites: the Day 1 seal moment (see reflSaveBtn's handler
+  // below) and onboarding's "Start my free trial" button (step 13), which
+  // is meant to place the user into trial/premium mode immediately on
+  // click, not wait for a Day 1 seal that may be a day away. A no-op if a
+  // trial has already been started, so sealing every subsequent day (or
+  // this function running more than once for any other reason) never
+  // resets the clock — safe to call unconditionally rather than needing to
+  // separately track "is this actually the first time."
+  function startTrialIfNeeded() {
     if (getTrialStartDate()) return;
     const now = new Date();
     if (window.firestoreBridge && window.firestoreBridge.isSignedIn() && window.firestoreBridge.setTrialStartDate) {
@@ -6168,7 +6203,7 @@ let currentRange = "week";
       triggerHaptic();
       lockedDays.push(dateStr);
       saveLockedDays();
-      startTrialOnDayOneSeal();
+      startTrialIfNeeded();
       reflections[dateStr] = { wentWell, improve };
       saveReflections(dateStr);
       document.getElementById("reflWentWell").value = "";
@@ -7832,13 +7867,24 @@ let currentRange = "week";
           <button id="obLearnMorePlans" type="button" style="width:100%;padding:0.9rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:none;color:var(--accent);font-size:var(--text-md);font-weight:600;cursor:pointer;font-family:inherit;">Learn more about plans</button>
         </div>
       `;
-      // Primary button: no payment-card collection exists yet (Cloud
-      // Function integration is explicitly out of scope here), so this
-      // still just completes onboarding into the trial exactly like the
-      // old "Continue" button did — a placeholder until that's built. The
-      // screen's own copy ("Card required to continue after Day 7") is not
-      // yet enforced anywhere.
-      document.getElementById("obContinue").addEventListener("click", () => completeOnboarding());
+      // Primary button: actually starts the trial immediately on click
+      // (not deferred to the Day 1 seal, unlike the general trial design —
+      // this specific button's whole promise is "start my trial now"), then
+      // completes onboarding same as before. No payment-card collection
+      // exists yet (Cloud Function integration is explicitly out of scope
+      // here) — the screen's own copy ("Card required to continue after
+      // Day 7") is not yet enforced anywhere.
+      document.getElementById("obContinue").addEventListener("click", () => {
+        startTrialIfNeeded();
+        completeOnboarding();
+      });
+      // Secondary button: same four features as this screen's own grid,
+      // just with more detail — no separate pricing tiers exist yet (see
+      // this modal's own copy), so this is purely an expanded-detail view,
+      // not a plan picker.
+      document.getElementById("obLearnMorePlans").addEventListener("click", () => {
+        openModal(document.getElementById("plansInfoModalOverlay"));
+      });
       // Secondary button: plans-comparison page/modal is explicitly scoped
       // separately (per spec) — intentionally has no handler yet.
     }
@@ -8053,29 +8099,36 @@ let currentRange = "week";
     // existence is a more reliable "this is a real signed-in account"
     // signal than waiting for categories specifically to be non-empty.
     if (wasOnboarding && (categories.length > 0 || account)) {
-      // Signing up on the account-creation step (12) migrates this
-      // session's local data in, landing right here with categories now
-      // populated. Let step 12's own logic decide whether that means
-      // advancing to the trial-explainer step (13) or showing the
-      // verification screen first, instead of the general case below,
-      // which would otherwise skip past both.
-      if (currentOnboardingStep === 12) {
-        advanceOnboardingAfterAccountStep();
+      // The authoritative "is onboarding actually done" signal is
+      // localStorage's onboardingComplete flag, set only by
+      // completeOnboarding() itself (the step-13 button's own handler) —
+      // NOT currentOnboardingStep, which lives in memory only and resets
+      // to 1 on every fresh page load. That distinction is exactly what
+      // broke the emailed-verification-link path: clicking "I've verified
+      // my email" inside the app advances currentOnboardingStep to 13
+      // in-place, no reload, so it worked. But clicking the emailed link's
+      // "Open Flit" button is a real navigation (auth-action.html back to
+      // index.html) — a fresh page load where currentOnboardingStep is
+      // back to 1 despite the account being fully verified and mid-
+      // onboarding, which used to make the old currentOnboardingStep-based
+      // check here skip straight past the trial explainer into the
+      // planner. Routing through advanceOnboardingAfterAccountStep()
+      // instead (the exact function the in-app button already calls) re-
+      // derives the correct destination from real Firebase/Firestore
+      // state regardless of what currentOnboardingStep happens to be.
+      if (localStorage.getItem("onboardingComplete") !== "true") {
+        // Skip only if already sitting on step 13 — Firestore's onSnapshot
+        // fires once per collection, so several firestore-data-changed
+        // events land in quick succession right after a fresh sign-up,
+        // each re-running this function; re-advancing every time would
+        // re-trigger step 13's fade transition repeatedly for no reason.
+        if (currentOnboardingStep !== 13) {
+          advanceOnboardingAfterAccountStep();
+        }
       } else if (currentOnboardingStep !== 13) {
-        // Step 13 (trial explainer) is deliberately excluded from the
-        // "onboarding must be over, exit to planner" case below — it's a
-        // real, interactive final screen a Google signup can auto-advance
-        // to from step 12 above (no email-verification gate, unlike email
-        // signups), and Firestore's onSnapshot fires once per collection —
-        // several firestore-data-changed events land in quick succession
-        // right after a fresh sign-up, each re-running this function. Once
-        // the first one advances currentOnboardingStep to 13, every
-        // following one used to see "not 12 anymore" and immediately force
-        // the user to the planner before they'd had any chance to read the
-        // trial explainer or tap "Start my free trial" — the exact flash
-        // this branch exists to prevent. Only completeOnboarding() (that
-        // button's own handler) should ever exit onboarding from step 13.
-        localStorage.setItem("onboardingComplete", "true");
+        // Onboarding was already properly completed (via
+        // completeOnboarding()) earlier — onboarding-active shouldn't
+        // normally still be set at this point, but exit cleanly if it is.
         onboardingDraft = null;
         document.getElementById("onboardingView").classList.remove("visible");
         document.body.classList.remove("onboarding-active");
