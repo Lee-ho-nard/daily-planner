@@ -168,12 +168,21 @@
     transform: scale(0.97);
   }
 
-  /* z-index below #focusView's (5), not above it like .timer-icon-controls —
-     this is what actually hides it throughout Deep Work, the same way
-     export/themes are hidden: they're unpositioned, so #focusView's fixed,
-     opaque, higher-stacked overlay covers them the moment it's .visible,
-     for the whole time you're on that tab, not just once a session starts. */
-  .settings-corner { position: fixed; top: var(--corner-inset); right: calc(var(--corner-edge-gap) + var(--corner-inset)); z-index: 1; display: flex; gap: 0.5rem; }
+  /* z-index ABOVE .view-tabs' (6) now, not below #focusView's (5) — used
+     to sit at z-index 1, relying on #focusView's fixed opaque overlay to
+     cover it during Deep Work (the same trick that still hides export/
+     themes, which stay unpositioned). That only worked because .view-tabs
+     never actually reached this cluster's own space (a padding-right
+     reservation on .app-header-row kept them apart). Once .view-tabs was
+     widened to match #endDayBtn's full width below, the two genuinely
+     overlap — and with .settings-corner still below .view-tabs' z-index,
+     the tab bar's pill background would have rendered on top of and
+     hidden the flame/settings icons, not just sat close to them. Raised
+     above .view-tabs instead so the icons stay visibly on top wherever
+     they overlap; Deep Work's own hide is now the explicit
+     body.deep-work-mode rule further down instead of an implicit
+     side-effect of z-index order. */
+  .settings-corner { position: fixed; top: var(--corner-inset); right: calc(var(--corner-edge-gap) + var(--corner-inset)); z-index: 7; display: flex; gap: 0.5rem; }
   .app-header-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem; }
   /* flex: 1 (stretch to fill the row) rather than sizing to its own
      content — a shrink-to-content .view-tabs was tried and reverted
@@ -181,14 +190,11 @@
      two lines the moment .view-tabs stopped being handed a guaranteed
      width (a real flex-basis/shrink-to-fit sizing bug, not just a narrow
      viewport), and once more per explicit direction that the tab bar
-     should read as aligned with #endDayBtn below it (same left edge, and
-     the same "fills the available column width" logic) rather than
-     hugging its own four labels. It still can't span the row's FULL
-     width like #endDayBtn does, unlike that button — #endDayBtn has
-     nothing else sharing its row, but .view-tabs sits at the same
-     vertical position as the fixed .settings-corner cluster, which
-     depends on the padding-right reservation below to never render
-     underneath it. */
+     should read as aligned with #endDayBtn below it. Now spans the row's
+     FULL width, same as #endDayBtn — no padding-right reservation holding
+     it back anymore (see .settings-corner's own comment above for why
+     that's safe now: the icons render on top of this bar wherever they
+     overlap, rather than needing to stay spatially clear of it). */
   .app-header-row .view-tabs { flex: 1; }
 
   /* Desktop-width windows otherwise sit on a 480px column with a lot of
@@ -219,53 +225,20 @@
     :root { --corner-edge-gap: 0px; }
   }
 
-  /* Unconditional, not just a narrow-width fix — #themesBtn is the one
-     .app-header-row child this actually protects at every width, not just
-     below ~520px. .view-tabs (flex: 1) naturally stops short of
-     .container's true right edge once .container is inset from the
-     viewport, so it alone would clear .settings-corner above ~520px. But
-     #themesBtn sits after .view-tabs in the same row as a fixed-size
-     sibling, so it always lands at the row's/.container's true right edge
-     regardless of viewport width — including at the 900px+ desktop
-     breakpoint, where .container widens to 620px but .settings-corner
-     still tracks that same edge via --corner-edge-gap (below 1400px;
-     past it both .settings-corner and this row's edge read relative to
-     different things, but .container's own right edge never moves past
-     the true viewport edge, so the reservation still over-clears rather
-     than under-clears there). Since both this reservation and
-     .settings-corner's own footprint (icon widths, gaps, offset) are
-     fixed pixel quantities rather than viewport-relative ones, the same
-     116px clears the corner icons at every width, not just small ones.
-     Since .view-tabs sits at z-index 6 (needed to clear other content)
-     and .settings-corner deliberately stays low (z-index 1, so
-     #focusView's overlay can cover it during Deep Work — see below),
-     raising .settings-corner's z-index isn't an option; reserving room on
-     the row instead keeps content from ever extending underneath the
-     fixed buttons. Width below is two .cat-add buttons (34px each) plus
-     the gap between them, plus the icon row's own --corner-inset right
-     offset, plus a small safety gap (trimmed from 1rem to 0.5rem to let
-     .view-tabs grow a bit wider per later feedback that the bar read as
-     too slight — the icon footprint itself, the 34+34+0.5rem+corner-inset
-     portion, is untouched, so this still fully clears the icons, just
-     with a smaller margin past them than before). References the same
-     variable .settings-corner does, so retuning --corner-inset can't
-     silently reopen this overlap. */
-  .app-header-row { padding-right: calc(34px + 34px + 0.5rem + var(--corner-inset) + 0.5rem); }
-  /* .view-tabs (flex: 1, i.e. flex-basis: 0%) is the sibling actually
-     meant to absorb a narrow viewport's shrink pressure — themesBtn
-     left at its flex default (flex-basis: auto) contributes zero weight
-     to the browser's shrink-distribution math when basis is 0 elsewhere,
-     so without an explicit flex-shrink: 0 here, a narrow viewport with
-     no room for both would put ALL the shrinkage onto themesBtn instead,
-     squashing its 34px circle into a thin, non-circular sliver that no
-     longer clears the reserved zone above. */
+  /* No padding-right reservation on .app-header-row anymore — .view-tabs
+     and #themesBtn are allowed to run underneath where .settings-corner
+     floats now, since that cluster's z-index (7, above .view-tabs' 6) is
+     what actually keeps the icons visible on top of them, not spatial
+     avoidance. #themesBtn still keeps flex-shrink: 0 on its own merits
+     (below): a narrow viewport with no room for both it and .view-tabs at
+     their natural sizes needs the shrinkage to land on .view-tabs (via
+     its own tabs' flex: 1 further down) instead of squashing themesBtn's
+     34px circle into a thin, non-circular sliver. */
   #themesBtn { flex-shrink: 0; }
   /* .view-tabs' 4 buttons don't shrink below their own text+padding
-     floor — on a narrow phone (~375px) that floor was already tight
-     against a single reserved corner button, and two buttons' worth of
-     reserved space (above) no longer leaves room for it without this.
-     Horizontal-only reduction, vertical untouched, so tap targets stay
-     the same height. */
+     floor — on a narrow phone (~375px), competing with #themesBtn for
+     the same row, that floor is already tight. Horizontal-only
+     reduction, vertical untouched, so tap targets stay the same height. */
   @media (max-width: 400px) {
     .view-tab { padding: 0.55rem 0.3rem; }
   }
@@ -1013,6 +986,17 @@
   body.deep-work-mode .view-tabs { background: var(--bg-card); }
   body.deep-work-mode .view-tab { color: var(--text-secondary); }
   body.deep-work-mode .view-tab.active { background: var(--bg-card); color: var(--text-primary); box-shadow: none; border-color: var(--accent); }
+  /* Explicit now that .settings-corner's z-index (7) sits above
+     .view-tabs' (6) — it used to hide for free by staying below
+     #focusView's overlay (z-index 5), but that same raise is what keeps
+     the flame/settings icons visibly on top of .view-tabs now that the
+     tab bar spans .settings-corner's own space. Toggled off this class
+     rather than tied to #focusView's own .visible/opacity transition, so
+     it hides the instant you land on the Deep Work tab — same timing
+     .view-tabs' background/color changes above already use, and matching
+     the original "for the whole time you're on that tab, not just once a
+     session starts" intent. */
+  body.deep-work-mode .settings-corner { visibility: hidden; }
   body.timer-active .view-tabs { opacity: 0; pointer-events: none; transition: opacity 0.5s ease; }
   .view-tabs { transition: opacity 0.5s ease, background 0.4s ease; }
 
