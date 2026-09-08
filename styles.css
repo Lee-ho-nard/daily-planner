@@ -243,10 +243,14 @@
      the row instead keeps content from ever extending underneath the
      fixed buttons. Width below is two .cat-add buttons (34px each) plus
      the gap between them, plus the icon row's own --corner-inset right
-     offset, plus a small safety gap. References the same variable
-     .settings-corner does, so retuning --corner-inset can't silently
-     reopen this overlap. */
-  .app-header-row { padding-right: calc(34px + 34px + 0.5rem + var(--corner-inset) + 1rem); }
+     offset, plus a small safety gap (trimmed from 1rem to 0.5rem to let
+     .view-tabs grow a bit wider per later feedback that the bar read as
+     too slight — the icon footprint itself, the 34+34+0.5rem+corner-inset
+     portion, is untouched, so this still fully clears the icons, just
+     with a smaller margin past them than before). References the same
+     variable .settings-corner does, so retuning --corner-inset can't
+     silently reopen this overlap. */
+  .app-header-row { padding-right: calc(34px + 34px + 0.5rem + var(--corner-inset) + 0.5rem); }
   /* .view-tabs (flex: 1, i.e. flex-basis: 0%) is the sibling actually
      meant to absorb a narrow viewport's shrink pressure — themesBtn
      left at its flex default (flex-basis: auto) contributes zero weight
@@ -265,7 +269,13 @@
   @media (max-width: 400px) {
     .view-tab { padding: 0.55rem 0.3rem; }
   }
-  .view-tabs { display: flex; gap: 0.4rem; background: var(--border); padding: 0.3rem; border-radius: var(--radius-md); position: relative; z-index: 6; }
+  /* gap bumped from 0.4rem to 0.5rem, and .view-tab's own horizontal
+     padding below from 0.55rem to 0.7rem, so the bar reads as more
+     substantial per feedback that the tightly-sized version looked too
+     slight — paired with the trimmed safety margin above (0.5rem instead
+     of 1rem) freeing a little more width for .view-tabs to grow into.
+     Verified this doesn't reopen "Deep Work" wrapping at 768/1280/1920px. */
+  .view-tabs { display: flex; gap: 0.5rem; background: var(--border); padding: 0.3rem; border-radius: var(--radius-md); position: relative; z-index: 6; }
   /* flex-basis: auto (not the 0% "flex: 1" implied) — with 0%, all four
      tabs are forced to exactly equal quarters of .view-tabs' stretched
      width regardless of content, which never gave "Deep Work" (the one
@@ -275,7 +285,7 @@
      content first, so "Deep Work" gets more than "Goals" does, with
      flex-grow/shrink still distributing any extra/negative space
      proportionally on top of that starting point. */
-  .view-tab { flex: 1 1 auto; text-align: center; padding: 0.55rem; border-radius: 10px; border: 1px solid transparent; background: transparent; cursor: pointer; font-family: inherit; font-size: var(--text-sm); font-weight: 500; color: var(--text-secondary); transition: background 300ms ease, color 300ms ease, box-shadow 300ms ease, border-color 300ms ease; }
+  .view-tab { flex: 1 1 auto; text-align: center; padding: 0.55rem 0.7rem; border-radius: 10px; border: 1px solid transparent; background: transparent; cursor: pointer; font-family: inherit; font-size: var(--text-sm); font-weight: 500; color: var(--text-secondary); transition: background 300ms ease, color 300ms ease, box-shadow 300ms ease, border-color 300ms ease; }
   .view-tab.active { background: var(--bg-card); color: var(--text-primary); box-shadow: var(--shadow-card); }
 
   .date-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; touch-action: pan-y; }
