@@ -168,20 +168,18 @@
     transform: scale(0.97);
   }
 
-  /* z-index ABOVE .view-tabs' (6) now, not below #focusView's (5) — used
-     to sit at z-index 1, relying on #focusView's fixed opaque overlay to
-     cover it during Deep Work (the same trick that still hides export/
-     themes, which stay unpositioned). That only worked because .view-tabs
-     never actually reached this cluster's own space (a padding-right
-     reservation on .app-header-row kept them apart). Once .view-tabs was
-     widened to match #endDayBtn's full width below, the two genuinely
-     overlap — and with .settings-corner still below .view-tabs' z-index,
-     the tab bar's pill background would have rendered on top of and
-     hidden the flame/settings icons, not just sat close to them. Raised
-     above .view-tabs instead so the icons stay visibly on top wherever
-     they overlap; Deep Work's own hide is now the explicit
-     body.deep-work-mode rule further down instead of an implicit
-     side-effect of z-index order. */
+  /* #themesBtn (the theme/palette toggle) moved in here from the tab-bar
+     row — Streak, Theme, Settings, in that order, so it's grouped with
+     the other account-level icons instead of floating next to the tab
+     bar. .app-header-row's own row is pure navigation now (see below).
+     z-index stays ABOVE .view-tabs' (6): even with #themesBtn gone,
+     .view-tabs itself still spans this row's full width to match
+     #endDayBtn, which still spatially overlaps this fixed cluster at
+     every width below the 1400px breakpoint (moving #themesBtn out
+     doesn't change WHERE this cluster floats, only what's in it) — so
+     the icons still need to render visibly on top of the tab bar's pill
+     background wherever they overlap, same reasoning as before. Deep
+     Work's hide is the explicit body.deep-work-mode rule further down. */
   .settings-corner { position: fixed; top: var(--corner-inset); right: calc(var(--corner-edge-gap) + var(--corner-inset)); z-index: 7; display: flex; gap: 0.5rem; }
   .app-header-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem; }
   /* flex: 1 (stretch to fill the row) rather than sizing to its own
@@ -190,11 +188,11 @@
      two lines the moment .view-tabs stopped being handed a guaranteed
      width (a real flex-basis/shrink-to-fit sizing bug, not just a narrow
      viewport), and once more per explicit direction that the tab bar
-     should read as aligned with #endDayBtn below it. Now spans the row's
-     FULL width, same as #endDayBtn — no padding-right reservation holding
-     it back anymore (see .settings-corner's own comment above for why
-     that's safe now: the icons render on top of this bar wherever they
-     overlap, rather than needing to stay spatially clear of it). */
+     should read as aligned with #endDayBtn below it. .view-tabs is
+     .app-header-row's only child now that #themesBtn lives in
+     .settings-corner instead, so flex: 1 simply hands it the row's full
+     width — same left AND right edge as #endDayBtn, no reservation or
+     sibling to share space with. */
   .app-header-row .view-tabs { flex: 1; }
 
   /* Desktop-width windows otherwise sit on a 480px column with a lot of
@@ -225,20 +223,15 @@
     :root { --corner-edge-gap: 0px; }
   }
 
-  /* No padding-right reservation on .app-header-row anymore — .view-tabs
-     and #themesBtn are allowed to run underneath where .settings-corner
-     floats now, since that cluster's z-index (7, above .view-tabs' 6) is
-     what actually keeps the icons visible on top of them, not spatial
-     avoidance. #themesBtn still keeps flex-shrink: 0 on its own merits
-     (below): a narrow viewport with no room for both it and .view-tabs at
-     their natural sizes needs the shrinkage to land on .view-tabs (via
-     its own tabs' flex: 1 further down) instead of squashing themesBtn's
-     34px circle into a thin, non-circular sliver. */
-  #themesBtn { flex-shrink: 0; }
+  /* No padding-right reservation on .app-header-row — .view-tabs is its
+     only child now (#themesBtn moved into .settings-corner) and is free
+     to run the row's full width, underneath wherever .settings-corner
+     floats; that cluster's z-index (7, above .view-tabs' 6) is what
+     keeps its icons visible on top, not spatial avoidance. */
   /* .view-tabs' 4 buttons don't shrink below their own text+padding
-     floor — on a narrow phone (~375px), competing with #themesBtn for
-     the same row, that floor is already tight. Horizontal-only
-     reduction, vertical untouched, so tap targets stay the same height. */
+     floor — on a narrow phone (~375px) that floor is already tight
+     against the label content alone. Horizontal-only reduction, vertical
+     untouched, so tap targets stay the same height. */
   @media (max-width: 400px) {
     .view-tab { padding: 0.55rem 0.3rem; }
   }
