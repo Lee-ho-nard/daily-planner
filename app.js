@@ -1225,6 +1225,17 @@
   // has real hex to interpolate between regardless of that limitation.
   const FOCUS_BG_LIGHT = "#FAFAF7";
   const FOCUS_BG_DARK = "#1A211C";
+  // Keeps the browser/OS chrome (mobile Safari/Chrome's title bar, PWA
+  // splash background) in step with [data-theme] instead of sitting fixed
+  // on the light value while Deep Work goes dark underneath it. Reuses the
+  // same two flat colors as --bg-page's light/dark values above — no
+  // gradient and no per-accent-theme tracking, unlike the earlier dynamic
+  // theme-color system that was pulled for being more than this needed.
+  function setDataTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", theme === "dark" ? FOCUS_BG_DARK : FOCUS_BG_LIGHT);
+  }
   // Same unregistered-custom-property limitation as --bg-page, confirmed
   // directly this time (sampled body's computed color repeatedly across a
   // real-time window after data-theme flipped — it never moved off the
@@ -1295,7 +1306,7 @@
     // immediate on purpose: it only affects the shared, persistent tab
     // bar's own styling, not the content that's fading out.
     if (!enteringFocus) {
-      document.documentElement.setAttribute("data-theme", view === "focus" ? "dark" : "light");
+      setDataTheme(view === "focus" ? "dark" : "light");
     }
 
     const prevEl = CROSSFADE_VIEW_IDS[previousView] ? document.getElementById(CROSSFADE_VIEW_IDS[previousView]) : null;
@@ -1420,11 +1431,11 @@
           // used to be synchronous, at the very top of switchView()) made
           // prevEl instantly repaint in the new theme's colors while still
           // fully on screen for this entire 150ms window.
-          document.documentElement.setAttribute("data-theme", "dark");
+          setDataTheme("dark");
           showFocusView();
         }, 150);
       } else {
-        document.documentElement.setAttribute("data-theme", "dark");
+        setDataTheme("dark");
         showFocusView();
       }
     }
