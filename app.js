@@ -2208,7 +2208,9 @@
         if (e.target === checkbox || e.target === del) return;
         // Delayed so the row's .pressable press-squash is visible before
         // the modal covers it, instead of the tap looking like it did nothing.
-        setTimeout(() => openEditModal(task.id), 100);
+        // Opens the read-only view modal first — openEditModal() itself is
+        // reached only via that modal's Edit button now (openTaskViewModal()).
+        setTimeout(() => openTaskViewModal(task.id), 100);
       });
 
       li.appendChild(selectCheckbox);
@@ -2246,7 +2248,7 @@
   // --- Planner Timeline view ---
   // Alternate visualization of the exact same getTasksForDate() data list
   // view renders — no separate editing surface (every block/marker/
-  // unscheduled row opens the same openEditModal() list view uses) and no
+  // unscheduled row opens the same openTaskViewModal() list view uses) and no
   // bulk-select (there's nothing checkbox-shaped to select against here).
   let plannerViewMode = localStorage.getItem("plannerViewMode") === "timeline" ? "timeline" : "list";
   let timelineNowLineInterval = null;
@@ -2336,7 +2338,7 @@
         name.textContent = task.checkoffLabel || task.name;
         row.appendChild(dot);
         row.appendChild(name);
-        row.addEventListener("click", () => openEditModal(task.id));
+        row.addEventListener("click", () => openTaskViewModal(task.id));
         unschedWrap.appendChild(row);
       });
       container.appendChild(unschedWrap);
@@ -2383,7 +2385,7 @@
       el.style.left = `calc(${(colIndex / colCount) * 100}% + ${colIndex > 0 ? "2px" : "0px"})`;
       el.style.width = `calc(${100 / colCount}% - 4px)`;
       el.style.top = timelineMinutesToPx(start, rowHeight) + "px";
-      el.addEventListener("click", () => openEditModal(task.id));
+      el.addEventListener("click", () => openTaskViewModal(task.id));
 
       if (durationMin > 0) {
         el.className = "timeline-block" + (task.occurrenceDone ? " done" : "");
@@ -3492,6 +3494,84 @@
     openModal(overlay);
     setTimeout(() => document.getElementById("modalName").focus(), 50);
   }
+
+  // Read-only task detail, shown on a single tap instead of jumping
+  // straight into editing (see openEditModal() above, unchanged) — mirrors
+  // the Goals view's own view-then-edit pattern (openGoalViewModal()).
+  const taskViewOverlay = document.getElementById("taskViewModalOverlay");
+  enableModalDragDismiss(taskViewOverlay);
+  let viewingTaskId = null;
+
+  function describeTaskRepeat(task) {
+    const rec = task.recurrence;
+    if (!rec || rec.type === "none") return "Does not repeat";
+    if (rec.type === "daily") return "Every day";
+    if (rec.type === "weekly") {
+      const days = (rec.days || []).slice().sort((a, b) => a - b).map(d => WEEKDAY_FULL_NAMES[d].slice(0, 3));
+      const prefix = rec.interval && rec.interval > 1 ? `Every ${rec.interval} weeks` : "Weekly";
+      return `${prefix} on ${days.length ? days.join(", ") : "no days selected"}`;
+    }
+    return "Does not repeat";
+  }
+
+  function openTaskViewModal(taskId) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    viewingTaskId = taskId;
+
+    document.getElementById("taskViewName").textContent = task.checkoffLabel || task.name;
+
+    const catEl = document.getElementById("taskViewCategory");
+    catEl.style.setProperty("--task-cat-color", categoryColor(task.category));
+    catEl.textContent = task.category;
+
+    const timeParts = [];
+    if (task.time) {
+      const [h, m] = task.time.split(":").map(Number);
+      timeParts.push(formatMinutesAsClockTime(h * 60 + m));
+    }
+    const durText = formatDuration(task.duration);
+    if (durText) timeParts.push(durText);
+    document.getElementById("taskViewTimeDuration").textContent = timeParts.join(" · ");
+    document.getElementById("taskViewTimeDurRow").style.display = timeParts.length ? "block" : "none";
+
+    document.getElementById("taskViewDate").textContent = new Date(task.date + "T00:00:00")
+      .toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+
+    document.getElementById("taskViewNote").textContent = task.note || "";
+    document.getElementById("taskViewNoteRow").style.display = task.note ? "block" : "none";
+
+    document.getElementById("taskViewRepeat").textContent = describeTaskRepeat(task);
+
+    const streakEl = document.getElementById("taskViewStreak");
+    const recurs = task.recurrence && task.recurrence.type !== "none";
+    if (recurs) {
+      const streak = computeStreak(task);
+      const freezes = getFreezesAvailable(task);
+      let html = streak > 0
+        ? `<i data-lucide="flame" class="icon"></i> ${streak} day streak`
+        : `<i data-lucide="repeat" class="icon"></i> No streak yet`;
+      if (freezes > 0) html += ` · <i data-lucide="snowflake" class="icon"></i> ${freezes} freeze${freezes === 1 ? "" : "s"}`;
+      streakEl.innerHTML = html;
+      streakEl.style.display = "flex";
+      streakEl.style.alignItems = "center";
+      streakEl.style.gap = "0.3rem";
+      lucide.createIcons();
+    } else {
+      streakEl.style.display = "none";
+    }
+
+    openModal(taskViewOverlay);
+  }
+
+  document.getElementById("taskViewClose").addEventListener("click", () => closeModal(taskViewOverlay));
+  document.getElementById("taskViewEdit").addEventListener("click", () => {
+    closeModal(taskViewOverlay);
+    openEditModal(viewingTaskId);
+  });
+  taskViewOverlay.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeModal(taskViewOverlay);
+  });
 
   document.getElementById("openAdd").addEventListener("click", openAddModal);
   enableFabPressSpring(document.getElementById("openAdd"));
