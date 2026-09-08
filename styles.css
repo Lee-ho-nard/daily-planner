@@ -47,12 +47,19 @@
        (100vw - max-width) goes negative and clamps to 0, same as if this
        variable didn't exist at all. */
     --container-edge-gap: max(0px, calc((100vw - var(--container-max-width)) / 2));
+    /* Own inset every corner-anchored cluster (.fab group, .settings-corner,
+       .timer-icon-controls) adds on top of --container-edge-gap to land at
+       its final screen position. Was 1.5rem — read as floating/disconnected
+       from the true corner rather than anchored to it, especially once the
+       620px desktop container width made --container-edge-gap itself
+       larger. Single variable so every consumer retunes together. */
+    --corner-inset: 1rem;
     /* .fab's own position/size, shared so .fab-guide-arrow (and .mic-fab,
        positioned relative to it) can anchor off it via calc() instead of a
        separately hand-tuned fixed position — stays correctly aimed if .fab
        ever moves. */
-    --fab-bottom: 1.5rem;
-    --fab-right: calc(var(--container-edge-gap) + 1.5rem);
+    --fab-bottom: var(--corner-inset);
+    --fab-right: calc(var(--container-edge-gap) + var(--corner-inset));
     --fab-size: 56px;
     --radius-sm: 8px;
     --radius-md: 14px;
@@ -154,7 +161,7 @@
      export/themes are hidden: they're unpositioned, so #focusView's fixed,
      opaque, higher-stacked overlay covers them the moment it's .visible,
      for the whole time you're on that tab, not just once a session starts. */
-  .settings-corner { position: fixed; top: 1.5rem; right: calc(var(--container-edge-gap) + 1.5rem); z-index: 1; display: flex; gap: 0.5rem; }
+  .settings-corner { position: fixed; top: var(--corner-inset); right: calc(var(--container-edge-gap) + var(--corner-inset)); z-index: 1; display: flex; gap: 0.5rem; }
   .app-header-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem; }
   .app-header-row .view-tabs { flex: 1; }
 
@@ -190,9 +197,11 @@
      raising .settings-corner's z-index isn't an option; reserving room on
      the row instead keeps content from ever extending underneath the
      fixed buttons. Width below is two .cat-add buttons (34px each) plus
-     the gap between them, plus the icon row's own 1.5rem right offset,
-     plus a small safety gap. */
-  .app-header-row { padding-right: calc(34px + 34px + 0.5rem + 1.5rem + 1rem); }
+     the gap between them, plus the icon row's own --corner-inset right
+     offset, plus a small safety gap. References the same variable
+     .settings-corner does, so retuning --corner-inset can't silently
+     reopen this overlap. */
+  .app-header-row { padding-right: calc(34px + 34px + 0.5rem + var(--corner-inset) + 1rem); }
   /* #themesBtn sits next to .view-tabs (flex: 1, i.e. flex-basis: 0%) in
      the same row. With themesBtn left at its flex default (flex-shrink: 1,
      flex-basis: auto), a flex-basis of 0 contributes zero weight to the
@@ -417,7 +426,7 @@
     50% { transform: translateX(5px); opacity: 1; }
   }
 
-  .mic-fab { position: fixed; bottom: 1.5rem; right: calc(var(--fab-right) + var(--fab-size) + 0.5rem); width: 56px; height: 56px; border-radius: 50%; background: var(--bg-card); border: none; color: var(--accent); font-size: var(--text-xl); cursor: pointer; box-shadow: var(--shadow-elevated); transition: transform 0.15s, color 0.3s ease; }
+  .mic-fab { position: fixed; bottom: var(--fab-bottom); right: calc(var(--fab-right) + var(--fab-size) + 0.5rem); width: 56px; height: 56px; border-radius: 50%; background: var(--bg-card); border: none; color: var(--accent); font-size: var(--text-xl); cursor: pointer; box-shadow: var(--shadow-elevated); transition: transform 0.15s, color 0.3s ease; }
   /* Third button in the same row as .fab/.mic-fab — was a hardcoded
      right: 9.5rem inline style (1.5rem fab-right + 3.5rem fab-size + 0.5rem
      gap, twice over); expressed the same way as .mic-fab's own right now,
@@ -726,7 +735,7 @@
   .timer-ring-wrap { position: relative; display: inline-block; margin-bottom: 1.5rem; }
   .timer-time { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: var(--text-display); font-weight: 800; color: var(--text-primary); letter-spacing: -0.04em; }
   .timer-label { color: var(--text-secondary); font-size: var(--text-base); margin-bottom: 1rem; }
-  .timer-icon-controls { position: fixed; top: 1.5rem; right: calc(var(--container-edge-gap) + 1.5rem); display: none; gap: 0.75rem; z-index: 6; }
+  .timer-icon-controls { position: fixed; top: var(--corner-inset); right: calc(var(--container-edge-gap) + var(--corner-inset)); display: none; gap: 0.75rem; z-index: 6; }
   body.timer-active .timer-icon-controls { display: flex; }
   .timer-icon-btn { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); font-family: inherit; cursor: pointer; font-size: var(--text-lg); display: flex; align-items: center; justify-content: center; line-height: 1; padding: 0; }
   .timer-icon-btn:hover { color: var(--text-primary); border-color: var(--accent); }
