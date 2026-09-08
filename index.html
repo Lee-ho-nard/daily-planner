@@ -336,7 +336,7 @@
   <div class="modal">
     <h3 id="modalTitle">Add Task</h3>
     <label>Task name</label>
-    <input type="text" id="modalName" placeholder="e.g. Read 30 pages">
+    <input type="text" id="modalName" placeholder="e.g. Read 30 pages" maxlength="300">
     <div class="task-name-suggestions-wrap" id="modalNameSuggestions" style="display:none;">
       <div class="ob-section-label task-name-suggestions-label" id="modalNameSuggestionsRecentLabel" style="display:none;">Recent</div>
       <div class="task-name-suggestions" id="modalNameSuggestionsRecent"></div>
@@ -390,13 +390,13 @@
 
       <div class="repeat-extra" id="modalGoalFields">
         <label>Goal name</label>
-        <input type="text" id="modalGoalName" placeholder="e.g. Read 30 pages">
+        <input type="text" id="modalGoalName" placeholder="e.g. Read 30 pages" maxlength="300">
 
         <label>Why does this goal matter to you?</label>
-        <input type="text" id="modalGoalWhy" placeholder="Be specific">
+        <input type="text" id="modalGoalWhy" placeholder="Be specific" maxlength="500">
 
         <label>How do you plan on achieving it?</label>
-        <input type="text" id="modalGoalPlan" placeholder="Be specific">
+        <input type="text" id="modalGoalPlan" placeholder="Be specific" maxlength="500">
       </div>
     </div>
 
@@ -579,7 +579,7 @@
   <div class="modal">
     <h3>New Category</h3>
     <label>Name</label>
-    <input type="text" id="catName" placeholder="e.g. Work">
+    <input type="text" id="catName" placeholder="e.g. Work" maxlength="40">
     <label>Color</label>
     <div class="color-swatches" id="colorSwatches"></div>
     <div class="modal-actions">
@@ -610,7 +610,7 @@
   <div class="modal">
     <h3>Edit Category</h3>
     <label>Name</label>
-    <input type="text" id="editCatName">
+    <input type="text" id="editCatName" maxlength="40">
     <label>Color</label>
     <div class="color-swatches" id="editColorSwatches"></div>
     <div class="modal-actions">

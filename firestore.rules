@@ -7,6 +7,29 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == uid;
     }
 
+    // Sanity ceilings only, not a schema — every field is optional here
+    // (missing/absent is always fine) so older documents and any future
+    // field additions never get retroactively rejected. Generous enough
+    // that no legitimate use ever hits them; only meant to stop a single
+    // document from being stuffed with an unreasonable amount of data
+    // (Firestore's own 1MiB/doc cap is the true hard ceiling regardless —
+    // this exists to catch abuse well before that, not replace it).
+    function sizeOk(data, field, maxLen) {
+      return !(field in data) || !(data[field] is string) || data[field].size() <= maxLen;
+    }
+    function listSizeOk(data, field, maxLen) {
+      return !(field in data) || !(data[field] is list) || data[field].size() <= maxLen;
+    }
+    function isValidTask(data) {
+      return sizeOk(data, 'name', 300) && sizeOk(data, 'category', 100) &&
+             sizeOk(data, 'note', 200) && sizeOk(data, 'why', 500) &&
+             sizeOk(data, 'plan', 500) && sizeOk(data, 'checkoffLabel', 300) &&
+             sizeOk(data, 'sourceUrl', 2000) && sizeOk(data, 'time', 20) &&
+             sizeOk(data, 'date', 20) && sizeOk(data, 'endDate', 20) &&
+             sizeOk(data, 'duration', 20) &&
+             listSizeOk(data, 'completedDates', 5000) && listSizeOk(data, 'frozenDates', 5000);
+    }
+
     match /users/{uid} {
       allow read, write: if isOwner(uid);
 
@@ -18,8 +41,24 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // isValidTask() catches an individual oversized/malformed document.
+      // It deliberately does NOT (and structurally can't) cap total task
+      // *count* per user, or how many documents one client-side action
+      // ("Repeat this task" copies, bulk duplicate) creates in one go:
+      // rules evaluate each document write independently with no built-in
+      // aggregate/count() primitive, and get()/exists() reads are far too
+      // budget-limited to count an entire collection. A real hard cap on
+      // either needs a Cloud Function (same Blaze-plan blocker as the
+      // Stripe webhook — see billing/status above) — a maintained
+      // counter-document pattern was considered instead, but every task-
+      // mutating code path in app.js would have to keep it in sync by
+      // hand, and any one path that missed it would silently make the cap
+      // wrong instead of enforcing it. The client-side MAX_TASKS_SOFT_CAP
+      // check (app.js) is a real but bypassable guard against accidental
+      // runaway creation, not a security boundary.
       match /tasks/{taskId} {
-        allow read, write: if isOwner(uid);
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid) && isValidTask(request.resource.data);
       }
 
       match /categories/{categoryId} {

@@ -3299,6 +3299,7 @@
     document.getElementById("modalCopies").value = 1;
     syncGoalCopiesExclusivity();
     renderTaskNameSuggestions();
+    document.getElementById("saveAdd").disabled = false;
     openModal(overlay);
     setTimeout(() => document.getElementById("modalName").focus(), 50);
   }
@@ -3337,6 +3338,7 @@
     document.getElementById("copiesRow").style.display = "block";
     document.getElementById("modalCopies").value = 1;
     syncGoalCopiesExclusivity();
+    document.getElementById("saveAdd").disabled = false;
 
     const fab = document.getElementById("openAdd");
     const modal = overlay.querySelector(".modal");
@@ -3486,6 +3488,7 @@
     }
     buildWeekdayPicker();
 
+    document.getElementById("saveAdd").disabled = false;
     openModal(overlay);
     setTimeout(() => document.getElementById("modalName").focus(), 50);
   }
@@ -3539,6 +3542,17 @@
   // lives in one place rather than being re-enforced per entry point.
   const TASK_NOTE_MAX_LENGTH = 200;
 
+  // Client-side-only sanity guard against runaway task creation (a stuck
+  // loop, an over-eager import, accidentally re-running onboarding seed
+  // data) — not a security boundary. A user could still write past this
+  // with direct Firestore calls; Firestore rules can't enforce a true
+  // per-user document-count cap without either a Cloud Function (blocked
+  // on the same Blaze-plan requirement as the Stripe webhook) or a
+  // hand-maintained counter document every task-mutating call site would
+  // have to keep in sync — see firestore.rules' own comment on this.
+  // 5000 is generous enough that no real usage should ever hit it.
+  const MAX_TASKS_SOFT_CAP = 5000;
+
   function createTaskRecord({ name, category, time = "", duration = "", date, endDate = "", recurrence = { type: "none" }, isGoal = false, why = "", plan = "", checkoffLabel = "", sourceUrl = "", note = "" }) {
     const resolvedDate = date || toDateStr(currentDate);
     const maxOrder = tasks.filter(t => t.date === resolvedDate).reduce((max, t) => Math.max(max, t.order ?? 0), -1);
@@ -3577,6 +3591,17 @@
     const checkoffLabel = isGoal ? (document.getElementById("modalGoalName").value.trim() || name) : "";
 
     if (!name || !category) return;
+    if (!editingTaskId && tasks.length >= MAX_TASKS_SOFT_CAP) {
+      showToast(`You've hit ${MAX_TASKS_SOFT_CAP} tasks — delete some old ones before adding more.`, "warning");
+      return;
+    }
+    // Guards against a rapid double/triple-click creating duplicate tasks
+    // (or duplicate copy-batches) — re-enabled by each of the three open
+    // functions above the next time this modal is shown, not here, since
+    // this function's own job ends at closeModal(), not at reopen.
+    const saveBtn = document.getElementById("saveAdd");
+    if (saveBtn.disabled) return;
+    saveBtn.disabled = true;
 
     let recurrence = { type: "none" };
     if (repeatType === "daily") {
@@ -3629,6 +3654,10 @@
 
   document.getElementById("bulkDuplicateBtn").addEventListener("click", () => {
     if (!selectedTaskIds.size) return;
+    if (tasks.length + selectedTaskIds.size > MAX_TASKS_SOFT_CAP) {
+      showToast(`You've hit ${MAX_TASKS_SOFT_CAP} tasks — delete some old ones before adding more.`, "warning");
+      return;
+    }
     const toDuplicate = tasks.filter(t => selectedTaskIds.has(t.id));
     toDuplicate.forEach(t => {
       const dateTasks = tasks.filter(x => x.date === t.date);
