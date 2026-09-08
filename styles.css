@@ -47,19 +47,31 @@
        (100vw - max-width) goes negative and clamps to 0, same as if this
        variable didn't exist at all. */
     --container-edge-gap: max(0px, calc((100vw - var(--container-max-width)) / 2));
-    /* Own inset every corner-anchored cluster (.fab group, .settings-corner,
-       .timer-icon-controls) adds on top of --container-edge-gap to land at
-       its final screen position. Was 1.5rem — read as floating/disconnected
-       from the true corner rather than anchored to it, especially once the
-       620px desktop container width made --container-edge-gap itself
-       larger. Single variable so every consumer retunes together. */
+    /* What the corner-anchored clusters (.fab group, .settings-corner,
+       .timer-icon-controls) actually add on top of to reach their final
+       position — normally identical to --container-edge-gap (tracks
+       .container's true edge, same as every other consumer of that
+       variable), but overridden to 0 past the 1400px breakpoint below so
+       those clusters anchor to the true viewport corner instead once
+       .container's edge has drifted a long way from it. Kept as its own
+       variable rather than overriding --container-edge-gap directly —
+       that one's name and every other reader of it still means exactly
+       "gap to .container's edge," which stays true past 1400px too; only
+       what the corner clusters themselves should track changes. */
+    --corner-edge-gap: var(--container-edge-gap);
+    /* Own inset every corner-anchored cluster adds on top of
+       --corner-edge-gap to land at its final screen position. Was 1.5rem —
+       read as floating/disconnected from the true corner rather than
+       anchored to it, especially once the 620px desktop container width
+       made --container-edge-gap itself larger. Single variable so every
+       consumer retunes together. */
     --corner-inset: 1rem;
     /* .fab's own position/size, shared so .fab-guide-arrow (and .mic-fab,
        positioned relative to it) can anchor off it via calc() instead of a
        separately hand-tuned fixed position — stays correctly aimed if .fab
        ever moves. */
     --fab-bottom: var(--corner-inset);
-    --fab-right: calc(var(--container-edge-gap) + var(--corner-inset));
+    --fab-right: calc(var(--corner-edge-gap) + var(--corner-inset));
     --fab-size: 56px;
     --radius-sm: 8px;
     --radius-md: 14px;
@@ -161,9 +173,18 @@
      export/themes are hidden: they're unpositioned, so #focusView's fixed,
      opaque, higher-stacked overlay covers them the moment it's .visible,
      for the whole time you're on that tab, not just once a session starts. */
-  .settings-corner { position: fixed; top: var(--corner-inset); right: calc(var(--container-edge-gap) + var(--corner-inset)); z-index: 1; display: flex; gap: 0.5rem; }
+  .settings-corner { position: fixed; top: var(--corner-inset); right: calc(var(--corner-edge-gap) + var(--corner-inset)); z-index: 1; display: flex; gap: 0.5rem; }
   .app-header-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem; }
-  .app-header-row .view-tabs { flex: 1; }
+  /* Deliberately no flex-grow here (the default flex: 0 1 auto already
+     covers it) — .view-tabs used to stretch to fill the row (flex: 1),
+     leaving a lot of empty pill background around the four short labels
+     once the container widened. Sized to its own content instead;
+     flex-shrink stays at its default 1 so it still compresses under the
+     same narrow-phone pressure it always has (see the 400px breakpoint
+     below). #themesBtn's own margin-left: auto (further down) is what
+     now pushes it to the row's right edge — before, .view-tabs' stretch
+     did that job as a side effect. */
+  .app-header-row .view-tabs { flex: 0 1 auto; }
 
   /* Desktop-width windows otherwise sit on a 480px column with a lot of
      empty space either side — widen it once there's clearly room to
@@ -178,40 +199,63 @@
     :root { --container-max-width: 620px; }
   }
 
+  /* Past this width, .container's edge has drifted far enough from the
+     true viewport corner (--container-edge-gap keeps growing with 100vw)
+     that floating .fab/.settings-corner/.timer-icon-controls off the
+     container's edge starts reading as disconnected from the window
+     itself — a large monitor is the one case where "anchored to the
+     content column" and "anchored to the app window" visibly diverge.
+     Dropping --corner-edge-gap to 0 makes those clusters sit
+     --corner-inset off the true corner instead, same as any other
+     "app-like" fixed-chrome window. Below this width (including every
+     size actually tested: 375/768/1280) --corner-edge-gap still equals
+     --container-edge-gap, so nothing here changes existing behavior. */
+  @media (min-width: 1400px) {
+    :root { --corner-edge-gap: 0px; }
+  }
+
   /* Unconditional, not just a narrow-width fix — #themesBtn is the one
      .app-header-row child this actually protects at every width, not just
-     below ~520px. .view-tabs (flex: 1) naturally stops short of
-     .container's true right edge once .container is inset from the
-     viewport, so it alone would clear .settings-corner above ~520px. But
-     #themesBtn sits after .view-tabs in the same row as a fixed-size
-     sibling, so it always lands at the row's/.container's true right edge
-     regardless of viewport width — including at the 900px+ desktop
-     breakpoint, where .container widens to 760px but .settings-corner
-     still tracks that same edge via --container-edge-gap. Since both this
+     below ~520px. Above that width .view-tabs' own content plus the gap
+     already stops short of .container's true right edge (it no longer
+     stretches to reach it at all, per the flex: 0 1 auto above), so it
+     alone would clear .settings-corner regardless of width. But
+     #themesBtn sits after it in the same row with its own margin-left:
+     auto pushing it out to the row's/.container's true right edge —
+     always, regardless of viewport width, including at the 900px+
+     desktop breakpoint, where .container widens to 620px but
+     .settings-corner still tracks that same edge via --corner-edge-gap
+     (below 1400px; past it both .settings-corner and this row's edge
+     read relative to different things, but .container's own right edge
+     never moves past the true viewport edge, so the reservation still
+     over-clears rather than under-clears there). Since both this
      reservation and .settings-corner's own footprint (icon widths, gaps,
-     offset) are fixed pixel quantities rather than viewport-relative ones,
-     the same 116px clears the corner icons at every width, not just small
-     ones. Since .view-tabs sits at z-index 6 (needed to clear other
-     content) and .settings-corner deliberately stays low (z-index 1, so
-     #focusView's overlay can cover it during Deep Work — see below),
-     raising .settings-corner's z-index isn't an option; reserving room on
-     the row instead keeps content from ever extending underneath the
-     fixed buttons. Width below is two .cat-add buttons (34px each) plus
-     the gap between them, plus the icon row's own --corner-inset right
-     offset, plus a small safety gap. References the same variable
-     .settings-corner does, so retuning --corner-inset can't silently
-     reopen this overlap. */
+     offset) are fixed pixel quantities rather than viewport-relative
+     ones, the same 116px clears the corner icons at every width, not
+     just small ones. Since .view-tabs sits at z-index 6 (needed to clear
+     other content) and .settings-corner deliberately stays low (z-index
+     1, so #focusView's overlay can cover it during Deep Work — see
+     below), raising .settings-corner's z-index isn't an option;
+     reserving room on the row instead keeps content from ever extending
+     underneath the fixed buttons. Width below is two .cat-add buttons
+     (34px each) plus the gap between them, plus the icon row's own
+     --corner-inset right offset, plus a small safety gap. References the
+     same variable .settings-corner does, so retuning --corner-inset
+     can't silently reopen this overlap. */
   .app-header-row { padding-right: calc(34px + 34px + 0.5rem + var(--corner-inset) + 1rem); }
-  /* #themesBtn sits next to .view-tabs (flex: 1, i.e. flex-basis: 0%) in
-     the same row. With themesBtn left at its flex default (flex-shrink: 1,
-     flex-basis: auto), a flex-basis of 0 contributes zero weight to the
-     browser's shrink-distribution math — so on a narrow viewport where the
-     row doesn't have room for both, ALL of the shrinkage lands on
-     themesBtn instead of .view-tabs, squashing the 34px circle down into a
-     thin, non-circular sliver that no longer clears the reserved zone
-     above. flex-shrink: 0 keeps it a fixed 34px always, so .view-tabs (the
-     element actually meant to flex) absorbs the narrow-viewport squeeze
-     instead, same as .view-tabs already does at the 400px breakpoint. */
+  /* margin-left: auto is what actually pushes #themesBtn to the row's
+     right edge now that .view-tabs (its flex sibling) no longer stretches
+     to do that as a side effect — without this it would just sit directly
+     next to the last tab instead of out at the corner-icons' safe-zone
+     boundary above. */
+  #themesBtn { margin-left: auto; }
+  /* On a narrow viewport where the row doesn't have room for both
+     .view-tabs and themesBtn at their natural sizes, something has to
+     give — flex-shrink: 0 keeps themesBtn a fixed 34px circle always, so
+     .view-tabs (via its own tabs' flex: 1 below) absorbs the squeeze
+     instead, same as it already does at the 400px breakpoint. Without
+     this, themesBtn would squash down into a thin, non-circular sliver
+     that no longer clears the reserved zone above. */
   #themesBtn { flex-shrink: 0; }
   /* .view-tabs' 4 buttons don't shrink below their own text+padding
      floor — on a narrow phone (~375px) that floor was already tight
@@ -735,7 +779,7 @@
   .timer-ring-wrap { position: relative; display: inline-block; margin-bottom: 1.5rem; }
   .timer-time { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: var(--text-display); font-weight: 800; color: var(--text-primary); letter-spacing: -0.04em; }
   .timer-label { color: var(--text-secondary); font-size: var(--text-base); margin-bottom: 1rem; }
-  .timer-icon-controls { position: fixed; top: var(--corner-inset); right: calc(var(--container-edge-gap) + var(--corner-inset)); display: none; gap: 0.75rem; z-index: 6; }
+  .timer-icon-controls { position: fixed; top: var(--corner-inset); right: calc(var(--corner-edge-gap) + var(--corner-inset)); display: none; gap: 0.75rem; z-index: 6; }
   body.timer-active .timer-icon-controls { display: flex; }
   .timer-icon-btn { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); font-family: inherit; cursor: pointer; font-size: var(--text-lg); display: flex; align-items: center; justify-content: center; line-height: 1; padding: 0; }
   .timer-icon-btn:hover { color: var(--text-primary); border-color: var(--accent); }
