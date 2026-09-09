@@ -1299,13 +1299,23 @@
     document.getElementById("micBtn").style.display = view === "planner" ? "block" : "none";
     document.getElementById("todayBtn").style.display = view === "planner" ? "block" : "none";
     updateFabArrow();
-    document.body.classList.toggle("deep-work-mode", view === "focus");
-    // data-theme itself is set further down, at the moment the outgoing
-    // view is actually hidden (not here, synchronously) — see the
-    // enteringFocus branch below. deep-work-mode stays synchronous/
-    // immediate on purpose: it only affects the shared, persistent tab
-    // bar's own styling, not the content that's fading out.
+    // .deep-work-mode's own rules (body.deep-work-mode .view-tabs etc.) are
+    // themselves var(--bg-card)-driven, so — same unregistered-custom-
+    // property limitation as --bg-page/--text-primary elsewhere in this
+    // function — the tab bar only ever snaps instantly on this class
+    // toggling, never animates. It used to toggle synchronously, right
+    // here, while data-theme flips later (see enteringFocus branch below);
+    // that produced two separate instant snaps on the tab bar — one from
+    // this class landing under the OLD theme's --bg-card, a second when
+    // data-theme itself flipped — instead of one, read as a stutter. Now
+    // paired with every setDataTheme() call so both land in the exact same
+    // tick and the tab bar only ever snaps once, simultaneously with
+    // everything else keyed off data-theme.
+    function setDeepWorkMode(active) {
+      document.body.classList.toggle("deep-work-mode", active);
+    }
     if (!enteringFocus) {
+      setDeepWorkMode(view === "focus");
       setDataTheme(view === "focus" ? "dark" : "light");
     }
 
@@ -1430,11 +1440,15 @@
           // property keyed to data-theme, so flipping this any earlier (it
           // used to be synchronous, at the very top of switchView()) made
           // prevEl instantly repaint in the new theme's colors while still
-          // fully on screen for this entire 150ms window.
+          // fully on screen for this entire 150ms window. deep-work-mode
+          // flips in this same tick so the tab bar's one snap lands exactly
+          // here too, not 150ms earlier — see setDeepWorkMode() above.
+          setDeepWorkMode(true);
           setDataTheme("dark");
           showFocusView();
         }, 150);
       } else {
+        setDeepWorkMode(true);
         setDataTheme("dark");
         showFocusView();
       }
