@@ -6631,7 +6631,6 @@ let currentRange = "week";
 
       showSealScreen(new Date(reflectionDate), () => {
         pendingLockDate = null;
-        updateExportBtnVisibility();
         updateThemesBtnVisibility();
         updateSearchReflectionsBtnVisibility();
         renderAll();
