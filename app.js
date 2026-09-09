@@ -7914,7 +7914,7 @@ let currentRange = "week";
             <div style="font-size:var(--text-lg);font-weight:600;color:var(--accent);min-width:1.75rem;">3</div>
             <div>
               <div style="font-size:var(--text-md);font-weight:500;color:var(--text-primary);margin-bottom:0.25rem;">Evening</div>
-              <div style="font-size:var(--text-base);color:var(--text-secondary);line-height:1.5;">Reflect on your day. Your streak locks in. No editing after.</div>
+              <div style="font-size:var(--text-base);color:var(--text-secondary);line-height:1.5;">Reflect on your day, and it counts toward your streak. It can't be edited after that.</div>
             </div>
           </div>
           <div style="height:1px;background:var(--border);margin:1.5rem 0;"></div>
