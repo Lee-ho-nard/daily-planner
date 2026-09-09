@@ -1193,6 +1193,10 @@
 
   // --- View switching ---
   const CROSSFADE_VIEW_IDS = { planner: "plannerView", goals: "goalsView", analysis: "analysisView", reflection: "reflectionView" };
+  // Reflection has no tab of its own (reached via End Day, not the tab
+  // bar), so it's deliberately absent here — applyTabBarColors() just
+  // treats every tab as inactive when there's no entry for the view.
+  const TAB_ID_FOR_VIEW = { planner: "tabPlanner", goals: "tabGoals", analysis: "tabAnalysis", focus: "tabFocus" };
   const VIEW_FADE_SPRING_KEY = {};
   const VIEW_SLIDE_SPRING_KEY = {};
   // #focusView isn't part of the prevEl/nextEl crossfade swap below (it's a
@@ -1245,6 +1249,69 @@
   // as a smaller-magnitude follow-up; this is that follow-up.
   const FOCUS_TEXT_LIGHT = "#232520";
   const FOCUS_TEXT_DARK = "#F2F1ED";
+  // The tab bar (.view-tabs) is the one piece of chrome that stays on
+  // screen through the whole Deep Work transition, underneath focusView's
+  // own fade — so unlike every other tab switch (where an instant
+  // data-theme-driven snap is normal and unnoticed), here an instant snap
+  // reads as badly out of sync with body/focusView's ~960ms manual color
+  // fade above. Same unregistered-custom-property limitation as those two
+  // (var(--border)/var(--bg-card)-driven background can't be transitioned
+  // by CSS), so it gets the same hardcoded-hex-plus-manual-lerp treatment,
+  // piggybacked on that identical spring, rather than left to snap on its
+  // own timeline. Values mirror .view-tabs/.view-tab's own CSS rules
+  // (styles.css ~L244-255, ~L979-981): bar background is --border in the
+  // resting/light state and --bg-card once body.deep-work-mode is active;
+  // the active tab's own pill is --bg-card either way, --text-primary for
+  // its label; an inactive tab's label is --text-secondary.
+  const TAB_BAR_BG_LIGHT = "#E8E6DE";
+  const TAB_BAR_BG_DARK = "#232B25";
+  const ACTIVE_TAB_BG_LIGHT = "#FFFFFF";
+  const ACTIVE_TAB_BG_DARK = "#232B25";
+  const TAB_TEXT_SECONDARY_LIGHT = "#5C5F56";
+  const TAB_TEXT_SECONDARY_DARK = "#C9CBC7";
+
+  // Drives the tab bar's own colors from the same 0(light)->1(dark) `v` as
+  // showFocusView()/hideFocusView()'s body/focusView lerp, so all three
+  // move as one visual unit instead of the bar arriving early or late.
+  // activeTabId is whichever tab is visually "active" for the DURATION of
+  // this transition — entering Deep Work, that's #tabFocus even before its
+  // own .active class lands on settle; leaving, it's already been reset to
+  // the destination tab by switchView() before this fires.
+  function applyTabBarColors(v, activeTabId) {
+    const tabsEl = document.querySelector(".view-tabs");
+    if (!tabsEl) return;
+    tabsEl.style.backgroundColor = lerpHexColor(TAB_BAR_BG_LIGHT, TAB_BAR_BG_DARK, v);
+    ["tabPlanner", "tabGoals", "tabAnalysis", "tabFocus"].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (id === activeTabId) {
+        el.style.backgroundColor = lerpHexColor(ACTIVE_TAB_BG_LIGHT, ACTIVE_TAB_BG_DARK, v);
+        el.style.color = lerpHexColor(FOCUS_TEXT_LIGHT, FOCUS_TEXT_DARK, v);
+      } else {
+        el.style.backgroundColor = "transparent";
+        el.style.color = lerpHexColor(TAB_TEXT_SECONDARY_LIGHT, TAB_TEXT_SECONDARY_DARK, v);
+      }
+    });
+  }
+  function primeTabBarTransition() {
+    const tabsEl = document.querySelector(".view-tabs");
+    if (tabsEl) tabsEl.style.transition = "background 0s linear";
+    ["tabPlanner", "tabGoals", "tabAnalysis", "tabFocus"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.transition = "background 0s linear, color 0s linear";
+    });
+  }
+  function clearTabBarOverrides() {
+    const tabsEl = document.querySelector(".view-tabs");
+    if (tabsEl) { tabsEl.style.transition = ""; tabsEl.style.backgroundColor = ""; }
+    ["tabPlanner", "tabGoals", "tabAnalysis", "tabFocus"].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.style.transition = "";
+      el.style.backgroundColor = "";
+      el.style.color = "";
+    });
+  }
 
   function switchView(view) {
     if (pendingLockDate && view !== "reflection") {
@@ -1341,6 +1408,14 @@
       document.body.style.transition = "background 0s linear, color 0s linear";
       el.style.opacity = "0";
       el.style.transform = "translateY(8px)";
+      // Tab bar rides the same spring as body/focusView below — see
+      // applyTabBarColors()'s own comment for why it can't just be left to
+      // the deep-work-mode class's instant CSS snap like every other tab
+      // switch. Primed to its light starting point here so it doesn't
+      // flash the class-driven dark snap for the one frame before the
+      // spring's first onUpdate fires (same reasoning as focusEl/body above).
+      primeTabBarTransition();
+      applyTabBarColors(0, "tabFocus");
       let settledCount = 0;
       function onSettled() {
         settledCount++;
@@ -1352,6 +1427,7 @@
           document.body.style.transition = "";
           document.body.style.backgroundColor = "";
           document.body.style.color = "";
+          clearTabBarOverrides();
         }
       }
       spring(0, 1, { stiffness: FOCUS_SPRING_STIFFNESS, damping: FOCUS_SPRING_DAMPING, key: FOCUS_FADE_SPRING_KEY }, (v) => {
@@ -1363,6 +1439,7 @@
         el.style.color = text;
         document.body.style.backgroundColor = bg;
         document.body.style.color = text;
+        applyTabBarColors(v, "tabFocus");
       }, onSettled);
       spring(8, 0, { stiffness: FOCUS_SPRING_STIFFNESS, damping: FOCUS_SPRING_DAMPING, key: FOCUS_SLIDE_SPRING_KEY }, (v) => { el.style.transform = `translateY(${v}px)`; }, onSettled);
     }
@@ -1371,6 +1448,17 @@
       el.style.transition = "opacity 0s linear, background 0s linear, color 0s linear";
       document.body.style.transition = "background 0s linear, color 0s linear";
       focusTransitioning = true;
+      // setDeepWorkMode(false)/setDataTheme("light") already fired
+      // synchronously up top of switchView() (leaving focus isn't deferred
+      // the way entering is — nothing needs to stay hidden underneath it
+      // first) — so the tab bar's CSS is already pointed at its light
+      // values before this spring even starts. Primed to the DARK starting
+      // point here, same as focusEl/body's own priming, so it holds at the
+      // pre-transition look for one more frame instead of the class-driven
+      // rule jumping it to light early, then lerps down across the same
+      // spring both of those already use.
+      primeTabBarTransition();
+      applyTabBarColors(1, TAB_ID_FOR_VIEW[view]);
       let settledCount = 0;
       function onSettled() {
         settledCount++;
@@ -1404,6 +1492,7 @@
           document.body.style.transition = "";
           document.body.style.backgroundColor = "";
           document.body.style.color = "";
+          clearTabBarOverrides();
         }
       }
       spring(1, 0, { stiffness: FOCUS_SPRING_STIFFNESS, damping: FOCUS_SPRING_DAMPING, key: FOCUS_FADE_SPRING_KEY }, (v) => {
@@ -1416,6 +1505,7 @@
         el.style.color = text;
         document.body.style.backgroundColor = bg;
         document.body.style.color = text;
+        applyTabBarColors(v, TAB_ID_FOR_VIEW[view]);
       }, onSettled);
       spring(0, 8, { stiffness: FOCUS_SPRING_STIFFNESS, damping: FOCUS_SPRING_DAMPING, key: FOCUS_SLIDE_SPRING_KEY }, (v) => { el.style.transform = `translateY(${v}px)`; }, onSettled);
     }
