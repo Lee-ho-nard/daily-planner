@@ -2355,6 +2355,13 @@
   // unscheduled row opens the same openTaskViewModal() list view uses) and no
   // bulk-select (there's nothing checkbox-shaped to select against here).
   let plannerViewMode = localStorage.getItem("plannerViewMode") === "timeline" ? "timeline" : "list";
+
+  // Day/Week/Month mode for the whole Planner tab — separate from
+  // plannerViewMode above (List/Timeline), which only applies within Day
+  // view. Persisted the same way, defaults to "day" so existing behavior is
+  // completely unchanged for anyone who's never touched the new toggle.
+  const PLANNER_RANGE_MODES = ["day", "week", "month"];
+  let plannerRangeMode = PLANNER_RANGE_MODES.includes(localStorage.getItem("plannerRangeMode")) ? localStorage.getItem("plannerRangeMode") : "day";
   let timelineNowLineInterval = null;
 
   function stopTimelineNowLine() {
@@ -2536,6 +2543,169 @@
     lucide.createIcons();
   }
 
+  // --- Planner Week/Month views ---
+  // Read-only overview of upcoming tasks: reuses getTasksForDate()'s own
+  // per-day occurrence expansion (so recurring tasks appear on every matching
+  // day, identically to Day view) rather than any new query, and hands off
+  // to the same openTaskViewModal() the Day/Timeline views already use, so
+  // Edit/Close behavior is identical everywhere — no second task modal.
+  function getUpcomingDays(count) {
+    const days = [];
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    for (let i = 0; i < count; i++) {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i);
+      days.push({ date: d, tasks: getTasksForDate(d) });
+    }
+    return days;
+  }
+
+  // Shared by Week view's day groups and the month-day-detail modal — same
+  // read-only row (name + category badge + time + duration, no checkbox/
+  // drag/delete, matching the spec's tap-to-view-only interaction). onClick
+  // defaults to opening the view modal directly; the month-day modal passes
+  // its own so it can close itself first, in guaranteed order, rather than
+  // stacking a second listener on the same element.
+  function renderTaskOverviewRow(task, onClick) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "week-task-row pressable";
+    const name = document.createElement("span");
+    name.className = "week-task-row-name";
+    name.textContent = task.checkoffLabel || task.name;
+    const meta = document.createElement("span");
+    meta.className = "week-task-row-meta";
+    const cat = document.createElement("span");
+    cat.className = "task-category";
+    cat.style.setProperty("--task-cat-color", categoryColor(task.category));
+    cat.textContent = task.category;
+    meta.appendChild(cat);
+    const metaBits = [];
+    if (task.time) {
+      const [h, m] = task.time.split(":").map(Number);
+      metaBits.push(formatMinutesAsClockTime(h * 60 + m));
+    }
+    const durText = formatDuration(task.duration);
+    if (durText) metaBits.push(durText);
+    if (metaBits.length) {
+      const bitsEl = document.createElement("span");
+      bitsEl.textContent = metaBits.join(" · ");
+      meta.appendChild(bitsEl);
+    }
+    row.appendChild(name);
+    row.appendChild(meta);
+    row.addEventListener("click", onClick || (() => openTaskViewModal(task.id)));
+    return row;
+  }
+
+  function renderWeekView() {
+    const container = document.getElementById("weekView");
+    container.innerHTML = "";
+    getUpcomingDays(7).forEach(({ date, tasks: dayTasks }) => {
+      const group = document.createElement("div");
+      group.className = "week-day-group";
+      const header = document.createElement("div");
+      header.className = "week-day-header";
+      header.textContent = date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+      group.appendChild(header);
+      if (dayTasks.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "week-day-empty";
+        empty.textContent = "No tasks.";
+        group.appendChild(empty);
+      } else {
+        dayTasks.forEach(task => group.appendChild(renderTaskOverviewRow(task)));
+      }
+      container.appendChild(group);
+    });
+    lucide.createIcons();
+  }
+
+  // Populated fresh on every renderMonthView() call; openMonthDayModal()
+  // reads back into it by index rather than re-querying, since the grid's
+  // cells are already built against this exact array.
+  let monthViewDays = [];
+
+  function renderMonthView() {
+    const container = document.getElementById("monthView");
+    container.innerHTML = "";
+    monthViewDays = getUpcomingDays(30);
+
+    const weekdayRow = document.createElement("div");
+    weekdayRow.className = "month-weekday-row";
+    ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].forEach(label => {
+      const el = document.createElement("div");
+      el.className = "month-weekday-label";
+      el.textContent = label;
+      weekdayRow.appendChild(el);
+    });
+    container.appendChild(weekdayRow);
+
+    const grid = document.createElement("div");
+    grid.className = "month-grid";
+    const todayStr = toDateStr(new Date());
+    // Leading blanks so day 1 (today) lands in its real weekday column,
+    // trailing blanks so the grid always ends on a full row — same "filler
+    // cell" convention any calendar grid needs.
+    const leadingBlanks = monthViewDays[0].date.getDay();
+    for (let i = 0; i < leadingBlanks; i++) {
+      const blank = document.createElement("div");
+      blank.className = "month-cell month-cell-blank";
+      grid.appendChild(blank);
+    }
+    monthViewDays.forEach((day, idx) => {
+      const dateStr = toDateStr(day.date);
+      const cell = document.createElement("button");
+      cell.type = "button";
+      cell.className = "month-cell pressable" + (day.tasks.length ? " has-tasks" : "") + (dateStr === todayStr ? " today" : "");
+      const dateEl = document.createElement("span");
+      dateEl.className = "month-cell-date";
+      dateEl.textContent = day.date.getDate();
+      cell.appendChild(dateEl);
+      if (day.tasks.length) {
+        const countEl = document.createElement("span");
+        countEl.className = "month-cell-count";
+        countEl.textContent = String(day.tasks.length);
+        cell.appendChild(countEl);
+        cell.addEventListener("click", () => openMonthDayModal(idx));
+      } else {
+        // Nothing to show for an empty day — not interactive, matching the
+        // spec's "cells with tasks are tappable" (implicitly, empty ones aren't).
+        cell.disabled = true;
+      }
+      grid.appendChild(cell);
+    });
+    const trailingBlanks = (7 - ((leadingBlanks + monthViewDays.length) % 7)) % 7;
+    for (let i = 0; i < trailingBlanks; i++) {
+      const blank = document.createElement("div");
+      blank.className = "month-cell month-cell-blank";
+      grid.appendChild(blank);
+    }
+    container.appendChild(grid);
+    lucide.createIcons();
+  }
+
+  const monthDayModalOverlay = document.getElementById("monthDayModalOverlay");
+  enableModalDragDismiss(monthDayModalOverlay);
+
+  function openMonthDayModal(dayIndex) {
+    const day = monthViewDays[dayIndex];
+    if (!day) return;
+    document.getElementById("monthDayModalDate").textContent = day.date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+    const tasksWrap = document.getElementById("monthDayModalTasks");
+    tasksWrap.innerHTML = "";
+    day.tasks.forEach(task => {
+      tasksWrap.appendChild(renderTaskOverviewRow(task, () => {
+        closeModal(monthDayModalOverlay);
+        openTaskViewModal(task.id);
+      }));
+    });
+    lucide.createIcons();
+    openModal(monthDayModalOverlay);
+  }
+  document.getElementById("monthDayModalClose").addEventListener("click", () => closeModal(monthDayModalOverlay));
+
   function setPlannerViewMode(mode) {
     if (mode === plannerViewMode) return;
     plannerViewMode = mode;
@@ -2558,6 +2728,22 @@
     // Markup hardcodes "List" active by default — sync it to whatever
     // preference was actually persisted.
     btn.classList.toggle("active", btn.dataset.plannerView === plannerViewMode);
+  });
+
+  function setPlannerRangeMode(mode) {
+    if (mode === plannerRangeMode) return;
+    plannerRangeMode = mode;
+    localStorage.setItem("plannerRangeMode", mode);
+    document.querySelectorAll("#plannerRangeToggle .range-tab").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.plannerRange === mode);
+    });
+    renderAll();
+  }
+  document.querySelectorAll("#plannerRangeToggle .range-tab").forEach(btn => {
+    btn.addEventListener("click", () => setPlannerRangeMode(btn.dataset.plannerRange));
+    // Markup hardcodes "Day" active by default — sync it to whatever
+    // preference was actually persisted.
+    btn.classList.toggle("active", btn.dataset.plannerRange === plannerRangeMode);
   });
 
   function toggleTaskSelection(taskId) {
@@ -2601,6 +2787,16 @@
   function renderAll() {
     syncAllStreakFreezes();
     renderStreakFlameBadge();
+
+    // Day-view chrome (date-nav, progress, category tabs, the task list
+    // itself) only applies to Day mode — Week/Month replace all of it with
+    // their own read-only overview, sharing nothing but the toggle above them.
+    document.getElementById("dayViewChrome").style.display = plannerRangeMode === "day" ? "" : "none";
+    document.getElementById("weekView").style.display = plannerRangeMode === "week" ? "" : "none";
+    document.getElementById("monthView").style.display = plannerRangeMode === "month" ? "" : "none";
+    if (plannerRangeMode === "week") { renderWeekView(); return; }
+    if (plannerRangeMode === "month") { renderMonthView(); return; }
+
     renderDate();
     renderCategoryTabs();
     renderTasks();

@@ -72,42 +72,53 @@
   </div>
 
   <div id="plannerView">
-    <div class="date-nav">
-      <button id="prevDay"><i data-lucide="chevron-left" class="icon"></i></button>
-      <div class="date-display">
-        <div class="weekday" id="weekday"></div>
-        <div class="fulldate" id="fulldate"></div>
+    <div class="range-tabs" id="plannerRangeToggle">
+      <button class="range-tab active" data-planner-range="day" type="button">Day</button>
+      <button class="range-tab" data-planner-range="week" type="button">Week</button>
+      <button class="range-tab" data-planner-range="month" type="button">Month</button>
+    </div>
+
+    <div id="dayViewChrome">
+      <div class="date-nav">
+        <button id="prevDay"><i data-lucide="chevron-left" class="icon"></i></button>
+        <div class="date-display">
+          <div class="weekday" id="weekday"></div>
+          <div class="fulldate" id="fulldate"></div>
+        </div>
+        <button id="nextDay"><i data-lucide="chevron-right" class="icon"></i></button>
       </div>
-      <button id="nextDay"><i data-lucide="chevron-right" class="icon"></i></button>
-    </div>
 
-    <div id="lockedBanner" style="display:none;background:var(--border);color:var(--text-secondary);text-align:center;padding:0.5rem;border-radius:8px;font-size:var(--text-sm);margin-bottom:1rem;">
-      <i data-lucide="lock" class="icon icon-accent"></i> This day is locked
-      <button id="viewReflectionLink" style="background:none;border:none;padding:0;margin-left:0.4rem;font-family:inherit;font-size:var(--text-sm);color:var(--accent-link);text-decoration:underline;cursor:pointer;display:inline-flex;align-items:center;gap:0.1rem;">View reflection<i data-lucide="chevron-right" class="icon" style="width:14px;height:14px;color:inherit;"></i></button>
-    </div>
-    <button id="endDayBtn" class="start-focus-btn" style="background:var(--text-primary);margin-bottom:1.25rem;">End Day</button>
-    <div class="progress-wrap" id="progressWrap">
-      <div class="progress-text">
-        <span id="progressCount"></span>
-        <span id="progressMsg"></span>
+      <div id="lockedBanner" style="display:none;background:var(--border);color:var(--text-secondary);text-align:center;padding:0.5rem;border-radius:8px;font-size:var(--text-sm);margin-bottom:1rem;">
+        <i data-lucide="lock" class="icon icon-accent"></i> This day is locked
+        <button id="viewReflectionLink" style="background:none;border:none;padding:0;margin-left:0.4rem;font-family:inherit;font-size:var(--text-sm);color:var(--accent-link);text-decoration:underline;cursor:pointer;display:inline-flex;align-items:center;gap:0.1rem;">View reflection<i data-lucide="chevron-right" class="icon" style="width:14px;height:14px;color:inherit;"></i></button>
       </div>
-      <div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill"></div></div>
+      <button id="endDayBtn" class="start-focus-btn" style="background:var(--text-primary);margin-bottom:1.25rem;">End Day</button>
+      <div class="progress-wrap" id="progressWrap">
+        <div class="progress-text">
+          <span id="progressCount"></span>
+          <span id="progressMsg"></span>
+        </div>
+        <div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill"></div></div>
+      </div>
+
+      <div class="category-tabs" id="categoryTabs"></div>
+
+      <div class="range-tabs" id="plannerViewToggle">
+        <button class="range-tab active" data-planner-view="list" type="button"><i data-lucide="list" class="icon"></i> List</button>
+        <button class="range-tab" data-planner-view="timeline" type="button"><i data-lucide="clock" class="icon"></i> Timeline</button>
+      </div>
+
+      <div class="task-list-toolbar" id="taskListToolbar">
+        <button id="selectAllBtn" class="cat-pill" type="button" style="display:none;">Select all</button>
+        <button id="selectModeBtn" class="cat-pill" type="button">Select</button>
+      </div>
+
+      <ul id="taskList"></ul>
+      <div id="timelineView" style="display:none;"></div>
     </div>
 
-    <div class="category-tabs" id="categoryTabs"></div>
-
-    <div class="range-tabs" id="plannerViewToggle">
-      <button class="range-tab active" data-planner-view="list" type="button"><i data-lucide="list" class="icon"></i> List</button>
-      <button class="range-tab" data-planner-view="timeline" type="button"><i data-lucide="clock" class="icon"></i> Timeline</button>
-    </div>
-
-    <div class="task-list-toolbar" id="taskListToolbar">
-      <button id="selectAllBtn" class="cat-pill" type="button" style="display:none;">Select all</button>
-      <button id="selectModeBtn" class="cat-pill" type="button">Select</button>
-    </div>
-
-    <ul id="taskList"></ul>
-    <div id="timelineView" style="display:none;"></div>
+    <div id="weekView" style="display:none;"></div>
+    <div id="monthView" style="display:none;"></div>
   </div>
 
   <div id="goalsView" style="display:none;">
@@ -433,6 +444,16 @@
     <div class="modal-actions">
       <button class="btn-cancel" id="taskViewClose">Close</button>
       <button class="btn-save" id="taskViewEdit">Edit</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="monthDayModalOverlay">
+  <div class="modal">
+    <h3 id="monthDayModalDate"></h3>
+    <div id="monthDayModalTasks"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="monthDayModalClose">Close</button>
     </div>
   </div>
 </div>
