@@ -669,6 +669,15 @@
   .range-tab { flex:1; padding:0.5rem; border-radius:10px; border:none; background:transparent; cursor:pointer; font-family:inherit; font-size:var(--text-sm); font-weight:500; color:var(--text-secondary); transition: background 0.2s, color 0.2s; }
   .range-tab.active { background:var(--bg-card); color: var(--text-primary); box-shadow: var(--shadow-card); }
 
+  /* Compact Day/Week/Month planner-mode switch — same pill/active-state
+     language as .range-tab (so it reads as the same family of control) but
+     sized and positioned to sit lightly in the header area above the date,
+     not as a second full-width tab bar competing with the main nav row.
+     Auto-width and centered (not flex:1 stretched) is what keeps it small. */
+  .mini-toggle { display: flex; justify-content: center; gap: 0.2rem; background: var(--border); padding: 0.2rem; border-radius: 999px; width: fit-content; margin: 0 auto 0.85rem; }
+  .mini-toggle-btn { padding: 0.35rem 0.9rem; border-radius: 999px; border: none; background: transparent; cursor: pointer; font-family: inherit; font-size: var(--text-xs); font-weight: 500; color: var(--text-secondary); white-space: nowrap; transition: background 0.2s, color 0.2s; }
+  .mini-toggle-btn.active { background: var(--bg-card); color: var(--text-primary); box-shadow: var(--shadow-card); }
+
   /* --- Planner Timeline view --- */
   /* Reuses .range-tabs/.range-tab as-is (#plannerViewToggle) for the
      List/Timeline switch — same segmented-control look already used for
@@ -728,7 +737,13 @@
   /* Built from .timeline-unscheduled-item's look (same card/shadow/press
      language as the rest of the Planner) but read-only: no checkbox, drag
      handle, or delete button, matching Week/Month's tap-to-view-only spec. */
-  .week-task-row { display: block; width: 100%; text-align: left; background: var(--bg-card); border: none; border-radius: var(--radius-sm); padding: 0.6rem 0.8rem; margin-bottom: 0.4rem; cursor: pointer; box-shadow: var(--shadow-card); font-family: inherit; transition: box-shadow 0.2s, transform 120ms ease; }
+  /* transition's transform entry matches .pressable's own exactly (see that
+     class's comment) — a plain "120ms ease" here would win over .pressable's
+     declaration outright (same-specificity shorthand replaces, not merges),
+     silently dropping the press-squash's bounce easing. touch-action avoids
+     the ~300ms tap-delay/double-tap-zoom ambiguity mobile browsers apply to
+     plain elements by default, so a real tap registers immediately. */
+  .week-task-row { display: block; width: 100%; text-align: left; background: var(--bg-card); border: none; border-radius: var(--radius-sm); padding: 0.6rem 0.8rem; margin-bottom: 0.4rem; cursor: pointer; box-shadow: var(--shadow-card); font-family: inherit; touch-action: manipulation; transition: box-shadow 0.2s, transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1); }
   .week-task-row:hover { box-shadow: var(--shadow-elevated); transform: translateY(-1px); }
   .week-task-row:last-child { margin-bottom: 0; }
   .week-task-row-name { display: block; font-size: var(--text-base); color: var(--text-primary); margin-bottom: 0.2rem; }
@@ -737,7 +752,9 @@
   .month-weekday-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.3rem; margin-bottom: 0.5rem; }
   .month-weekday-label { text-align: center; font-size: var(--text-xs); font-weight: 500; color: var(--text-muted); }
   .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.3rem; }
-  .month-cell { aspect-ratio: 1; border: none; border-radius: var(--radius-sm); background: var(--bg-card); box-shadow: var(--shadow-card); cursor: pointer; font-family: inherit; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.15rem; padding: 0.2rem; transition: box-shadow 0.2s, transform 120ms ease; }
+  /* Same .pressable transition-merge and touch-action reasoning as
+     .week-task-row above. */
+  .month-cell { aspect-ratio: 1; border: none; border-radius: var(--radius-sm); background: var(--bg-card); box-shadow: var(--shadow-card); cursor: pointer; font-family: inherit; touch-action: manipulation; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.15rem; padding: 0.2rem; transition: box-shadow 0.2s, transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1); }
   .month-cell:hover { box-shadow: var(--shadow-elevated); transform: translateY(-1px); }
   .month-cell-blank { background: transparent; box-shadow: none; cursor: default; }
   /* Plain tint, not a per-category color — a single cell can hold tasks

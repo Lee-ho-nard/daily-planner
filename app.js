@@ -2734,12 +2734,12 @@
     if (mode === plannerRangeMode) return;
     plannerRangeMode = mode;
     localStorage.setItem("plannerRangeMode", mode);
-    document.querySelectorAll("#plannerRangeToggle .range-tab").forEach(btn => {
+    document.querySelectorAll("#plannerRangeToggle .mini-toggle-btn").forEach(btn => {
       btn.classList.toggle("active", btn.dataset.plannerRange === mode);
     });
     renderAll();
   }
-  document.querySelectorAll("#plannerRangeToggle .range-tab").forEach(btn => {
+  document.querySelectorAll("#plannerRangeToggle .mini-toggle-btn").forEach(btn => {
     btn.addEventListener("click", () => setPlannerRangeMode(btn.dataset.plannerRange));
     // Markup hardcodes "Day" active by default — sync it to whatever
     // preference was actually persisted.

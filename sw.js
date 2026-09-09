@@ -10,7 +10,7 @@
 // respondWith()), so Firestore's own persistentLocalCache offline
 // persistence (see firebase-init.js) keeps working exactly as it did before
 // this file existed. The two caching layers never see each other.
-const CACHE_VERSION = "flit-shell-v3";
+const CACHE_VERSION = "flit-shell-v4";
 
 const SHELL_ASSETS = [
   "/",
