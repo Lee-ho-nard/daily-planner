@@ -10,7 +10,7 @@
 // respondWith()), so Firestore's own persistentLocalCache offline
 // persistence (see firebase-init.js) keeps working exactly as it did before
 // this file existed. The two caching layers never see each other.
-const CACHE_VERSION = "flit-shell-v2";
+const CACHE_VERSION = "flit-shell-v3";
 
 const SHELL_ASSETS = [
   "/",
@@ -27,6 +27,8 @@ const SHELL_ASSETS = [
   "/manifest.json",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
+  "/icons/icon-192-maskable.png",
+  "/icons/icon-512-maskable.png",
   // Self-hosted (see index.html's own comment) so they're actually
   // cacheable here -- the whole point of vendoring them off jsdelivr/
   // unpkg/gstatic. Without these, the app shell's HTML/CSS/JS loaded fine

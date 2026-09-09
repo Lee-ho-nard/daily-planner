@@ -66,6 +66,30 @@
        made --container-edge-gap itself larger. Single variable so every
        consumer retunes together. */
     --corner-inset: 1rem;
+    /* Widest .settings-corner ever gets: 3 .cat-add buttons (34px each,
+       counting the premium-only #themesBtn) plus 2 * 0.5rem gaps between
+       them — see .settings-corner's own gap. Reserving for this max case
+       unconditionally (rather than tracking #themesBtn's display:none)
+       means non-premium users just get a hair more breathing room than
+       strictly needed, never less. */
+    --corner-cluster-max-width: 118px;
+    /* Total clearance .app-header-row needs on its right so .view-tabs
+       never renders under .settings-corner: the cluster's own footprint
+       plus the gap from the true edge it sits at (--corner-inset) plus a
+       little breathing room between the two, so they read as separate
+       rather than touching. */
+    --corner-clear-needed: calc(var(--corner-inset) + var(--corner-cluster-max-width) + 0.75rem);
+    /* .app-header-row's own padding-right (below) only needs to make up
+       the SHORTFALL between what --container-edge-gap already provides
+       for free and --corner-clear-needed — past ~900-960px wide,
+       --container-edge-gap alone already clears the cluster and this is
+       0, so .view-tabs keeps running the row's full width (still flush
+       with #endDayBtn below it, unchanged from before). Below that, it
+       grows smoothly down to the full --corner-clear-needed on mobile
+       (where --container-edge-gap is 0), so .view-tabs shrinks by exactly
+       enough to clear .settings-corner at every width in between instead
+       of the two spatially overlapping and relying on z-index to hide it. */
+    --tab-bar-right-reserve: max(0px, calc(var(--corner-clear-needed) - var(--container-edge-gap)));
     /* .fab's own position/size, shared so .fab-guide-arrow (and .mic-fab,
        positioned relative to it) can anchor off it via calc() instead of a
        separately hand-tuned fixed position — stays correctly aimed if .fab
@@ -172,15 +196,25 @@
      row — Streak, Theme, Settings, in that order, so it's grouped with
      the other account-level icons instead of floating next to the tab
      bar. .app-header-row's own row is pure navigation now (see below).
-     z-index stays ABOVE .view-tabs' (6): even with #themesBtn gone,
-     .view-tabs itself still spans this row's full width to match
-     #endDayBtn, which still spatially overlaps this fixed cluster at
-     every width below the 1400px breakpoint (moving #themesBtn out
-     doesn't change WHERE this cluster floats, only what's in it) — so
-     the icons still need to render visibly on top of the tab bar's pill
-     background wherever they overlap, same reasoning as before. Deep
-     Work's hide is the explicit body.deep-work-mode rule further down. */
-  .settings-corner { position: fixed; top: var(--corner-inset); right: calc(var(--corner-edge-gap) + var(--corner-inset)); z-index: 7; display: flex; gap: 0.5rem; }
+     z-index stays ABOVE .view-tabs' (6) as a general belt-and-suspenders
+     — the true-corner anchoring below keeps this cluster clear of
+     .view-tabs at every width, but this still guarantees the icons render
+     on top rather than under it if that ever changes. Deep Work's hide is
+     the explicit body.deep-work-mode rule further down. */
+  /* Anchored straight to the true viewport corner (--corner-inset alone,
+     no --corner-edge-gap component) rather than tracking .container's edge
+     the way .fab/.timer-icon-controls do below 1400px — with .view-tabs
+     sharing this row and spanning the container's full width, tracking the
+     container edge meant this cluster's position drifted inward exactly in
+     step with .view-tabs' own right edge, landing on top of it (the "Deep
+     Work" tab specifically) at every width below 1400px instead of at some
+     safely-clear distance. The true corner is a fixed, width-independent
+     position; .app-header-row's own padding-right below is what actually
+     keeps .view-tabs clear of it now, at every width including mobile
+     (where this cluster's position is unchanged from before — mobile's
+     overlap, same as every other width under ~960px, came from .view-tabs
+     reaching too far, not from this cluster sitting in the wrong place). */
+  .settings-corner { position: fixed; top: var(--corner-inset); right: var(--corner-inset); z-index: 7; display: flex; gap: 0.5rem; }
   .app-header-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem; }
   /* flex: 1 (stretch to fill the row) rather than sizing to its own
      content — a shrink-to-content .view-tabs was tried and reverted
@@ -191,8 +225,11 @@
      should read as aligned with #endDayBtn below it. .view-tabs is
      .app-header-row's only child now that #themesBtn lives in
      .settings-corner instead, so flex: 1 simply hands it the row's full
-     width — same left AND right edge as #endDayBtn, no reservation or
-     sibling to share space with. */
+     width minus --tab-bar-right-reserve (see :root) — 0 past ~960px wide,
+     where that's still the same left AND right edge as #endDayBtn as
+     before; it only shrinks .view-tabs below that, exactly enough to keep
+     clear of .settings-corner instead of running underneath it. */
+  .app-header-row { padding-right: var(--tab-bar-right-reserve); }
   .app-header-row .view-tabs { flex: 1; }
 
   /* Desktop-width windows otherwise sit on a 480px column with a lot of
