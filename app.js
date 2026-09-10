@@ -763,15 +763,53 @@
   enableModalDragDismiss(revivalModalOverlay);
   let revivalTaskId = null;
 
+  // Session-only memory of which duplicate-name groups have already shown
+  // their one-time "N tasks named X have streaks at risk" heads-up (see
+  // checkForPendingRevival() below) — so resolving task 1 of 3 doesn't
+  // re-show that summary before task 2 and 3, it just moves straight to
+  // the next individual modal. Cleared on reload; nothing to clean up once
+  // a group's pendingRevivals all resolve, since nothing looks it up again.
+  const revivalBatchesAcknowledged = new Set();
+
+  // Same-name pending-revival group for `task` — tasks sharing this exact
+  // duplicate-streak identity (checkoffLabel||name, case/whitespace-
+  // insensitive) that also currently have a live pendingRevival. Always
+  // includes `task` itself, so length 1 means "no duplicates in this state
+  // right now." Recomputed fresh each call rather than cached, since it
+  // naturally shrinks as each duplicate gets resolved.
+  function pendingRevivalGroup(task) {
+    const normalized = (task.checkoffLabel || task.name).trim().toLowerCase();
+    return tasks.filter(t => t.pendingRevival && (t.checkoffLabel || t.name).trim().toLowerCase() === normalized);
+  }
+
   // Finds the first task with a live pendingRevival and shows it — called
   // from syncAllStreakFreezes() on every render, so it naturally re-checks
   // after any resolution (revive/let end/expire) picks up the next oldest
-  // one, if any, on the following pass.
+  // one, if any, on the following pass. When several duplicate tasks (same
+  // name+category, see the duplicate-streak investigation) all have a
+  // live pendingRevival, showing N indistinguishable "streak ended" modals
+  // back to back reads as a bug — a one-time summary explains why there
+  // are several before drilling into them individually.
   function checkForPendingRevival() {
     if (document.querySelector(".modal-overlay.open")) return;
     if (document.getElementById("milestoneScreen").classList.contains("visible")) return;
     const task = tasks.find(t => t.pendingRevival);
-    if (task) openRevivalModal(task);
+    if (!task) return;
+
+    const group = pendingRevivalGroup(task);
+    const normalized = (task.checkoffLabel || task.name).trim().toLowerCase();
+    if (group.length > 1 && !revivalBatchesAcknowledged.has(normalized)) {
+      revivalBatchesAcknowledged.add(normalized);
+      const name = task.checkoffLabel || task.name;
+      showConfirm({
+        title: "Multiple streaks at risk",
+        message: `${group.length} tasks named "${name}" have streaks at risk — review each.`,
+        confirmLabel: "Review",
+        onConfirm: () => openRevivalModal(task)
+      });
+      return;
+    }
+    openRevivalModal(task);
   }
 
   function openRevivalModal(task) {
@@ -784,6 +822,19 @@
     document.getElementById("revivalModalTitle").textContent = `${name} streak ended`;
     const reviveBtn = document.getElementById("revivalReviveBtn");
     const letEndBtn = document.getElementById("revivalLetEndBtn");
+
+    // Distinguishes this modal from its siblings once the one-time summary
+    // above has scrolled past — without this, resolving duplicate #1 and
+    // immediately seeing an identical-looking "streak ended" modal for
+    // duplicate #2 reads as the same modal reappearing, not progress.
+    const dupeNote = document.getElementById("revivalModalDupeNote");
+    const group = pendingRevivalGroup(task);
+    if (group.length > 1) {
+      dupeNote.textContent = `This is one of ${group.length} tasks named "${name}" — each has its own separate streak.`;
+      dupeNote.style.display = "block";
+    } else {
+      dupeNote.style.display = "none";
+    }
 
     if (expired) {
       document.getElementById("revivalModalBody").textContent = `Your ${streakLength}-day streak on ${name} ended. Too late to revive — the 24-hour window has passed.`;
@@ -812,7 +863,13 @@
       save();
     }
     closeModal(revivalModalOverlay);
-    renderAll();
+    // Delayed so this modal's own close transition (.modal-overlay's 200ms
+    // fade) actually plays before renderAll()'s checkForPendingRevival()
+    // potentially reopens the exact same overlay for the next duplicate
+    // task's pendingRevival — without this, a same-named duplicate's modal
+    // pops back up in the same tick, which reads as "nothing happened" (or
+    // worse, "my click didn't register") since the title text is identical.
+    setTimeout(() => renderAll(), 250);
   });
 
   document.getElementById("revivalReviveBtn").addEventListener("click", () => {
@@ -833,7 +890,10 @@
     triggerHaptic("light");
     showToast(`${task.checkoffLabel || task.name} streak revived.`, "success");
     closeModal(revivalModalOverlay);
-    renderAll();
+    // Same reasoning as revivalLetEndBtn above — let the close transition
+    // actually play before a duplicate task's next pendingRevival can
+    // reopen this same overlay.
+    setTimeout(() => renderAll(), 250);
   });
 
   // Shareable milestone cards (roadmap #6). MILESTONE_THRESHOLDS gates
@@ -4198,6 +4258,25 @@
   // 5000 is generous enough that no real usage should ever hit it.
   const MAX_TASKS_SOFT_CAP = 5000;
 
+  // Shared by every task-creation path that can silently multiply the same
+  // habit (Add Task's "Repeat this task" copies field, bulk-select
+  // Duplicate, the Add Goal flow) — per the duplicate-streak investigation,
+  // each duplicate gets a fully independent streak and its own revival
+  // modal, which reads as a bug even though the data is technically
+  // correct. Case/whitespace-insensitive so "Read" and "read " still match.
+  // Only ever used to decide whether to show a confirmation warning, never
+  // to block creation outright — existing duplicates are left alone
+  // entirely (no auto-merge).
+  function findDuplicateTaskByNameCategory(name, category, excludeIds) {
+    const normalized = (name || "").trim().toLowerCase();
+    excludeIds = excludeIds || [];
+    return tasks.find(t =>
+      !excludeIds.includes(t.id) &&
+      t.category === category &&
+      (t.name || "").trim().toLowerCase() === normalized
+    );
+  }
+
   function createTaskRecord({ name, category, time = "", duration = "", date, endDate = "", recurrence = { type: "none" }, isGoal = false, why = "", plan = "", checkoffLabel = "", sourceUrl = "", note = "" }) {
     const resolvedDate = date || toDateStr(currentDate);
     const maxOrder = tasks.filter(t => t.date === resolvedDate).reduce((max, t) => Math.max(max, t.order ?? 0), -1);
@@ -4246,7 +4325,6 @@
     // this function's own job ends at closeModal(), not at reopen.
     const saveBtn = document.getElementById("saveAdd");
     if (saveBtn.disabled) return;
-    saveBtn.disabled = true;
 
     let recurrence = { type: "none" };
     if (repeatType === "daily") {
@@ -4255,22 +4333,45 @@
       recurrence = { type: "weekly", days: [...selectedWeekdays].sort(), interval: parseInt(document.getElementById("modalInterval").value) || 1 };
     }
 
-    if (editingTaskId) {
-      const task = tasks.find(t => t.id === editingTaskId);
-      task.name = name; task.category = category; task.time = time; task.duration = duration;
-      task.date = date; task.endDate = endDate; task.recurrence = recurrence; task.isGoal = isGoal;
-      task.why = why; task.plan = plan; task.checkoffLabel = checkoffLabel; task.note = note;
-      if (!task.completedDates) task.completedDates = [];
-    } else {
-      let copies = parseInt(document.getElementById("modalCopies").value) || 1;
-      copies = Math.max(1, Math.min(10, copies));
-      for (let i = 0; i < copies; i++) {
-        createTaskRecord({ name, category, time, duration, date, endDate, recurrence, isGoal, why, plan, checkoffLabel, note });
+    const finishSubmit = () => {
+      saveBtn.disabled = true;
+      if (editingTaskId) {
+        const task = tasks.find(t => t.id === editingTaskId);
+        task.name = name; task.category = category; task.time = time; task.duration = duration;
+        task.date = date; task.endDate = endDate; task.recurrence = recurrence; task.isGoal = isGoal;
+        task.why = why; task.plan = plan; task.checkoffLabel = checkoffLabel; task.note = note;
+        if (!task.completedDates) task.completedDates = [];
+      } else {
+        let copies = parseInt(document.getElementById("modalCopies").value) || 1;
+        copies = Math.max(1, Math.min(10, copies));
+        for (let i = 0; i < copies; i++) {
+          createTaskRecord({ name, category, time, duration, date, endDate, recurrence, isGoal, why, plan, checkoffLabel, note });
+        }
+      }
+      save();
+      closeModal(overlay);
+      renderAll();
+    };
+
+    // Only warn on brand-new tasks — editing an existing task into a name
+    // that happens to collide isn't the "silently multiplied the same
+    // habit" scenario this guards against. Doesn't block creation, just
+    // requires an explicit "Continue Anyway" — see the duplicate-streak
+    // investigation for why unchecked duplication is confusing (independent
+    // streaks, stacked revival modals) even though the data itself is fine.
+    if (!editingTaskId) {
+      const dup = findDuplicateTaskByNameCategory(name, category);
+      if (dup) {
+        showConfirm({
+          title: "Possible duplicate task",
+          message: `You already have a task called "${name}" in ${category}. Continue anyway, or edit the existing one?`,
+          confirmLabel: "Continue Anyway",
+          onConfirm: finishSubmit
+        });
+        return;
       }
     }
-    save();
-    closeModal(overlay);
-    renderAll();
+    finishSubmit();
   }
 
   document.getElementById("saveAdd").addEventListener("click", submitTaskForm);
@@ -4304,30 +4405,49 @@
       return;
     }
     const toDuplicate = tasks.filter(t => selectedTaskIds.has(t.id));
-    toDuplicate.forEach(t => {
-      const dateTasks = tasks.filter(x => x.date === t.date);
-      const maxOrder = dateTasks.length ? Math.max(...dateTasks.map(x => x.order ?? 0)) : -1;
-      tasks.push({
-        ...t,
-        id: Date.now().toString() + Math.random().toString(36).slice(2, 7),
-        order: maxOrder + 1,
-        done: false,
-        completedDates: [],
-        // "Track as a goal" is a deliberate, explicit action tied to a
-        // specific goal's own identity (name, why, plan) — duplicating an
-        // unrelated task copy shouldn't silently carry that over and
-        // create a second goal entry alongside the original.
-        isGoal: false,
-        why: "",
-        plan: "",
-        checkoffLabel: ""
+
+    const finishBulkDuplicate = () => {
+      toDuplicate.forEach(t => {
+        const dateTasks = tasks.filter(x => x.date === t.date);
+        const maxOrder = dateTasks.length ? Math.max(...dateTasks.map(x => x.order ?? 0)) : -1;
+        tasks.push({
+          ...t,
+          id: Date.now().toString() + Math.random().toString(36).slice(2, 7),
+          order: maxOrder + 1,
+          done: false,
+          completedDates: [],
+          // "Track as a goal" is a deliberate, explicit action tied to a
+          // specific goal's own identity (name, why, plan) — duplicating an
+          // unrelated task copy shouldn't silently carry that over and
+          // create a second goal entry alongside the original.
+          isGoal: false,
+          why: "",
+          plan: "",
+          checkoffLabel: ""
+        });
       });
-    });
-    const n = toDuplicate.length;
-    save();
-    setSelectMode(false);
-    renderAll();
-    showToast(`Duplicated ${n} task${n > 1 ? "s" : ""}`, "success");
+      const n = toDuplicate.length;
+      save();
+      setSelectMode(false);
+      renderAll();
+      showToast(`Duplicated ${n} task${n > 1 ? "s" : ""}`, "success");
+    };
+
+    // Same "warn, don't silently multiply the same habit" guard as
+    // submitTaskForm() — a duplicate here is checked against every OTHER
+    // task (excluding the one being duplicated itself), which also catches
+    // duplicating two same-named tasks selected together in one batch.
+    const conflict = toDuplicate.find(t => findDuplicateTaskByNameCategory(t.name, t.category, [t.id]));
+    if (conflict) {
+      showConfirm({
+        title: "Possible duplicate task",
+        message: `You already have a task called "${conflict.name}" in ${conflict.category}. Continue anyway, or edit the existing one?`,
+        confirmLabel: "Continue Anyway",
+        onConfirm: finishBulkDuplicate
+      });
+      return;
+    }
+    finishBulkDuplicate();
   });
 
   // Move/Category/Duration each open the same modal shell, but scoped to
@@ -4862,24 +4982,45 @@
     const why = document.getElementById("goalWhy").value.trim();
     const plan = document.getElementById("goalPlan").value.trim();
 
-    if (editingGoalId) {
-      const g = tasks.find(t => t.id === editingGoalId);
-      g.name = name; g.category = category; g.time = time;
-      g.checkoffLabel = checkoffLabel; g.why = why; g.plan = plan;
-      g.date = startDate; g.endDate = endDate; g.recurrence = recurrence;
-      editingGoalId = null;
-    } else {
-      tasks.push({
-        id: Date.now().toString(), name, category, time, duration: "",
-        date: startDate, endDate, done: false, order: 0,
-        recurrence, completedDates: [], isGoal: true,
-        checkoffLabel, why, plan
-      });
-    }
+    const finishGoalSave = () => {
+      if (editingGoalId) {
+        const g = tasks.find(t => t.id === editingGoalId);
+        g.name = name; g.category = category; g.time = time;
+        g.checkoffLabel = checkoffLabel; g.why = why; g.plan = plan;
+        g.date = startDate; g.endDate = endDate; g.recurrence = recurrence;
+        editingGoalId = null;
+      } else {
+        tasks.push({
+          id: Date.now().toString(), name, category, time, duration: "",
+          date: startDate, endDate, done: false, order: 0,
+          recurrence, completedDates: [], isGoal: true,
+          checkoffLabel, why, plan
+        });
+      }
 
-    save();
-    closeModal(goalOverlay);
-    renderGoals();
+      save();
+      closeModal(goalOverlay);
+      renderGoals();
+    };
+
+    // Same duplicate-name warning as Add Task's creation paths, scoped to
+    // other GOAL tasks specifically (isGoal:true) — a goal is just a task
+    // record with that flag set (renderGoals() filters on it), so two
+    // same-named goal tasks are two fully independent streaks/cards, which
+    // is the exact confusing scenario from the duplicate-streak investigation.
+    if (!editingGoalId) {
+      const dupGoal = tasks.find(t => t.isGoal && t.category === category && (t.name || "").trim().toLowerCase() === name.trim().toLowerCase());
+      if (dupGoal) {
+        showConfirm({
+          title: "Possible duplicate goal",
+          message: `You already have a task called "${name}" in ${category}. Continue anyway, or edit the existing one?`,
+          confirmLabel: "Continue Anyway",
+          onConfirm: finishGoalSave
+        });
+        return;
+      }
+    }
+    finishGoalSave();
   });
 
   goalOverlay.addEventListener("keydown", (e) => {
