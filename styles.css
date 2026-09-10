@@ -764,14 +764,20 @@
      category badges next to it so the row reads as one consistent set. */
   .category-summary-all { font-size: var(--text-sm); font-weight: 500; padding: 0.3rem 0.7rem; border-radius: 999px; border: none; font-family: inherit; cursor: pointer; touch-action: manipulation; background: var(--border); color: var(--text-primary); transition: transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1); }
   /* Built from .timeline-unscheduled-item's look (same card/shadow/press
-     language as the rest of the Planner) but read-only: no checkbox, drag
-     handle, or delete button — used inside categoryTasksModalOverlay now
+     language as the rest of the Planner) — used inside categoryTasksModalOverlay
      (Week view and the month-day modal show category summaries instead of
-     this directly; drilling into a category is what reaches it). */
-  .week-task-row { display: block; width: 100%; text-align: left; background: var(--bg-card); border: none; border-radius: var(--radius-sm); padding: 0.6rem 0.8rem; margin-bottom: 0.4rem; cursor: pointer; box-shadow: var(--shadow-card); font-family: inherit; touch-action: manipulation; transition: box-shadow 0.2s, transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+     this directly; drilling into a category is what reaches it). Row +
+     checkbox, laid out like .task-item: the checkbox is its own click
+     target (renderTaskOverviewRow() stops its event from reaching the
+     row), tapping anywhere else in the row opens the task view modal. */
+  .week-task-row { display: flex; align-items: center; gap: 0.7rem; width: 100%; text-align: left; background: var(--bg-card); border: none; border-radius: var(--radius-sm); padding: 0.6rem 0.8rem; margin-bottom: 0.4rem; cursor: pointer; box-shadow: var(--shadow-card); font-family: inherit; touch-action: manipulation; transition: box-shadow 0.2s, transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1); }
   .week-task-row:hover { box-shadow: var(--shadow-elevated); transform: translateY(-1px); }
+  .week-task-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .week-task-row:last-child { margin-bottom: 0; }
+  .week-task-row .checkbox { flex-shrink: 0; }
+  .week-task-row-text { flex: 1; min-width: 0; }
   .week-task-row-name { display: block; font-size: var(--text-base); color: var(--text-primary); margin-bottom: 0.2rem; }
+  .week-task-row.done .week-task-row-name { text-decoration: line-through; opacity: 0.5; }
   .week-task-row-meta { display: flex; align-items: center; gap: 0.4rem; font-size: var(--text-xs); color: var(--text-secondary); }
 
   .month-weekday-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0.3rem; margin-bottom: 0.5rem; }

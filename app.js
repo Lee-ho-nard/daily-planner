@@ -2180,6 +2180,60 @@
     }
   }
 
+  // Shared by every checkbox in the app — Day view's list rows
+  // (renderListView()) and the Week/Month overview rows
+  // (renderTaskOverviewRow()) alike — so completing a task looks and
+  // behaves identically no matter which view it happened in. Mutates the
+  // real task's completedDates/done, plays the pop + checkmark-morph
+  // animation, and saves; the caller decides what to re-render once the
+  // animation settles (onDone/onUndone), since Day view and the Week/Month
+  // overview modals need different follow-up refreshes.
+  function toggleTaskOccurrence(task, checkbox, { onDone, onUndone } = {}) {
+    if (isDayLocked(task.occurrenceDate)) { showToast("This day is locked. Reflection already completed.", "warning"); return; }
+    const realTask = tasks.find(t => t.id === task.id);
+    let nowDone;
+    if (task.isRecurring) {
+      realTask.completedDates = realTask.completedDates || [];
+      const idx = realTask.completedDates.indexOf(task.occurrenceDate);
+      if (idx === -1) { realTask.completedDates.push(task.occurrenceDate); nowDone = true; }
+      else { realTask.completedDates.splice(idx, 1); nowDone = false; }
+    } else {
+      realTask.done = !realTask.done;
+      nowDone = realTask.done;
+    }
+
+    checkbox.classList.toggle("checked", nowDone);
+    // Spring drives the pop scale directly; keep CSS transitions for
+    // background/border-color (the checked-state color change) but not
+    // transform, mirroring .checkbox's rule in styles.css minus transform.
+    checkbox.style.transition = "background 300ms ease, border-color 300ms ease";
+    spring(1, 1.08, { key: checkbox }, (v) => {
+      checkbox.style.transform = `scale(${v})`;
+    }, () => {
+      spring(1.08, 1, { key: checkbox }, (v) => {
+        checkbox.style.transform = `scale(${v})`;
+      });
+    });
+
+    if (nowDone) {
+      triggerHaptic("light");
+      checkbox.innerHTML = '<i data-lucide="check" class="icon" style="opacity:0;transform:scale(0.5);transition:opacity 200ms cubic-bezier(0.34,1.56,0.64,1), transform 200ms cubic-bezier(0.34,1.56,0.64,1);"></i>';
+      lucide.createIcons();
+      const checkIcon = checkbox.querySelector(".icon");
+      requestAnimationFrame(() => {
+        checkIcon.style.opacity = "1";
+        checkIcon.style.transform = "scale(1)";
+      });
+      save();
+      maybeCelebrateDailyCompletion();
+      if (onDone) onDone();
+    } else {
+      checkbox.innerHTML = "";
+      save();
+      if (onUndone) onUndone();
+    }
+  }
+
   // Single entry point for both Planner sub-views (called from everywhere
   // list-editing already called it: checkbox toggles, add/edit/delete,
   // drag-reorder, category filter changes, day navigation). Handles the
@@ -2282,58 +2336,21 @@
       else checkbox.innerHTML = "";
       checkbox.addEventListener("click", (e) => {
         e.stopPropagation();
-        if (isDayLocked(task.occurrenceDate)) { showToast("This day is locked. Reflection already completed.", "warning"); return; }
-        const realTask = tasks.find(t => t.id === task.id);
-        let nowDone;
-        if (task.isRecurring) {
-          realTask.completedDates = realTask.completedDates || [];
-          const idx = realTask.completedDates.indexOf(task.occurrenceDate);
-          if (idx === -1) { realTask.completedDates.push(task.occurrenceDate); nowDone = true; }
-          else { realTask.completedDates.splice(idx, 1); nowDone = false; }
-        } else {
-          realTask.done = !realTask.done;
-          nowDone = realTask.done;
-        }
-
-        checkbox.classList.toggle("checked", nowDone);
-        // Spring drives the pop scale directly; keep CSS transitions for
-        // background/border-color (the checked-state color change) but not
-        // transform, mirroring .checkbox's rule in styles.css minus transform.
-        checkbox.style.transition = "background 300ms ease, border-color 300ms ease";
-        spring(1, 1.08, { key: checkbox }, (v) => {
-          checkbox.style.transform = `scale(${v})`;
-        }, () => {
-          spring(1.08, 1, { key: checkbox }, (v) => {
-            checkbox.style.transform = `scale(${v})`;
-          });
+        toggleTaskOccurrence(task, checkbox, {
+          onDone: () => {
+            li.classList.add("completing");
+            // renderAll() (not just renderTasks()) so syncAllStreakFreezes()
+            // runs and can pop the milestone screen right here — this is the
+            // actual moment a streak count changes; the other renderAll()
+            // call sites (Planner nav, Goals/Analysis tab switches) only
+            // catch a newly-earned milestone on the NEXT visit otherwise.
+            // Same 450ms delay as before, so the celebration takeover
+            // appears after the checkmark/list-reorder animation settles,
+            // not cutting it off mid-flight.
+            setTimeout(() => renderAll(), 450);
+          },
+          onUndone: () => setTimeout(() => renderTasks(), 200)
         });
-
-        if (nowDone) {
-          triggerHaptic("light");
-          checkbox.innerHTML = '<i data-lucide="check" class="icon" style="opacity:0;transform:scale(0.5);transition:opacity 200ms cubic-bezier(0.34,1.56,0.64,1), transform 200ms cubic-bezier(0.34,1.56,0.64,1);"></i>';
-          lucide.createIcons();
-          const checkIcon = checkbox.querySelector(".icon");
-          requestAnimationFrame(() => {
-            checkIcon.style.opacity = "1";
-            checkIcon.style.transform = "scale(1)";
-          });
-          li.classList.add("completing");
-          save();
-          maybeCelebrateDailyCompletion();
-          // renderAll() (not just renderTasks()) so syncAllStreakFreezes()
-          // runs and can pop the milestone screen right here — this is the
-          // actual moment a streak count changes; the other renderAll()
-          // call sites (Planner nav, Goals/Analysis tab switches) only
-          // catch a newly-earned milestone on the NEXT visit otherwise.
-          // Same 450ms delay as before, so the celebration takeover
-          // appears after the checkmark/list-reorder animation settles,
-          // not cutting it off mid-flight.
-          setTimeout(() => renderAll(), 450);
-        } else {
-          checkbox.innerHTML = "";
-          save();
-          setTimeout(() => renderTasks(), 200);
-        }
       });
 
       const name = document.createElement("span");
@@ -2671,15 +2688,44 @@
   }
 
   // Shared by Week view's day groups and the month-day-detail modal — same
-  // read-only row (name + category badge + time + duration, no checkbox/
-  // drag/delete, matching the spec's tap-to-view-only interaction). onClick
-  // defaults to opening the view modal directly; the month-day modal passes
-  // its own so it can close itself first, in guaranteed order, rather than
-  // stacking a second listener on the same element.
+  // read-only row (name + category badge + time + duration) plus a
+  // Day-view-identical completion checkbox, so a task can be checked off
+  // without navigating to its specific day. A plain <button> can't host a
+  // second independently-clickable control without invalid nested-button
+  // markup, so this is a div with role="button"; the checkbox's own click
+  // stops propagation (same pattern renderListView()'s <li> uses) so the
+  // two interactions stay distinct. onClick defaults to opening the view
+  // modal directly; the month-day modal passes its own so it can close
+  // itself first, in guaranteed order, rather than stacking a second
+  // listener on the same element.
   function renderTaskOverviewRow(task, onClick) {
-    const row = document.createElement("button");
-    row.type = "button";
-    row.className = "week-task-row pressable";
+    const openView = onClick || (() => openTaskViewModal(task.id));
+    const row = document.createElement("div");
+    row.className = "week-task-row pressable" + (task.occurrenceDone ? " done" : "");
+    row.setAttribute("role", "button");
+    row.tabIndex = 0;
+
+    const checkbox = document.createElement("div");
+    checkbox.className = "checkbox" + (task.occurrenceDone ? " checked" : "") + (task.occurrenceFrozen ? " frozen" : "");
+    if (task.occurrenceDone) checkbox.innerHTML = '<i data-lucide="check" class="icon"></i>';
+    else if (task.occurrenceFrozen) { checkbox.innerHTML = '<i data-lucide="snowflake" class="icon"></i>'; checkbox.title = "Streak freeze used this day"; }
+    else checkbox.innerHTML = "";
+    checkbox.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleTaskOccurrence(task, checkbox, {
+        onDone: () => {
+          row.classList.add("done");
+          setTimeout(() => renderAll(), 450);
+        },
+        onUndone: () => {
+          row.classList.remove("done");
+          setTimeout(() => renderAll(), 200);
+        }
+      });
+    });
+
+    const textWrap = document.createElement("div");
+    textWrap.className = "week-task-row-text";
     const name = document.createElement("span");
     name.className = "week-task-row-name";
     name.textContent = task.checkoffLabel || task.name;
@@ -2702,9 +2748,21 @@
       bitsEl.textContent = metaBits.join(" · ");
       meta.appendChild(bitsEl);
     }
-    row.appendChild(name);
-    row.appendChild(meta);
-    row.addEventListener("click", onClick || (() => openTaskViewModal(task.id)));
+    textWrap.appendChild(name);
+    textWrap.appendChild(meta);
+
+    row.appendChild(checkbox);
+    row.appendChild(textWrap);
+    row.addEventListener("click", (e) => {
+      if (e.target === checkbox || checkbox.contains(e.target)) return;
+      openView();
+    });
+    row.addEventListener("keydown", (e) => {
+      if ((e.key === "Enter" || e.key === " ") && e.target === row) {
+        e.preventDefault();
+        openView();
+      }
+    });
     return row;
   }
 
