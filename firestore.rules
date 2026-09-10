@@ -27,7 +27,8 @@ service cloud.firestore {
              sizeOk(data, 'sourceUrl', 2000) && sizeOk(data, 'time', 20) &&
              sizeOk(data, 'date', 20) && sizeOk(data, 'endDate', 20) &&
              sizeOk(data, 'duration', 20) &&
-             listSizeOk(data, 'completedDates', 5000) && listSizeOk(data, 'frozenDates', 5000);
+             listSizeOk(data, 'completedDates', 5000) && listSizeOk(data, 'frozenDates', 5000) &&
+             listSizeOk(data, 'revivalResolvedDates', 5000);
     }
 
     match /users/{uid} {

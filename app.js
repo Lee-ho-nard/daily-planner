@@ -563,22 +563,19 @@
   }
 
   // Streak freeze economy (Snapchat-style), free tier: every 7 consecutive
-  // streak days (completed or already-frozen) banks 1 freeze, capped at a
-  // stockpile of 1 (Streak Insurance reserves the higher, 2-freeze tier for
-  // premium's separate applyPremiumStreakFreezes() below — the two systems
-  // are mutually exclusive per user, never combined). A past scheduled day
-  // that's missed consumes a banked freeze instead of breaking the streak,
-  // if one's available. This is a pure re-simulation from task.date forward
-  // through completedDates/frozenDates every time it's called — deliberately
-  // not a separately-stored, freely-settable "freeze count" field, so
-  // there's nothing for a client to just edit to a higher number; the only
-  // persisted side effect is appending newly-frozen dates to frozenDates,
-  // exactly like any other task field edit already goes through the same
-  // read/write security rule.
-  // Returns { changed, freezesAvailable } — changed is true when new dates
-  // were appended to task.frozenDates (caller should persist via save()).
+  // streak days (completed or already-frozen) banks 1 freeze. Uncapped — a
+  // user who never spends one can accumulate several across separate 7-day
+  // runs; premium's separate, capped shared pool (getStreakFreezeState()
+  // below) is a different economy entirely, never combined. Spending only
+  // ever happens through the revival modal's explicit "Revive Streak"
+  // action (see detectPendingRevival()/revivalReviveBtn below) — this
+  // function itself never mutates anything anymore; it's a pure
+  // re-simulation from task.date forward through completedDates/
+  // frozenDates every time it's called, purely to answer "how many does
+  // this task have banked right now."
+  // Returns { freezesAvailable }.
   function applyStreakFreezes(task) {
-    if (!task.recurrence || task.recurrence.type === "none") return { changed: false, freezesAvailable: 0 };
+    if (!task.recurrence || task.recurrence.type === "none") return { freezesAvailable: 0 };
 
     const today = toDateStr(new Date());
     const start = new Date(task.date + "T00:00:00");
@@ -587,50 +584,33 @@
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       if (occursOn(task, d)) scheduledDays.push(toDateStr(d));
     }
-    // Only days that have actually passed can be auto-frozen — "today" isn't
-    // a missed day until it's over.
     const pastScheduled = scheduledDays.filter(ds => ds < today);
 
     const completedDates = task.completedDates || [];
-    const existingFrozen = new Set(task.frozenDates || []);
-    const newlyFrozen = [];
+    const frozenDates = new Set(task.frozenDates || []);
 
     let freezesBanked = 0;
     let consecutive = 0;
 
     pastScheduled.forEach(ds => {
-      const isCompleted = completedDates.includes(ds);
-      const isFrozen = existingFrozen.has(ds);
-
-      if (isCompleted) {
+      if (completedDates.includes(ds)) {
         consecutive++;
-      } else if (isFrozen) {
-        // Already frozen by an earlier call to this function — replay must
-        // debit the bank for it exactly like the original spend did.
-        // Treating it as a free pass here (the way a completed day is) would
-        // let a freeze that's already been spent look unspent again on the
-        // next replay, refilling the bank for free and letting it consume an
-        // extra day further down the gap — one more each time this function
-        // is re-run (every app reload), since it's a pure re-simulation with
-        // no other record of which bank credit paid for which frozen day.
+      } else if (frozenDates.has(ds)) {
+        // A frozen day was paid for by a freeze at the time it was revived
+        // — debit the bank for it here so replaying history doesn't treat
+        // it as a free pass and silently refund the freeze that was spent.
         freezesBanked = Math.max(0, freezesBanked - 1);
-        consecutive++;
-      } else if (freezesBanked > 0) {
-        newlyFrozen.push(ds);
-        freezesBanked--;
         consecutive++;
       } else {
         consecutive = 0;
       }
 
       if (consecutive > 0 && consecutive % 7 === 0) {
-        freezesBanked = Math.min(1, freezesBanked + 1);
+        freezesBanked++;
       }
     });
 
-    if (newlyFrozen.length === 0) return { changed: false, freezesAvailable: freezesBanked };
-    task.frozenDates = [...(task.frozenDates || []), ...newlyFrozen];
-    return { changed: true, freezesAvailable: freezesBanked };
+    return { freezesAvailable: freezesBanked };
   }
 
   // --- Streak Insurance (premium) ---
@@ -690,51 +670,73 @@
     saveStreakFreezeState(PREMIUM_FREEZE_CAP, nowMonth);
   }
 
-  // Spends from the shared pool across every goal's missed days this
-  // calendar month (oldest miss first, regardless of which goal), instead
-  // of each task re-simulating its own independent bank like the free tier
-  // does — restricted to the current month specifically so upgrading to
-  // premium (or this feature shipping) can't retroactively spend this
-  // month's allowance healing old, already-broken streaks from further
-  // back. A day already in frozenDates is never re-consumed, matching the
-  // free tier's same "only append newly-frozen dates" persistence rule.
-  // Returns { changed, consumedCount } — caller persists both the tasks
-  // (via save()) and the pool (already done here) when changed is true.
-  function applyPremiumStreakFreezes(goalTasks) {
-    ensurePremiumFreezeRefill();
-    let { remaining, refillMonth } = getStreakFreezeState();
-    const today = toDateStr(new Date());
-    const thisMonth = currentYearMonth();
+  // Revival window: how long after a miss is first *detected* the user has
+  // to spend a freeze on it — anchored to detection time, not the missed
+  // date itself, since detection only ever happens when the app is next
+  // opened (see detectPendingRevival() below).
+  const REVIVAL_WINDOW_MS = 24 * 60 * 60 * 1000;
+  // Streaks shorter than this end quietly — no modal, no freeze offered,
+  // regardless of tier or how many freezes are available.
+  const REVIVAL_MIN_STREAK = 3;
 
-    const misses = [];
-    goalTasks.forEach(task => {
-      if (!task.recurrence || task.recurrence.type === "none") return;
-      const start = new Date(task.date + "T00:00:00");
-      const end = new Date((task.endDate || today) + "T00:00:00");
-      const completedDates = task.completedDates || [];
-      const existingFrozen = new Set(task.frozenDates || []);
-      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-        const ds = toDateStr(d);
-        if (ds >= today || !ds.startsWith(thisMonth)) continue;
-        if (!occursOn(task, d)) continue;
-        if (completedDates.includes(ds) || existingFrozen.has(ds)) continue;
-        misses.push({ task, ds });
+  // Consecutive covered (completed or frozen) scheduled days immediately
+  // before `beforeDateStr` — same definition as getCurrentStreakDates(),
+  // just anchored to a specific date instead of today. Needed because by
+  // the time the revival modal shows, the miss itself still isn't in
+  // frozenDates (nothing is written until the user actually revives it),
+  // so computeStreak() would just read 0 — this captures the streak length
+  // *as it stood right before the miss*, for the modal's "{X}-day streak" copy.
+  function computeStreakLengthBefore(task, beforeDateStr) {
+    const start = new Date(task.date + "T00:00:00");
+    const end = new Date(beforeDateStr + "T00:00:00");
+    end.setDate(end.getDate() - 1);
+    let scheduledDays = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      if (occursOn(task, d)) scheduledDays.push(toDateStr(d));
+    }
+    scheduledDays.reverse();
+    const completedDates = task.completedDates || [];
+    const frozenDates = task.frozenDates || [];
+    let length = 0;
+    for (const ds of scheduledDays) {
+      if (completedDates.includes(ds) || frozenDates.includes(ds)) length++;
+      else break;
+    }
+    return length;
+  }
+
+  // Finds the oldest unresolved miss for this task (not completed, not
+  // frozen, not already pending, not previously resolved) and either starts
+  // tracking it as a pendingRevival (streak was long enough to matter) or
+  // resolves it immediately with no modal at all (too short to revive).
+  // Replaces both tiers' old auto-consume-on-miss behavior — freezes are
+  // never spent here, only ever through the revival modal's explicit
+  // "Revive Streak" action. Returns true if task state changed (caller
+  // persists via save()). At most one pendingRevival per task at a time —
+  // once it resolves, the next call picks up the next oldest miss, if any.
+  function detectPendingRevival(task, todayStr) {
+    if (!task.recurrence || task.recurrence.type === "none") return false;
+    if (task.pendingRevival) return false;
+    const start = new Date(task.date + "T00:00:00");
+    const end = new Date((task.endDate || todayStr) + "T00:00:00");
+    const completedDates = task.completedDates || [];
+    const frozenDates = task.frozenDates || [];
+    const resolvedDates = task.revivalResolvedDates || [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const ds = toDateStr(d);
+      if (ds >= todayStr) break;
+      if (!occursOn(task, d)) continue;
+      if (completedDates.includes(ds) || frozenDates.includes(ds) || resolvedDates.includes(ds)) continue;
+      const streakLength = computeStreakLengthBefore(task, ds);
+      if (streakLength < REVIVAL_MIN_STREAK) {
+        task.revivalResolvedDates = [...resolvedDates, ds];
+        showToast("Streak ended. Streaks under 3 days can't be revived.", "info");
+      } else {
+        task.pendingRevival = { date: ds, streakLength, detectedAt: new Date().toISOString() };
       }
-    });
-    misses.sort((a, b) => (a.ds < b.ds ? -1 : a.ds > b.ds ? 1 : 0));
-
-    let changed = false;
-    let consumedCount = 0;
-    misses.forEach(({ task, ds }) => {
-      if (remaining <= 0) return;
-      task.frozenDates = [...(task.frozenDates || []), ds];
-      remaining--;
-      changed = true;
-      consumedCount++;
-    });
-
-    if (consumedCount > 0) saveStreakFreezeState(remaining, refillMonth);
-    return { changed, consumedCount };
+      return true;
+    }
+    return false;
   }
 
   // Single entry point for "how many freezes can this goal show right now" —
@@ -743,6 +745,96 @@
   function getFreezesAvailable(task) {
     return isPremiumUser() ? getStreakFreezeState().remaining : applyStreakFreezes(task).freezesAvailable;
   }
+
+  // Tier-specific freeze-count copy, shared by the Streak screen, each goal
+  // card, the goal view modal, and the revival modal's own freeze-info
+  // line — one place so the wording can't drift between them.
+  function formatFreezeCountLine(task) {
+    if (isPremiumUser()) {
+      const remaining = getStreakFreezeState().remaining;
+      return `${remaining} / ${PREMIUM_FREEZE_CAP} freezes available this month, refills ${formatNextFreezeRefillDate()}`;
+    }
+    const banked = applyStreakFreezes(task).freezesAvailable;
+    return `You have ${banked} freeze${banked === 1 ? "" : "s"} banked from completed 7-day streaks`;
+  }
+
+  // --- Streak freeze revival modal ---
+  const revivalModalOverlay = document.getElementById("revivalModalOverlay");
+  enableModalDragDismiss(revivalModalOverlay);
+  let revivalTaskId = null;
+
+  // Finds the first task with a live pendingRevival and shows it — called
+  // from syncAllStreakFreezes() on every render, so it naturally re-checks
+  // after any resolution (revive/let end/expire) picks up the next oldest
+  // one, if any, on the following pass.
+  function checkForPendingRevival() {
+    if (document.querySelector(".modal-overlay.open")) return;
+    if (document.getElementById("milestoneScreen").classList.contains("visible")) return;
+    const task = tasks.find(t => t.pendingRevival);
+    if (task) openRevivalModal(task);
+  }
+
+  function openRevivalModal(task) {
+    revivalTaskId = task.id;
+    const name = task.checkoffLabel || task.name;
+    const { streakLength, detectedAt } = task.pendingRevival;
+    const expired = Date.now() - new Date(detectedAt).getTime() > REVIVAL_WINDOW_MS;
+    const freezesAvailable = getFreezesAvailable(task);
+
+    document.getElementById("revivalModalTitle").textContent = `${name} streak ended`;
+    const reviveBtn = document.getElementById("revivalReviveBtn");
+    const letEndBtn = document.getElementById("revivalLetEndBtn");
+
+    if (expired) {
+      document.getElementById("revivalModalBody").textContent = `Your ${streakLength}-day streak on ${name} ended. Too late to revive — the 24-hour window has passed.`;
+      document.getElementById("revivalModalFreezeInfo").textContent = "";
+      reviveBtn.disabled = true;
+      letEndBtn.textContent = "Close";
+    } else {
+      document.getElementById("revivalModalBody").textContent = `Your ${streakLength}-day streak on ${name} ended. Use a freeze to revive it?`;
+      document.getElementById("revivalModalFreezeInfo").textContent = freezesAvailable > 0
+        ? formatFreezeCountLine(task)
+        : "No freezes available.";
+      reviveBtn.disabled = freezesAvailable < 1;
+      letEndBtn.textContent = "Let It End";
+    }
+    openModal(revivalModalOverlay);
+  }
+
+  // Permanently resolves the current pendingRevival without spending a
+  // freeze — same outcome whether the user actively declined or the window
+  // simply expired (the expired branch above relabels this button "Close").
+  document.getElementById("revivalLetEndBtn").addEventListener("click", () => {
+    const task = tasks.find(t => t.id === revivalTaskId);
+    if (task && task.pendingRevival) {
+      task.revivalResolvedDates = [...(task.revivalResolvedDates || []), task.pendingRevival.date];
+      delete task.pendingRevival;
+      save();
+    }
+    closeModal(revivalModalOverlay);
+    renderAll();
+  });
+
+  document.getElementById("revivalReviveBtn").addEventListener("click", () => {
+    const task = tasks.find(t => t.id === revivalTaskId);
+    if (!task || !task.pendingRevival) { closeModal(revivalModalOverlay); return; }
+    const { date } = task.pendingRevival;
+    task.frozenDates = [...(task.frozenDates || []), date];
+    delete task.pendingRevival;
+    if (isPremiumUser()) {
+      const { remaining, refillMonth } = getStreakFreezeState();
+      saveStreakFreezeState(Math.max(0, remaining - 1), refillMonth);
+    }
+    // Free tier needs no explicit decrement — its bank is derived fresh
+    // from frozenDates on the next applyStreakFreezes() replay, which now
+    // debits this exact date automatically (see that function's own
+    // "already frozen" branch).
+    save();
+    triggerHaptic("light");
+    showToast(`${task.checkoffLabel || task.name} streak revived.`, "success");
+    closeModal(revivalModalOverlay);
+    renderAll();
+  });
 
   // Shareable milestone cards (roadmap #6). MILESTONE_THRESHOLDS gates
   // are recorded per-task in task.milestonesEarned = { "7": record, ... }
@@ -828,19 +920,12 @@
     let anyChanged = false;
     let newMilestone = null;
     const premium = isPremiumUser();
+    const today = toDateStr(new Date());
 
-    if (premium) {
-      const recurringTasks = tasks.filter(t => t.recurrence && t.recurrence.type !== "none");
-      const result = applyPremiumStreakFreezes(recurringTasks);
-      if (result.changed) anyChanged = true;
-      if (result.consumedCount > 0) {
-        const remaining = getStreakFreezeState().remaining;
-        showToast(`Your streak was protected. ${remaining} freeze${remaining === 1 ? "" : "s"} remaining this month.`, "success");
-      }
-    }
+    if (premium) ensurePremiumFreezeRefill();
 
     tasks.forEach(t => {
-      if (!premium && applyStreakFreezes(t).changed) anyChanged = true;
+      if (detectPendingRevival(t, today)) anyChanged = true;
       const record = checkStreakMilestones(t);
       if (record) {
         anyChanged = true;
@@ -851,6 +936,11 @@
     if (newMilestone && !document.querySelector(".modal-overlay.open") &&
         !document.getElementById("milestoneScreen").classList.contains("visible")) {
       showMilestoneScreen(newMilestone.task, newMilestone.record);
+    } else {
+      // Milestone takeover wins if both would fire in the same pass — the
+      // revival modal check re-runs on every later renderAll() anyway, so
+      // it isn't lost, just deferred a beat behind the bigger celebration.
+      checkForPendingRevival();
     }
     return anyChanged;
   }
@@ -1784,6 +1874,23 @@
         sub.appendChild(viewLink);
       }
 
+      // Surfaces a live pendingRevival here too, not just via the modal
+      // that auto-opens on app load — lets a user who dismissed that
+      // (backdrop tap, drag-dismiss) come back to it deliberately, same
+      // "View milestone" link pattern just above.
+      if (goal.pendingRevival) {
+        sub.append(" · ");
+        const revivalLink = document.createElement("button");
+        revivalLink.type = "button";
+        revivalLink.className = "goal-milestone-link";
+        revivalLink.innerHTML = '<i data-lucide="snowflake" class="icon"></i> Streak needs reviving';
+        revivalLink.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openRevivalModal(goal);
+        });
+        sub.appendChild(revivalLink);
+      }
+
       const dots = buildGoalDotsRow(goal, scheduledDays, today);
       dots.style.cursor = "pointer";
       dots.title = "View streak";
@@ -1871,17 +1978,12 @@
     if (bestGoal) dotsWrap.appendChild(buildGoalDotsRow(bestGoal));
 
     const freezeEl = document.getElementById("streakScreenFreeze");
-    if (isPremiumUser()) {
-      const remaining = getStreakFreezeState().remaining;
-      freezeEl.textContent = `❄ ${remaining} freeze${remaining === 1 ? "" : "s"} available, refills ${formatNextFreezeRefillDate()}`;
-    } else {
-      // Free tier's bank is per-task, not one account-wide number (see
-      // updateFreezeStatusDisplay()'s own comment in auth-ui.js) — tied to
-      // whichever goal is driving the headline streak above, the same
-      // subject the rest of this screen is already built around.
-      const available = bestGoal ? getFreezesAvailable(bestGoal) : 0;
-      freezeEl.textContent = `❄ ${available} freeze${available === 1 ? "" : "s"} available`;
-    }
+    // Free tier's bank is per-task, not one account-wide number (see
+    // updateFreezeStatusDisplay()'s own comment in auth-ui.js) — tied to
+    // whichever goal is driving the headline streak above, the same
+    // subject the rest of this screen is already built around. Premium's
+    // formatFreezeCountLine() branch ignores the task argument entirely.
+    freezeEl.textContent = `❄ ${formatFreezeCountLine(bestGoal || {})}`;
 
     const highlightsSection = document.getElementById("streakHighlightsSection");
     const highlightsBody = document.getElementById("streakHighlightsBody");
@@ -2248,14 +2350,21 @@
       const noteIcon = task.note ? '<i data-lucide="sticky-note" class="icon" title="Has a note"></i>' : "";
       let streakIcon = "";
       let freezeIcon = "";
+      let revivalIcon = "";
       if (task.isRecurring) {
         const realTask = tasks.find(t => t.id === task.id);
         const streak = computeStreak(realTask);
         streakIcon = streak > 0 ? `<i data-lucide="flame" class="icon"></i>${streak}` : '<i data-lucide="repeat" class="icon"></i>';
         const freezesAvailable = getFreezesAvailable(realTask);
         if (freezesAvailable > 0) freezeIcon = `<i data-lucide="snowflake" class="icon"></i>${freezesAvailable}`;
+        // Subtle presence indicator only (matches every other meta icon
+        // here) — the auto-popup and the Goals-card link are the actual
+        // ways in; distinct icon from freezeIcon's snowflake so a task with
+        // both a banked freeze and a live pendingRevival doesn't show two
+        // snowflakes back to back.
+        if (realTask.pendingRevival) revivalIcon = '<i data-lucide="alert-triangle" class="icon" title="Streak needs reviving"></i>';
       }
-      const metaParts = [task.time, durIcon, streakIcon, freezeIcon, goalIcon, noteIcon].filter(Boolean);
+      const metaParts = [task.time, durIcon, streakIcon, freezeIcon, revivalIcon, goalIcon, noteIcon].filter(Boolean);
       meta.innerHTML = metaParts.join(" · ");
 
       const cat = document.createElement("span");
@@ -2599,23 +2708,79 @@
     return row;
   }
 
+  // Same "Today, "/"Tomorrow, " prefix convention used elsewhere (renderDate(),
+  // showSealScreen()) — duplicated rather than extracted, matching how this
+  // codebase already handles this exact small snippet in those two spots.
+  function todayTomorrowPrefix(dateObj) {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const check = new Date(dateObj); check.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((check - today) / 86400000);
+    if (diffDays === 0) return "Today, ";
+    if (diffDays === 1) return "Tomorrow, ";
+    return "";
+  }
+
+  // Splits a day's tasks into per-category groups (sorted alphabetically) —
+  // shared by Week view's day groups and the month-day modal, both of which
+  // show a category-aggregated summary instead of a flat task list now, so
+  // a busy day reads as "Fitness (3), School (4), All (7)" rather than 30
+  // individual rows.
+  function groupTasksByCategory(dayTasks) {
+    const map = new Map();
+    dayTasks.forEach(t => {
+      if (!map.has(t.category)) map.set(t.category, []);
+      map.get(t.category).push(t);
+    });
+    return [...map.entries()]
+      .map(([category, catTasks]) => ({ category, tasks: catTasks }))
+      .sort((a, b) => a.category.localeCompare(b.category));
+  }
+
+  // Renders the "Fitness (3), School (4), All (7)" badge row. Tapping any
+  // badge calls onTap(category, tasksForThatBadge) — "All" passes category
+  // as null and the full unfiltered dayTasks — so callers just decide what
+  // to do with a category slice rather than duplicating the grouping logic.
+  function renderCategorySummaryRow(dayTasks, onTap) {
+    const row = document.createElement("div");
+    row.className = "category-summary-row";
+    groupTasksByCategory(dayTasks).forEach(({ category, tasks: catTasks }) => {
+      const badge = document.createElement("button");
+      badge.type = "button";
+      badge.className = "task-category category-summary-badge pressable";
+      badge.style.setProperty("--task-cat-color", categoryColor(category));
+      badge.textContent = `${category} (${catTasks.length})`;
+      badge.addEventListener("click", () => onTap(category, catTasks));
+      row.appendChild(badge);
+    });
+    const allBadge = document.createElement("button");
+    allBadge.type = "button";
+    allBadge.className = "category-summary-all pressable";
+    allBadge.textContent = `All (${dayTasks.length})`;
+    allBadge.addEventListener("click", () => onTap(null, dayTasks));
+    row.appendChild(allBadge);
+    return row;
+  }
+
   function renderWeekView() {
     const container = document.getElementById("weekView");
     container.innerHTML = "";
     getUpcomingDays(7).forEach(({ date, tasks: dayTasks }) => {
+      const isToday = todayTomorrowPrefix(date) === "Today, ";
       const group = document.createElement("div");
-      group.className = "week-day-group";
+      group.className = "week-day-group" + (isToday ? " today" : "");
       const header = document.createElement("div");
       header.className = "week-day-header";
-      header.textContent = date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+      header.textContent = todayTomorrowPrefix(date) + date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
       group.appendChild(header);
       if (dayTasks.length === 0) {
         const empty = document.createElement("div");
         empty.className = "week-day-empty";
-        empty.textContent = "No tasks.";
+        empty.textContent = "No tasks";
         group.appendChild(empty);
       } else {
-        dayTasks.forEach(task => group.appendChild(renderTaskOverviewRow(task)));
+        group.appendChild(renderCategorySummaryRow(dayTasks, (category, catTasks) => {
+          openCategoryTasksModal(date, category, catTasks);
+        }));
       }
       container.appendChild(group);
     });
@@ -2645,6 +2810,8 @@
     const grid = document.createElement("div");
     grid.className = "month-grid";
     const todayStr = toDateStr(new Date());
+    const tomorrowDate = new Date(); tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+    const tomorrowStr = toDateStr(tomorrowDate);
     // Leading blanks so day 1 (today) lands in its real weekday column,
     // trailing blanks so the grid always ends on a full row — same "filler
     // cell" convention any calendar grid needs.
@@ -2658,7 +2825,7 @@
       const dateStr = toDateStr(day.date);
       const cell = document.createElement("button");
       cell.type = "button";
-      cell.className = "month-cell pressable" + (day.tasks.length ? " has-tasks" : "") + (dateStr === todayStr ? " today" : "");
+      cell.className = "month-cell pressable" + (day.tasks.length ? " has-tasks" : "") + (dateStr === todayStr ? " today" : "") + (dateStr === tomorrowStr ? " tomorrow" : "");
       const dateEl = document.createElement("span");
       dateEl.className = "month-cell-date";
       dateEl.textContent = day.date.getDate();
@@ -2689,22 +2856,46 @@
   const monthDayModalOverlay = document.getElementById("monthDayModalOverlay");
   enableModalDragDismiss(monthDayModalOverlay);
 
+  // Same category-aggregated summary as Week view now, not a flat task
+  // list — tapping a badge closes this modal and hands off to
+  // categoryTasksModalOverlay for that specific category (or everything,
+  // for "All"), which is the one place actual task rows still render.
   function openMonthDayModal(dayIndex) {
     const day = monthViewDays[dayIndex];
     if (!day) return;
-    document.getElementById("monthDayModalDate").textContent = day.date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-    const tasksWrap = document.getElementById("monthDayModalTasks");
-    tasksWrap.innerHTML = "";
-    day.tasks.forEach(task => {
-      tasksWrap.appendChild(renderTaskOverviewRow(task, () => {
-        closeModal(monthDayModalOverlay);
+    document.getElementById("monthDayModalDate").textContent = todayTomorrowPrefix(day.date) + day.date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+    const wrap = document.getElementById("monthDayModalTasks");
+    wrap.innerHTML = "";
+    wrap.appendChild(renderCategorySummaryRow(day.tasks, (category, catTasks) => {
+      closeModal(monthDayModalOverlay);
+      openCategoryTasksModal(day.date, category, catTasks);
+    }));
+    openModal(monthDayModalOverlay);
+  }
+  document.getElementById("monthDayModalClose").addEventListener("click", () => closeModal(monthDayModalOverlay));
+
+  const categoryTasksModalOverlay = document.getElementById("categoryTasksModalOverlay");
+  enableModalDragDismiss(categoryTasksModalOverlay);
+
+  // The actual per-task list now — reached only by drilling into a specific
+  // category (or "All") from Week view's badge row or the month-day modal
+  // above. Tapping a task closes this and opens the same task view modal
+  // every other tap-a-task surface in the app already uses.
+  function openCategoryTasksModal(dateObj, category, tasksForCategory) {
+    const dateLabel = todayTomorrowPrefix(dateObj) + dateObj.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+    document.getElementById("categoryTasksModalTitle").textContent = category ? `${category} — ${dateLabel}` : `All tasks — ${dateLabel}`;
+    const wrap = document.getElementById("categoryTasksModalList");
+    wrap.innerHTML = "";
+    tasksForCategory.forEach(task => {
+      wrap.appendChild(renderTaskOverviewRow(task, () => {
+        closeModal(categoryTasksModalOverlay);
         openTaskViewModal(task.id);
       }));
     });
     lucide.createIcons();
-    openModal(monthDayModalOverlay);
+    openModal(categoryTasksModalOverlay);
   }
-  document.getElementById("monthDayModalClose").addEventListener("click", () => closeModal(monthDayModalOverlay));
+  document.getElementById("categoryTasksModalClose").addEventListener("click", () => closeModal(categoryTasksModalOverlay));
 
   function setPlannerViewMode(mode) {
     if (mode === plannerViewMode) return;
@@ -4638,11 +4829,7 @@ function openGoalViewModal(goalId) {
   const freezesAvailable = getFreezesAvailable(g);
   const freezesEl = document.getElementById("goalViewFreezes");
   freezesEl.style.display = freezesAvailable > 0 ? "block" : "none";
-  freezesEl.textContent = freezesAvailable > 0
-    ? (isPremiumUser()
-        ? `❄ ${freezesAvailable} streak freeze${freezesAvailable === 1 ? "" : "s"} remaining this month`
-        : `❄ ${freezesAvailable} streak freeze${freezesAvailable === 1 ? "" : "s"} banked`)
-    : "";
+  freezesEl.textContent = freezesAvailable > 0 ? `❄ ${formatFreezeCountLine(g)}` : "";
   document.getElementById("goalViewWhy").textContent = g.why || "None";
   document.getElementById("goalViewPlan").textContent = g.plan || "None";
   editingGoalId = goalId;

@@ -84,6 +84,20 @@ users/{uid}/tasks/{taskId}
                              // completedDates so the UI can honestly show
                              // "frozen" vs "actually done" (different dot
                              // style), not silently fake a completion
+  pendingRevival: { date, streakLength, detectedAt } | undefined
+                             // A miss awaiting the user's manual "Revive
+                             // Streak" / "Let It End" choice (see
+                             // detectPendingRevival() in app.js). Freezes
+                             // are never auto-spent anymore — this is the
+                             // only path that adds to frozenDates now.
+                             // detectedAt (ISO timestamp) drives the 24h
+                             // revival window; at most one live entry per
+                             // task at a time.
+  revivalResolvedDates: string[]
+                             // Dates explicitly declined, expired past the
+                             // 24h window, or under the 3-day minimum
+                             // streak (never offered a modal at all) —
+                             // permanently excluded from re-detection.
   isGoal: boolean
   checkoffLabel: string
   why: string
@@ -203,16 +217,22 @@ Implemented in `migrate.js`, run once per account on sign-in:
 persisted to localStorage, so migration currently writes empty strings for
 them — nothing exists locally to backfill them from.
 
-## Streak freeze mechanics (honesty constraint — not yet built)
+## Streak freeze mechanics (honesty constraint)
 
-No freeze UI exists in the app yet, but the schema anticipates it, and
-`migrate.js` already round-trips the `frozenDates` field so it isn't lost
-if/when this ships. A freeze must never silently masquerade as a real
-completion:
+A freeze must never silently masquerade as a real completion:
 
 - `completedDates` = actually completed.
-- `frozenDates` = covered by a freeze.
-- `computeStreak()` would count both toward the streak number, but goal-dot
-  rendering (`renderGoals()`) should style frozen days visibly differently
-  (e.g. a small icon overlay instead of the solid category-color dot) so a
-  user looking at their own history can always tell the difference.
+- `frozenDates` = covered by a freeze — only ever written by the user's own
+  explicit "Revive Streak" choice (see `pendingRevival`/
+  `revivalResolvedDates` above), never auto-applied.
+- `computeStreak()` counts both toward the streak number, but goal-dot
+  rendering (`renderGoals()`) styles frozen days visibly differently (a
+  small icon overlay instead of the solid category-color dot) so a user
+  looking at their own history can always tell the difference.
+
+Free tier earns 1 freeze per 7 *consecutive* covered days, uncapped
+(`applyStreakFreezes()` in app.js, a pure re-simulation, never mutates).
+Premium gets a flat 2/month shared pool (`premiumStreakFreezesRemaining`,
+`lastFreezeRefillMonth` on `users/{uid}`, refilled via
+`ensurePremiumFreezeRefill()`) — it does not earn through 7-day runs.
+Both tiers only ever spend a freeze through the revival modal.
