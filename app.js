@@ -2749,14 +2749,17 @@
       badge.className = "task-category category-summary-badge pressable";
       badge.style.setProperty("--task-cat-color", categoryColor(category));
       badge.textContent = `${category} (${catTasks.length})`;
-      badge.addEventListener("click", () => onTap(category, catTasks));
+      // Stops the click from bubbling up to Week view's day-row handler
+      // (renderWeekView), which would otherwise open the full unfiltered
+      // day list instead of this badge's own category filter.
+      badge.addEventListener("click", (e) => { e.stopPropagation(); onTap(category, catTasks); });
       row.appendChild(badge);
     });
     const allBadge = document.createElement("button");
     allBadge.type = "button";
     allBadge.className = "category-summary-all pressable";
     allBadge.textContent = `All (${dayTasks.length})`;
-    allBadge.addEventListener("click", () => onTap(null, dayTasks));
+    allBadge.addEventListener("click", (e) => { e.stopPropagation(); onTap(null, dayTasks); });
     row.appendChild(allBadge);
     return row;
   }
@@ -2766,13 +2769,14 @@
     container.innerHTML = "";
     getUpcomingDays(7).forEach(({ date, tasks: dayTasks }) => {
       const isToday = todayTomorrowPrefix(date) === "Today, ";
+      const hasTasks = dayTasks.length > 0;
       const group = document.createElement("div");
-      group.className = "week-day-group" + (isToday ? " today" : "");
+      group.className = "week-day-group" + (isToday ? " today" : "") + (hasTasks ? " clickable" : "");
       const header = document.createElement("div");
       header.className = "week-day-header";
       header.textContent = todayTomorrowPrefix(date) + date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
       group.appendChild(header);
-      if (dayTasks.length === 0) {
+      if (!hasTasks) {
         const empty = document.createElement("div");
         empty.className = "week-day-empty";
         empty.textContent = "No tasks";
@@ -2781,6 +2785,18 @@
         group.appendChild(renderCategorySummaryRow(dayTasks, (category, catTasks) => {
           openCategoryTasksModal(date, category, catTasks);
         }));
+        // Tapping the day name or anywhere else in the row (but not a
+        // category badge — those stopPropagation() their own click, see
+        // renderCategorySummaryRow) opens the full, unfiltered day list.
+        group.setAttribute("role", "button");
+        group.tabIndex = 0;
+        group.addEventListener("click", () => openCategoryTasksModal(date, null, dayTasks));
+        group.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            openCategoryTasksModal(date, null, dayTasks);
+          }
+        });
       }
       container.appendChild(group);
     });

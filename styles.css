@@ -730,11 +730,19 @@
   /* One group per upcoming day. Today gets a colored header as the "clearly
      labeled, visually distinct" cue the spec asks for — every other day
      stays plain text, no urgency color-coding beyond that one marker. */
-  .week-day-group { margin-bottom: 1.5rem; }
+  .week-day-group { margin-bottom: 1.5rem; padding: 0.4rem 0.5rem; border-radius: var(--radius-sm); transition: background 0.15s; }
   .week-day-group:last-child { margin-bottom: 0; }
   .week-day-header { font-size: var(--text-md); font-weight: 600; color: var(--text-primary); margin-bottom: 0.6rem; }
   .week-day-group.today .week-day-header { color: var(--accent); }
   .week-day-empty { font-size: var(--text-sm); color: var(--text-muted); padding: 0.2rem 0; }
+  /* The row itself (day name or empty space around the badges) opens the
+     full task list for that day — see renderWeekView(). Category badges
+     inside stopPropagation() their own clicks so they keep filtering
+     instead of triggering this. */
+  .week-day-group.clickable { cursor: pointer; touch-action: manipulation; }
+  .week-day-group.clickable:hover { background: var(--bg-card); }
+  .week-day-group.clickable:active { background: var(--border); }
+  .week-day-group.clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* Category-aggregated summary badges — replaces a flat per-task list for
      any day/cell with many tasks (spec: "no individual task clutter even
      with 30+ tasks/day"). Shared by Week view's day groups and the
@@ -747,11 +755,14 @@
      easing used everywhere else in this file, for the same reason (a plain
      "120ms ease" here would silently replace .pressable's bounce instead of
      combining with it). */
-  .category-summary-badge { border: none; font-family: inherit; cursor: pointer; touch-action: manipulation; transition: transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+  /* Sized up slightly from the base .task-category pill (var(--text-xs) /
+     0.18rem-0.55rem) so these read as bigger, clearly-tappable targets —
+     part of the same affordance as the day row itself being tappable. */
+  .category-summary-badge { font-size: var(--text-sm); padding: 0.3rem 0.7rem; border: none; font-family: inherit; cursor: pointer; touch-action: manipulation; transition: transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1); }
   /* "All" isn't tied to one category's color, so it's a standalone neutral
      pill rather than .task-category + a color — same size/shape as the
      category badges next to it so the row reads as one consistent set. */
-  .category-summary-all { font-size: var(--text-xs); font-weight: 500; padding: 0.18rem 0.55rem; border-radius: 999px; border: none; font-family: inherit; cursor: pointer; touch-action: manipulation; background: var(--border); color: var(--text-primary); transition: transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .category-summary-all { font-size: var(--text-sm); font-weight: 500; padding: 0.3rem 0.7rem; border-radius: 999px; border: none; font-family: inherit; cursor: pointer; touch-action: manipulation; background: var(--border); color: var(--text-primary); transition: transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1); }
   /* Built from .timeline-unscheduled-item's look (same card/shadow/press
      language as the rest of the Planner) but read-only: no checkbox, drag
      handle, or delete button — used inside categoryTasksModalOverlay now
