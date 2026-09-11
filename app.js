@@ -762,14 +762,23 @@
   const revivalModalOverlay = document.getElementById("revivalModalOverlay");
   enableModalDragDismiss(revivalModalOverlay);
   let revivalTaskId = null;
+  // Task ids currently shown in the BATCH modal, or null while the single-
+  // task modal (openRevivalModal) is showing instead. Read by the three
+  // batch button handlers below.
+  let revivalBatchGroupIds = null;
 
-  // Session-only memory of which duplicate-name groups have already shown
-  // their one-time "N tasks named X have streaks at risk" heads-up (see
-  // checkForPendingRevival() below) — so resolving task 1 of 3 doesn't
-  // re-show that summary before task 2 and 3, it just moves straight to
-  // the next individual modal. Cleared on reload; nothing to clean up once
-  // a group's pendingRevivals all resolve, since nothing looks it up again.
+  // Session-only memory of which duplicate-name groups the user has chosen
+  // "Review Individually" for — so once they've made that choice,
+  // resolving task 1 of 3 one-at-a-time doesn't keep re-offering the batch
+  // modal before task 2 and 3; it just moves straight to the next single-
+  // task modal, same as if there were only ever one task. Cleared on
+  // reload; nothing to clean up once a group's pendingRevivals all
+  // resolve, since nothing looks it up again.
   const revivalBatchesAcknowledged = new Set();
+
+  function isRevivalExpired(task) {
+    return Date.now() - new Date(task.pendingRevival.detectedAt).getTime() > REVIVAL_WINDOW_MS;
+  }
 
   // Same-name pending-revival group for `task` — tasks sharing this exact
   // duplicate-streak identity (checkoffLabel||name, case/whitespace-
@@ -788,8 +797,8 @@
   // one, if any, on the following pass. When several duplicate tasks (same
   // name+category, see the duplicate-streak investigation) all have a
   // live pendingRevival, showing N indistinguishable "streak ended" modals
-  // back to back reads as a bug — a one-time summary explains why there
-  // are several before drilling into them individually.
+  // back to back reads as a bug — batching them into one decision (or
+  // letting the user opt into reviewing each one) replaces that.
   function checkForPendingRevival() {
     if (document.querySelector(".modal-overlay.open")) return;
     if (document.getElementById("milestoneScreen").classList.contains("visible")) return;
@@ -799,34 +808,63 @@
     const group = pendingRevivalGroup(task);
     const normalized = (task.checkoffLabel || task.name).trim().toLowerCase();
     if (group.length > 1 && !revivalBatchesAcknowledged.has(normalized)) {
-      revivalBatchesAcknowledged.add(normalized);
-      const name = task.checkoffLabel || task.name;
-      showConfirm({
-        title: "Multiple streaks at risk",
-        message: `${group.length} tasks named "${name}" have streaks at risk — review each.`,
-        confirmLabel: "Review",
-        onConfirm: () => openRevivalModal(task)
-      });
+      openBatchRevivalModal(group);
       return;
     }
     openRevivalModal(task);
   }
 
+  // Batch modal for 2+ pending revivals sharing the same name — lets the
+  // user act on all of them at once ("Let All End" / "Revive All") instead
+  // of dismissing N identical-looking modals one at a time, while "Review
+  // Individually" still falls back to the exact per-task flow below for
+  // anyone who wants granular control.
+  function openBatchRevivalModal(group) {
+    revivalBatchGroupIds = group.map(t => t.id);
+    const name = group[0].checkoffLabel || group[0].name;
+    const count = group.length;
+    const premium = isPremiumUser();
+
+    document.getElementById("revivalModalTitle").textContent = `${name} streak ended (×${count})`;
+    document.getElementById("revivalModalBody").textContent = `You have ${count} tasks named "${name}" with ended streaks. Choose an action for all of them, or review individually.`;
+    document.getElementById("revivalModalDupeNote").style.display = "none";
+
+    const freezeInfoEl = document.getElementById("revivalModalFreezeInfo");
+    const revivableTasks = group.filter(t => !isRevivalExpired(t));
+    let anyRevivable;
+    if (premium) {
+      freezeInfoEl.textContent = formatFreezeCountLine(group[0]);
+      anyRevivable = revivableTasks.length > 0 && getStreakFreezeState().remaining >= 1;
+    } else {
+      const withFreeze = group.filter(t => getFreezesAvailable(t) >= 1).length;
+      freezeInfoEl.textContent = `${withFreeze} of ${count} tasks currently have a freeze banked.`;
+      anyRevivable = revivableTasks.some(t => getFreezesAvailable(t) >= 1);
+    }
+
+    document.getElementById("revivalModalSingleActions").style.display = "none";
+    document.getElementById("revivalModalBatchActions").style.display = "flex";
+    document.getElementById("revivalBatchReviewBtn").style.display = "block";
+    document.getElementById("revivalBatchReviveBtn").disabled = !anyRevivable;
+
+    openModal(revivalModalOverlay);
+  }
+
   function openRevivalModal(task) {
+    revivalBatchGroupIds = null;
     revivalTaskId = task.id;
     const name = task.checkoffLabel || task.name;
-    const { streakLength, detectedAt } = task.pendingRevival;
-    const expired = Date.now() - new Date(detectedAt).getTime() > REVIVAL_WINDOW_MS;
+    const { streakLength } = task.pendingRevival;
+    const expired = isRevivalExpired(task);
     const freezesAvailable = getFreezesAvailable(task);
 
     document.getElementById("revivalModalTitle").textContent = `${name} streak ended`;
     const reviveBtn = document.getElementById("revivalReviveBtn");
     const letEndBtn = document.getElementById("revivalLetEndBtn");
 
-    // Distinguishes this modal from its siblings once the one-time summary
-    // above has scrolled past — without this, resolving duplicate #1 and
-    // immediately seeing an identical-looking "streak ended" modal for
-    // duplicate #2 reads as the same modal reappearing, not progress.
+    // Distinguishes this modal from its siblings once the group has moved
+    // into "Review Individually" mode — without this, resolving duplicate
+    // #1 and immediately seeing an identical-looking "streak ended" modal
+    // for duplicate #2 reads as the same modal reappearing, not progress.
     const dupeNote = document.getElementById("revivalModalDupeNote");
     const group = pendingRevivalGroup(task);
     if (group.length > 1) {
@@ -849,6 +887,10 @@
       reviveBtn.disabled = freezesAvailable < 1;
       letEndBtn.textContent = "Let It End";
     }
+
+    document.getElementById("revivalModalBatchActions").style.display = "none";
+    document.getElementById("revivalBatchReviewBtn").style.display = "none";
+    document.getElementById("revivalModalSingleActions").style.display = "flex";
     openModal(revivalModalOverlay);
   }
 
@@ -894,6 +936,85 @@
     // actually play before a duplicate task's next pendingRevival can
     // reopen this same overlay.
     setTimeout(() => renderAll(), 250);
+  });
+
+  // --- Batch revival actions (2+ duplicate-named pending revivals) ---
+
+  document.getElementById("revivalBatchLetEndBtn").addEventListener("click", () => {
+    const ids = revivalBatchGroupIds || [];
+    let count = 0;
+    ids.forEach(id => {
+      const t = tasks.find(x => x.id === id);
+      if (t && t.pendingRevival) {
+        t.revivalResolvedDates = [...(t.revivalResolvedDates || []), t.pendingRevival.date];
+        delete t.pendingRevival;
+        count++;
+      }
+    });
+    save();
+    showToast(`Ended ${count} streak${count === 1 ? "" : "s"}.`, "info");
+    closeModal(revivalModalOverlay);
+    setTimeout(() => renderAll(), 250);
+  });
+
+  document.getElementById("revivalBatchReviveBtn").addEventListener("click", () => {
+    const ids = revivalBatchGroupIds || [];
+    const group = ids.map(id => tasks.find(t => t.id === id)).filter(t => t && t.pendingRevival);
+    if (!group.length) { closeModal(revivalModalOverlay); return; }
+
+    // Longest streak first, so a limited pool covers the hardest-earned
+    // streaks before newer ones — matches the spec's "revive as many as
+    // possible... longest first."
+    const sorted = [...group].sort((a, b) => b.pendingRevival.streakLength - a.pendingRevival.streakLength);
+    const premium = isPremiumUser();
+    let premiumRemaining = premium ? getStreakFreezeState().remaining : null;
+    let revivedCount = 0;
+
+    sorted.forEach(t => {
+      if (isRevivalExpired(t)) return;
+      // Free tier: each task's own independently-earned bank (see
+      // applyStreakFreezes()). Premium: one shared pool, decremented in
+      // memory as we go so it can run out partway through the list.
+      const available = premium ? premiumRemaining : getFreezesAvailable(t);
+      if (available < 1) return;
+      const { date } = t.pendingRevival;
+      t.frozenDates = [...(t.frozenDates || []), date];
+      delete t.pendingRevival;
+      if (premium) premiumRemaining -= 1;
+      revivedCount++;
+    });
+
+    if (premium) {
+      const { refillMonth } = getStreakFreezeState();
+      saveStreakFreezeState(Math.max(0, premiumRemaining), refillMonth);
+    }
+    save();
+    triggerHaptic("light");
+
+    const total = sorted.length;
+    if (revivedCount === total) {
+      showToast(`Revived all ${revivedCount} streak${revivedCount === 1 ? "" : "s"}.`, "success");
+    } else if (revivedCount > 0) {
+      showToast(`Revived ${revivedCount} of ${total} — not enough freezes for the rest.`, "warning");
+    } else {
+      showToast("Couldn't revive any — no freezes available.", "warning");
+    }
+    closeModal(revivalModalOverlay);
+    setTimeout(() => renderAll(), 250);
+  });
+
+  document.getElementById("revivalBatchReviewBtn").addEventListener("click", () => {
+    const ids = revivalBatchGroupIds || [];
+    const first = ids.map(id => tasks.find(t => t.id === id)).find(t => t && t.pendingRevival);
+    if (first) {
+      const normalized = (first.checkoffLabel || first.name).trim().toLowerCase();
+      revivalBatchesAcknowledged.add(normalized);
+    }
+    closeModal(revivalModalOverlay);
+    setTimeout(() => {
+      if (first) openRevivalModal(first);
+      else renderAll();
+    }, 250);
   });
 
   // Shareable milestone cards (roadmap #6). MILESTONE_THRESHOLDS gates

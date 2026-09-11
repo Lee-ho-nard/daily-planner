@@ -474,10 +474,15 @@
     <p id="revivalModalBody" style="font-size:var(--text-base); color:var(--text-secondary); line-height:1.5; margin-top:0.5rem;"></p>
     <p id="revivalModalDupeNote" style="display:none; font-size:var(--text-sm); color:var(--text-muted); margin-top:0.5rem;"></p>
     <p id="revivalModalFreezeInfo" style="font-size:var(--text-sm); color:var(--text-muted); margin-top:0.75rem;"></p>
-    <div class="modal-actions">
+    <div class="modal-actions" id="revivalModalSingleActions">
       <button class="btn-cancel" id="revivalLetEndBtn">Let It End</button>
       <button class="btn-save" id="revivalReviveBtn">Revive Streak</button>
     </div>
+    <div class="modal-actions" id="revivalModalBatchActions" style="display:none;">
+      <button class="btn-cancel" id="revivalBatchLetEndBtn">Let All End</button>
+      <button class="btn-save" id="revivalBatchReviveBtn">Revive All</button>
+    </div>
+    <button class="auth-mode-toggle" id="revivalBatchReviewBtn" style="display:none;">Review Individually</button>
   </div>
 </div>
 
