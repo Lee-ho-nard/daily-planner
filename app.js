@@ -9003,7 +9003,20 @@ let currentRange = "week";
     if (!window.firestoreBridge || !window.firestoreBridge.isSignedIn()) return;
     hasBeenSignedInThisSession = true;
     tasks = window.firestoreBridge.getTasks();
-    categories = window.firestoreBridge.getCategories();
+    // Only overwrite once the categories collection's own snapshot has
+    // actually fired at least once this sign-in — hydrateFromFirestore()
+    // runs on every firestore-data-changed event, for any of the several
+    // synced collections, and mirror.categories defaults to [] until its
+    // own listener has loaded. Copying that premature [] in here would
+    // otherwise feed straight into the next save(), and syncCategories()
+    // treats an empty array as "delete everything" (see its own
+    // comment) — this is the fix for a real data-loss bug found via the
+    // category-sync race investigation. Before the real snapshot has
+    // loaded, just keep whatever `categories` already held (its
+    // localStorage-seeded initial value, or a previously-loaded value).
+    if (window.firestoreBridge.hasCategoriesLoaded()) {
+      categories = window.firestoreBridge.getCategories();
+    }
     reflections = window.firestoreBridge.getReflections();
     lockedDays = window.firestoreBridge.getLockedDays();
     customPresets = window.firestoreBridge.getCustomPresets();

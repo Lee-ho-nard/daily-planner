@@ -36,6 +36,19 @@ let currentUid = null;
 let unsubscribers = [];
 let pendingSources = null;
 let readyDispatchedForUid = null;
+// Unlike pendingSources (cleared once all sources have loaded once),
+// this only ever grows for the life of the current sign-in — a durable
+// "has this source's onSnapshot fired at least once" record. Exists to
+// close a real data-loss bug: mirror.categories defaults to [] until its
+// own onSnapshot fires, but hydrateFromFirestore() (app.js) copies
+// whatever's in the mirror into its local `categories` variable on
+// EVERY firestore-data-changed event, for ANY source — if e.g. tasks'
+// snapshot resolves first, categories gets read as [] and, if a save()
+// happens to fire in that window, syncCategories([]) below permanently
+// wipes every real category (delete-then-recreate, no diffing). Checked
+// before trusting mirror.categories as genuinely empty rather than
+// merely not-yet-loaded. See the category-sync race investigation.
+let loadedSourcesEver = new Set();
 
 function teardownListeners() {
   unsubscribers.forEach(unsub => unsub());
@@ -60,7 +73,9 @@ function dispatchDataChanged(key) {
 }
 
 function markSourceReady(uid, sourceKey) {
-  if (uid !== currentUid || !pendingSources) return;
+  if (uid !== currentUid) return;
+  loadedSourcesEver.add(sourceKey);
+  if (!pendingSources) return;
   pendingSources.delete(sourceKey);
   if (pendingSources.size === 0) {
     pendingSources = null;
@@ -76,6 +91,7 @@ function startListening(uid) {
   resetMirror();
   pendingSources = new Set(["tasks", "categories", "reflections", "deepWorkSessions", "customPresets", "customReminders", "settings"]);
   readyDispatchedForUid = null;
+  loadedSourcesEver = new Set();
 
   const tasksRef = collection(db, "users", uid, "tasks");
   unsubscribers.push(onSnapshot(tasksRef, snap => {
@@ -164,6 +180,7 @@ onAuthChange((user) => {
     currentUid = null;
     pendingSources = null;
     readyDispatchedForUid = null;
+    loadedSourcesEver = new Set();
     resetMirror();
     document.dispatchEvent(new CustomEvent("firestore-auth-ready", { detail: { signedIn: false } }));
   }
@@ -242,6 +259,14 @@ function syncCustomReminders(remindersArray) {
 // auto-ids. Categories are a short, rarely-changed list, so this is cheap.
 async function syncCategories(categoriesArray) {
   if (!currentUid) return;
+  // Refuse to write an empty list before this session's own categories
+  // snapshot has ever loaded — see loadedSourcesEver's own comment. An
+  // empty array here is almost certainly "hasn't loaded yet," not "the
+  // user deleted every category," and this sync is destructive with no
+  // way to recover a wrong empty write. Once the real snapshot has
+  // loaded at least once, an empty array is trusted normally (the user
+  // genuinely has none, e.g. after deleting their last one).
+  if (categoriesArray.length === 0 && !loadedSourcesEver.has("categories")) return;
   const colRef = collection(db, "users", currentUid, "categories");
   const existing = await getDocs(colRef);
   const ops = [];
@@ -358,6 +383,7 @@ async function deleteAllUserData(uid) {
   currentUid = null;
   pendingSources = null;
   readyDispatchedForUid = null;
+  loadedSourcesEver = new Set();
   resetMirror();
 }
 
@@ -365,6 +391,11 @@ window.firestoreBridge = {
   isSignedIn: () => currentUid !== null,
   getTasks: () => mirror.tasks,
   getCategories: () => mirror.categories,
+  // Whether the categories collection's own onSnapshot has fired at
+  // least once this sign-in — see loadedSourcesEver's own comment.
+  // app.js uses this to avoid overwriting its local categories with a
+  // premature empty mirror read before the real data has arrived.
+  hasCategoriesLoaded: () => loadedSourcesEver.has("categories"),
   getReflections: () => mirror.reflections,
   getLockedDays: () => mirror.lockedDays,
   getDeepWorkSessions: () => mirror.deepWorkSessions,
