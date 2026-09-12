@@ -73,6 +73,11 @@
        means non-premium users just get a hair more breathing room than
        strictly needed, never less. */
     --corner-cluster-max-width: 118px;
+    /* Height of one .settings-corner button (34px, same buttons the
+       comment above counts) — used below 480px wide to push
+       .app-header-row down clear of the cluster instead of squeezing
+       .view-tabs beside it (see that rule's own comment). */
+    --corner-icon-height: 34px;
     /* Total clearance .app-header-row needs on its right so .view-tabs
        never renders under .settings-corner: the cluster's own footprint
        plus the gap from the true edge it sits at (--corner-inset) plus a
@@ -271,6 +276,38 @@
      untouched, so tap targets stay the same height. */
   @media (max-width: 400px) {
     .view-tab { padding: 0.55rem 0.3rem; }
+  }
+  /* Below 480px (where --container-edge-gap/--corner-edge-gap both hit 0,
+     the same threshold --tab-bar-right-reserve itself keys off), the
+     reserved-clearance approach above stops working: .view-tabs' own four
+     single-word labels can't shrink below their combined text-content
+     width, so squeezing them into whatever's left after reserving room
+     for .settings-corner either wraps "Deep Work" onto two lines (still
+     happens up to ~500px) or, at the very narrowest phone widths, actually
+     overflows past the reservation and renders underneath the icon
+     cluster — confirmed via measured rects, not just visually. Rather than
+     fighting that losing space race further (smaller font, abbreviated
+     labels), .settings-corner is fixed-position specifically so it stays
+     reachable while the rest of the page scrolls (see its own comment) —
+     dropping .app-header-row below it, full width, un-reserved, keeps that
+     property while giving .view-tabs the whole row to lay out its four
+     tabs single-line, comfortably, exactly like every wider breakpoint
+     already does. Only affects the row's rest position (scroll offset 0);
+     once the page scrolls at all this row moves with it same as before,
+     while the fixed cluster stays put — there is no future point where
+     they could newly overlap. */
+  @media (max-width: 480px) {
+    .app-header-row {
+      padding-right: 0;
+      /* Icons sit at top: var(--corner-inset), var(--corner-icon-height)
+         tall, so their bottom edge is corner-inset + corner-icon-height
+         below the true viewport top. .app-header-row (first child of
+         .container, inside body) already starts 1.75rem lower than that
+         from body's own top padding (line ~160) — this margin makes up
+         the rest of the difference plus a small breathing gap. If body's
+         top padding ever changes from 1.75rem, this needs revisiting. */
+      margin-top: calc(var(--corner-inset) + var(--corner-icon-height) + 0.75rem - 1.75rem);
+    }
   }
   /* gap bumped from 0.4rem to 0.5rem, and .view-tab's own horizontal
      padding below from 0.55rem to 0.7rem, so the bar reads as more

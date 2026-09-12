@@ -1675,6 +1675,11 @@
     // fight the spring's every-frame writes).
     function showFocusView() {
       const el = document.getElementById("focusView");
+      // #focusView is its own scroll container (overflow-y: auto — a fixed
+      // full-screen overlay, not part of html's shared scroll like the
+      // other four views), so entering it needs its own reset, not just
+      // showNextView()'s document.documentElement one.
+      el.scrollTop = 0;
       el.style.transition = "opacity 0s linear, background 0s linear, color 0s linear";
       document.body.style.transition = "background 0s linear, color 0s linear";
       el.style.opacity = "0";
@@ -1824,6 +1829,12 @@
     }
 
     function showNextView() {
+      // html is the app's one real scroll container (body/.container are
+      // both overflow-y: hidden — see their own comments) — a tab entered
+      // with leftover scroll from whatever was last viewed there reads as
+      // "didn't switch," not as a fresh view. Reset before rendering so the
+      // incoming content is never seen mid-scroll for even one frame.
+      document.documentElement.scrollTop = 0;
       if (nextEl) {
         // Spring drives opacity/translateY directly, so keep CSS out of the
         // way for this element's entrance; restored once both springs settle
@@ -2032,12 +2043,7 @@
         snow.setAttribute("data-lucide", "snowflake");
         snow.className = "icon";
         sub.appendChild(snow);
-        // Premium's shared pool reads as "remaining this month" (it isn't
-        // earned per-goal); free's own bank reads as "banked", matching how
-        // it was actually built up.
-        sub.append(isPremiumUser()
-          ? ` ${freezesAvailable} freeze${freezesAvailable === 1 ? "" : "s"} remaining this month`
-          : ` ${freezesAvailable} freeze${freezesAvailable === 1 ? "" : "s"} banked`);
+        sub.append(` ${formatFreezeCountLine(goal)}`);
       }
       const earnedMilestones = goal.milestonesEarned || {};
       const earnedThresholds = MILESTONE_THRESHOLDS.filter(t => earnedMilestones[t]);
@@ -2975,7 +2981,10 @@
       .sort((a, b) => a.category.localeCompare(b.category));
   }
 
-  // Renders the "Fitness (3), School (4), All (7)" badge row. Tapping any
+  // Renders the "Fitness (1/3), School (0/4), All (1/7)" badge row —
+  // completed/total, same pattern Day view's own progress line already
+  // uses ("0/2 tasks completed"), so a badge tells you how much of that
+  // category is actually done, not just how many tasks exist. Tapping any
   // badge calls onTap(category, tasksForThatBadge) — "All" passes category
   // as null and the full unfiltered dayTasks — so callers just decide what
   // to do with a category slice rather than duplicating the grouping logic.
@@ -2987,7 +2996,8 @@
       badge.type = "button";
       badge.className = "task-category category-summary-badge pressable";
       badge.style.setProperty("--task-cat-color", categoryColor(category));
-      badge.textContent = `${category} (${catTasks.length})`;
+      const doneCount = catTasks.filter(t => t.occurrenceDone).length;
+      badge.textContent = `${category} (${doneCount}/${catTasks.length})`;
       // Stops the click from bubbling up to Week view's day-row handler
       // (renderWeekView), which would otherwise open the full unfiltered
       // day list instead of this badge's own category filter.
@@ -2997,7 +3007,8 @@
     const allBadge = document.createElement("button");
     allBadge.type = "button";
     allBadge.className = "category-summary-all pressable";
-    allBadge.textContent = `All (${dayTasks.length})`;
+    const allDoneCount = dayTasks.filter(t => t.occurrenceDone).length;
+    allBadge.textContent = `All (${allDoneCount}/${dayTasks.length})`;
     allBadge.addEventListener("click", (e) => { e.stopPropagation(); onTap(null, dayTasks); });
     row.appendChild(allBadge);
     return row;
