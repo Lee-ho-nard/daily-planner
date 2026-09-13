@@ -102,7 +102,7 @@ function startListening(uid) {
 
   const categoriesRef = collection(db, "users", uid, "categories");
   unsubscribers.push(onSnapshot(categoriesRef, snap => {
-    mirror.categories = snap.docs.map(d => d.data());
+    mirror.categories = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     markSourceReady(uid, "categories");
     dispatchDataChanged("categories");
   }));
@@ -253,11 +253,13 @@ function syncCustomReminders(remindersArray) {
   }, previousIds);
 }
 
-// Categories have no stable local id today, so there's nothing to diff by —
-// every sync deletes whatever docs currently exist (read fresh, since the
-// mirror doesn't track per-category doc ids) and recreates them with new
-// auto-ids. Categories are a short, rarely-changed list, so this is cheap.
-async function syncCategories(categoriesArray) {
+// Categories now carry a stable id (mirror.categories includes each doc's
+// real Firestore id — see startListening's onSnapshot above — and new
+// categories are assigned one client-side at creation, same as tasks), so
+// this can diff against the cached mirror like mirrorCollection() does for
+// tasks/customPresets/customReminders instead of paying for a fresh
+// getDocs() read on every single save().
+function syncCategories(categoriesArray) {
   if (!currentUid) return;
   // Refuse to write an empty list before this session's own categories
   // snapshot has ever loaded — see loadedSourcesEver's own comment. An
@@ -267,11 +269,32 @@ async function syncCategories(categoriesArray) {
   // loaded at least once, an empty array is trusted normally (the user
   // genuinely has none, e.g. after deleting their last one).
   if (categoriesArray.length === 0 && !loadedSourcesEver.has("categories")) return;
+  // Before the categories snapshot has ever loaded this sign-in, mirror
+  // .categories is just its unloaded default ([]) — diffing against it
+  // would treat every real, already-synced category as new and, since a
+  // pre-load `categoriesArray` here can only come from stale/legacy data
+  // without ids (see save()'s call site), leave duplicates behind instead
+  // of cleanly replacing them. Fall back to a fresh read in that narrow
+  // window only; once loaded (the overwhelming majority of saves), reuse
+  // the cached mirror.
+  if (!loadedSourcesEver.has("categories")) return syncCategoriesFullReplace(categoriesArray);
+  const previousIds = mirror.categories.map(c => c.id);
+  return mirrorCollection(currentUid, "categories", categoriesArray, (colRef, cat) => {
+    const { id, ...rest } = cat;
+    const docId = id || doc(colRef).id;
+    return { ref: doc(colRef, docId), data: rest, id: docId };
+  }, previousIds);
+}
+
+async function syncCategoriesFullReplace(categoriesArray) {
   const colRef = collection(db, "users", currentUid, "categories");
   const existing = await getDocs(colRef);
   const ops = [];
   existing.forEach(d => ops.push({ type: "delete", ref: d.ref }));
-  categoriesArray.forEach(cat => ops.push({ type: "set", ref: doc(colRef), data: cat }));
+  categoriesArray.forEach(cat => {
+    const { id, ...rest } = cat;
+    ops.push({ type: "set", ref: doc(colRef), data: rest });
+  });
   await commitInBatches(ops);
 }
 

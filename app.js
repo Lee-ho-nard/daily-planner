@@ -7,9 +7,7 @@
   // incidental order the `categories` array happens to be in — which,
   // for signed-in users, is NOT guaranteed to survive a sync: every
   // save() (even one that only touches tasks, e.g. drag-reordering a
-  // task list) also calls syncCategories(), which deletes and recreates
-  // every category doc with a brand-new random Firestore id every single
-  // time (see that function's own comment). A bare collection() query
+  // task list) also calls syncCategories(), and a bare collection() query
   // with no orderBy doesn't promise its returned order matches insertion
   // order, so the *array* position categories come back in can shuffle
   // on any save, even though each category's own data (including this
@@ -4851,7 +4849,12 @@
     // New category always goes to the end of the stable display order —
     // see ensureCategoryOrder()'s own comment for why this field exists.
     const maxOrder = categories.reduce((max, c) => Math.max(max, c.order ?? -1), -1);
-    categories.push({ name, color: selectedColor, order: maxOrder + 1 });
+    // Assigned now (not left for syncCategories() to generate) so the id is
+    // stable across every subsequent sync of this category — same reason
+    // tasks/customPresets get theirs at creation. See syncCategories()'s
+    // own comment.
+    const id = Date.now().toString() + Math.random().toString(36).slice(2, 7);
+    categories.push({ id, name, color: selectedColor, order: maxOrder + 1 });
     save();
     closeModal(catOverlay);
     renderCategoryTabs();
