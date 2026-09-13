@@ -5949,6 +5949,16 @@ let currentRange = "week";
     const total = todayTasks.length;
     const done = todayTasks.filter(t => t.occurrenceDone).length;
     const pct = total ? Math.round((done / total) * 100) : 0;
+    // Two independent conditions, not one combined "both must be true" gate
+    // — End Day (see its own confirm dialog's "N unfinished tasks" warning)
+    // can be used with tasks still incomplete, so reaching 100% and being
+    // reflected-and-locked aren't guaranteed to happen together. The halo
+    // previews "about to be sealed" only on the path where 100% is hit
+    // first; reflecting with unfinished tasks skips straight from the
+    // plain ring to the sealed state, which is correct — there was never
+    // an "almost there" moment on that path.
+    const allDone = total > 0 && done === total;
+    const locked = isDayLocked(toDateStr(today));
 
     const byCat = {};
     todayTasks.forEach(t => {
@@ -5962,6 +5972,39 @@ let currentRange = "week";
     const cx = 100, cy = 100, r = 80;
     const circumference = 2 * Math.PI * r;
     const ns = "http://www.w3.org/2000/svg";
+
+    // "Sealed by Reflection" halo — a thin ring just outside the main one,
+    // absent until all tasks are done, dashed/faint once they are (100%
+    // reached but the day hasn't been closed via End Day/Reflection yet),
+    // then filling in solid once isDayLocked() is true. Two numeric
+    // dasharray values in both states (not "none") so the dash-to-solid
+    // change is an actual CSS transition, not a snap — same look, just
+    // the gap between dashes shrinking to 0. Deliberately muted (border/
+    // text-muted, never accent) so it reads as a quiet state change, not
+    // a celebratory flourish.
+    if (allDone || locked) {
+      const halo = document.createElementNS(ns, "circle");
+      halo.setAttribute("cx", cx); halo.setAttribute("cy", cy); halo.setAttribute("r", 96);
+      halo.setAttribute("fill", "none");
+      halo.setAttribute("stroke-width", "2");
+      halo.setAttribute("stroke", locked ? "var(--text-muted)" : "var(--border)");
+      // Starts dashed/invisible and eases to its real target a frame later
+      // — same "animate in on every render" treatment the category
+      // segments above already use (this whole chart rebuilds from
+      // scratch each render, so there's no persisted previous state to
+      // transition from otherwise). Both states use two numeric
+      // dasharray values (never "none") so dashed-to-solid is an actual
+      // eased transition — the gap between dashes shrinking to 0 — not a
+      // snap.
+      halo.setAttribute("stroke-dasharray", "3 5");
+      halo.style.opacity = "0";
+      svg.appendChild(halo);
+      requestAnimationFrame(() => {
+        halo.style.transition = "stroke-dasharray 500ms ease, opacity 500ms ease";
+        halo.setAttribute("stroke-dasharray", locked ? "3 0" : "3 5");
+        halo.style.opacity = locked ? "0.85" : "0.6";
+      });
+    }
 
     const bg = document.createElementNS(ns, "circle");
     bg.setAttribute("cx", cx); bg.setAttribute("cy", cy); bg.setAttribute("r", r);
@@ -5996,15 +6039,25 @@ let currentRange = "week";
     const text1 = document.createElementNS(ns, "text");
     text1.setAttribute("x", cx); text1.setAttribute("y", cy - 6); text1.setAttribute("text-anchor", "middle");
     text1.setAttribute("font-size", "var(--text-sm)"); text1.setAttribute("fill", "var(--text-secondary)");
-    text1.textContent = "Locked in";
+    text1.textContent = locked ? "Day" : "Locked in";
     svg.appendChild(text1);
 
     const text2 = document.createElementNS(ns, "text");
     text2.setAttribute("x", cx); text2.setAttribute("y", cy + 22); text2.setAttribute("text-anchor", "middle");
-    text2.setAttribute("font-size", "var(--text-2xl)"); text2.setAttribute("font-weight", "600"); text2.setAttribute("fill", "var(--text-primary)");
-    text2.textContent = "0%";
+    text2.setAttribute("font-weight", "600"); text2.setAttribute("fill", "var(--text-primary)");
     svg.appendChild(text2);
-    animateCountUp(text2, pct, 550, "%");
+    if (locked) {
+      // Sealed by Reflection — no percentage shown here at all (it's
+      // implicit in the day being closed out, per the End Day flow,
+      // whether or not every task actually got checked off), smaller
+      // than the percentage's own text-2xl so the phrase fits the ring.
+      text2.setAttribute("font-size", "var(--text-xl)");
+      text2.textContent = "locked in";
+    } else {
+      text2.setAttribute("font-size", "var(--text-2xl)");
+      text2.textContent = "0%";
+      animateCountUp(text2, pct, 550, "%");
+    }
 
     const legend = document.getElementById("ringLegend");
     legend.innerHTML = "";
