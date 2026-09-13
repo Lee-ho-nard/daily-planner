@@ -5,6 +5,7 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager
 } from "./vendor/firebase/firebase-firestore.js";
+import { getAnalytics, isSupported as analyticsIsSupported, logEvent } from "./vendor/firebase/firebase-analytics.js";
 
 // Firebase web config isn't a traditional secret — access control is
 // enforced entirely by firestore.rules, not by hiding these values. Replace
@@ -41,3 +42,33 @@ export const db = initializeFirestore(firebaseApp, {
     tabManager: persistentMultipleTabManager()
   })
 });
+
+// --- Analytics (funnel tracking only — no PII) ---
+// getAnalytics() would throw synchronously in an environment where
+// Analytics genuinely can't run (no IndexedDB, browser extension context,
+// cookies disabled, etc.) — isSupported() is the SDK's own recommended
+// guard against that, so this is wrapped rather than called unconditionally
+// at module-evaluation time. window.logAnalyticsEvent() is a raw
+// synchronous handle for app.js (a classic script, same pattern as
+// window.firebaseAuth above) and is always safe to call: before analytics
+// finishes initializing (or on a platform where it never will), it's just
+// a no-op — no caller needs its own isSupported()/try-catch.
+let analyticsInstance = null;
+analyticsIsSupported().then((supported) => {
+  if (!supported) return;
+  try {
+    analyticsInstance = getAnalytics(firebaseApp);
+  } catch (err) {
+    // Most likely cause: this Firebase project has no linked Google
+    // Analytics property yet. Funnel events just won't record anywhere
+    // until one exists — nothing else in the app depends on this.
+  }
+});
+window.logAnalyticsEvent = (name, params) => {
+  if (!analyticsInstance) return;
+  try {
+    logEvent(analyticsInstance, name, params);
+  } catch (err) {
+    // Never let a tracking call break the feature it's attached to.
+  }
+};

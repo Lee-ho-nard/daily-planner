@@ -6359,6 +6359,26 @@ let currentRange = "week";
     } else {
       localStorage.setItem(LOCAL_TRIAL_START_KEY, now.toISOString());
     }
+    // Trial → paid conversion funnel, part 1 of 3 (trial_ended and
+    // subscription_started are the other two — see logSubscriptionStarted()'s
+    // own comment for why that one has no real call site yet). Only fires
+    // here, not on the early-return above, so a trial that's already
+    // running never logs a second "start."
+    if (window.logAnalyticsEvent) window.logAnalyticsEvent("trial_started");
+  }
+
+  // Trial → paid conversion funnel, part 3 of 3 — deliberately not called
+  // from anywhere yet. There's no real "a subscription started" moment in
+  // this app today: the paywall's Continue button explicitly doesn't
+  // process a purchase (no Stripe/Firestore billing infrastructure exists
+  // — see docs/firestore-schema.md's billing/status section), so logging
+  // this from there would record an event for something that didn't
+  // actually happen. Call this from the real subscription-confirmed path
+  // once that exists (most likely: the Cloud Function that handles the
+  // Stripe webhook, or the client code that reacts to
+  // users/{uid}/billing/status flipping to an active subscription).
+  function logSubscriptionStarted(plan) {
+    if (window.logAnalyticsEvent) window.logAnalyticsEvent("subscription_started", { plan });
   }
 
   function isPremiumUser() {
@@ -6384,11 +6404,26 @@ let currentRange = "week";
   const TRIAL_REMINDER_WINDOW_DAYS = 2;
   const TRIAL_REMINDER_DISMISSED_KEY = "trialReminderDismissedDate";
 
+  // Trial → paid conversion funnel, part 2 of 3 — fires exactly once, the
+  // first time a real (non-premium) trial that actually started is found
+  // fully expired. Piggybacks on updateTrialReminderBanner() since that
+  // already runs on every renderAll() and already computes these same
+  // values; a dedicated "trial just ended" event doesn't exist anywhere
+  // else to hang this off of.
+  const TRIAL_ENDED_LOGGED_KEY = "trialEndedEventLogged";
+  function logTrialEndedOnce(realPremium, days) {
+    if (realPremium || days > 0 || !getTrialStartDate()) return;
+    if (localStorage.getItem(TRIAL_ENDED_LOGGED_KEY) === "true") return;
+    localStorage.setItem(TRIAL_ENDED_LOGGED_KEY, "true");
+    if (window.logAnalyticsEvent) window.logAnalyticsEvent("trial_ended");
+  }
+
   function updateTrialReminderBanner() {
     const banner = document.getElementById("trialReminderBanner");
     if (!banner) return;
     const realPremium = localStorage.getItem("isPremium") === "true";
     const days = trialDaysRemaining();
+    logTrialEndedOnce(realPremium, days);
     const inWindow = !realPremium && isTrialActive() && days <= TRIAL_REMINDER_WINDOW_DAYS;
     // Dismissible per day, not permanently — the promise is a reminder
     // that keeps showing up until the trial actually ends or the user
@@ -8400,8 +8435,11 @@ let currentRange = "week";
     const stepIndicator = document.getElementById("onboardingStepIndicator");
     // Step 6 ("A couple more details") is itself skipped entirely when no
     // goal was entered on step 5, so it's dropped from the count too —
-    // those users see "Step X of 8" instead of "Step X of 9".
-    const PROGRESS_STEPS = onboardingGoalName ? [3, 4, 5, 6, 7, 8, 9, 10, 11] : [3, 4, 5, 7, 8, 9, 10, 11];
+    // those users see "Step X of 9" instead of "Step X of 10". Step 11
+    // (notification permission) counts toward progress like any other
+    // setup step — only the final account-creation/trial steps (13, 14)
+    // are excluded.
+    const PROGRESS_STEPS = onboardingGoalName ? [3, 4, 5, 6, 7, 8, 9, 10, 11, 12] : [3, 4, 5, 7, 8, 9, 10, 11, 12];
     const currentStepNum = PROGRESS_STEPS.indexOf(currentOnboardingStep) + 1;
     const showProgress = currentStepNum > 0;
     wrap.style.display = showProgress ? "block" : "none";
@@ -8462,26 +8500,26 @@ let currentRange = "week";
       renderOnboardingStep();
       return;
     }
-    goToOnboardingStep(13);
+    goToOnboardingStep(14);
   }
 
   // Lets auth-ui.js tell "someone is actively creating an account from
-  // onboarding's own account-creation screen" (step 12 — both the email
+  // onboarding's own account-creation screen" (step 13 — both the email
   // and Google create-account paths only ever fire from here) apart from
   // "an existing user just signed in from some other onboarding screen"
-  // (step 1's escape hatch, or a leftover non-12 step) — without leaking
-  // the step-12 magic number itself across the module boundary. The two
+  // (step 1's escape hatch, or a leftover non-13 step) — without leaking
+  // the step-13 magic number itself across the module boundary. The two
   // cases need different auth-state-change handling: the former is
   // already mid-sequence (flushOnboardingDraft() about to run, or an
   // isNewUser collision check in flight) and must not have its onboarding
   // draft/step state torn down out from under it; the latter has nothing
   // in flight and should just exit onboarding immediately.
   function isOnboardingAtAccountCreationStep() {
-    return currentOnboardingStep === 12;
+    return currentOnboardingStep === 13;
   }
 
   document.addEventListener("onboarding-auth-changed", () => {
-    if (currentOnboardingStep === 12) renderOnboardingStep();
+    if (currentOnboardingStep === 13) renderOnboardingStep();
   });
 
   function renderOnboardingStep() {
@@ -8490,6 +8528,14 @@ let currentRange = "week";
     document.getElementById("onboardingView").classList.toggle("ob-emphasis-bg", currentOnboardingStep === 1);
     const content = document.getElementById("onboardingContent");
     const step = currentOnboardingStep;
+
+    // Funnel drop-off tracking — step number and nothing else (no name,
+    // no email, no task/category text). window.logAnalyticsEvent (see
+    // firebase-init.js) is a no-op until Analytics finishes initializing
+    // (or on a platform where it never will), so this is always safe to
+    // call unconditionally, same as every other window.*Bridge check
+    // elsewhere in this file.
+    if (window.logAnalyticsEvent) window.logAnalyticsEvent(`onboarding_step_${step}_viewed`, { step });
 
     if (step === 1) {
       content.innerHTML = `
@@ -8858,6 +8904,48 @@ let currentRange = "week";
       document.getElementById("obContinue").addEventListener("click", () => goToOnboardingStep(11));
 
     } else if (step === 11) {
+      // Skipped invisibly (straight to the synthesis step) rather than
+      // showing an "Enable Notifications" button that couldn't do
+      // anything — this browser/platform combo has neither the native
+      // LocalNotifications plugin nor Notification+PushManager support.
+      if (!notificationDeliveryAvailable()) {
+        goToOnboardingStep(12);
+        return;
+      }
+      content.innerHTML = `
+        <div class="onboarding-container" style="padding-top:4rem;">
+          <div style="font-size:var(--text-xl);font-weight:600;margin-bottom:0.75rem;">Want a reminder for your anchor task?</div>
+          <div style="font-size:var(--text-md);color:var(--text-secondary);margin-bottom:2rem;line-height:1.6;">We'll nudge you each morning to check today's tasks and get <strong id="obNotifAnchorName" style="color:var(--text-primary);"></strong> done first.</div>
+          <button id="obEnableNotifs" class="start-focus-btn" style="margin-bottom:0.75rem;">Enable Notifications</button>
+          <button id="obSkipNotifs" type="button" class="auth-mode-toggle">Maybe later</button>
+        </div>
+      `;
+      document.getElementById("obNotifAnchorName").textContent = onboardingDailyTaskName || "your anchor task";
+      document.getElementById("obEnableNotifs").addEventListener("click", async () => {
+        const btn = document.getElementById("obEnableNotifs");
+        btn.disabled = true;
+        const granted = capacitorAvailable()
+          ? await ensureLocalNotificationPermission()
+          : await ensureDesktopNotificationPermission();
+        if (granted) {
+          // morningEnabled already defaults to true (DEFAULT_NOTIFICATION_PREFS)
+          // and its own copy already says "get your anchor done first" —
+          // granting permission here is what actually lets that existing
+          // reminder start firing for real, same mechanism Settings' own
+          // notification toggles use (scheduleNativeNotificationsSync()/
+          // scheduleDesktopNotificationsSync()), just triggered immediately
+          // instead of waiting for the next save().
+          scheduleNativeNotificationsSync();
+          scheduleDesktopNotificationsSync();
+          showToast("Reminders on — we'll nudge you each morning.", "success");
+        } else {
+          showToast("No worries — you can turn this on later in Settings.", "info");
+        }
+        goToOnboardingStep(12);
+      });
+      document.getElementById("obSkipNotifs").addEventListener("click", () => goToOnboardingStep(12));
+
+    } else if (step === 12) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;text-align:center;">
           <div id="obSynthesisHeading" style="font-size:var(--text-xl);font-weight:600;margin-bottom:1.5rem;"></div>
@@ -8893,10 +8981,10 @@ let currentRange = "week";
       });
       document.getElementById("obContinue").addEventListener("click", () => {
         finalizeOnboardingData();
-        goToOnboardingStep(12);
+        goToOnboardingStep(13);
       });
 
-    } else if (step === 12) {
+    } else if (step === 13) {
       // Reuses the exact same #authModalOverlay/openAuthModal("signup")
       // Settings already uses (window.openOnboardingAuthModal, exposed by
       // auth-ui.js) rather than rebuilding a Google/email form here.
@@ -8908,7 +8996,7 @@ let currentRange = "week";
       // import.
       const authUser = window.authBridge && window.authBridge.getCurrentUser ? window.authBridge.getCurrentUser() : null;
       if (authUser && !onboardingAccountNeedsEmailVerification()) {
-        goToOnboardingStep(13);
+        goToOnboardingStep(14);
         return;
       }
       if (authUser && onboardingAccountNeedsEmailVerification()) {
@@ -8932,7 +9020,7 @@ let currentRange = "week";
             const fresh = await window.authBridge.reloadCurrentUser();
             if (fresh && fresh.emailVerified) {
               showToast("Email verified. You're all set.", "success");
-              goToOnboardingStep(13);
+              goToOnboardingStep(14);
             } else {
               statusEl.textContent = "Not verified yet. Check your inbox (and spam), click the link, then try again.";
             }
@@ -8974,10 +9062,10 @@ let currentRange = "week";
             // Only the auth credentials are reset here — onboardingDraft
             // and every other in-memory onboarding field (name, identity,
             // ageBracket, categories, tasks, goal/anchor task) are left
-            // exactly as finalizeOnboardingData() built them on step 11, so
-            // step 12 re-renders as a fresh account-creation prompt with the
+            // exactly as finalizeOnboardingData() built them on step 12, so
+            // step 13 re-renders as a fresh account-creation prompt with the
             // rest of onboarding untouched.
-            goToOnboardingStep(12);
+            goToOnboardingStep(13);
           } catch (err) {
             statusEl.textContent = "Could not remove account, please try again.";
             btn.disabled = false;
@@ -8996,7 +9084,7 @@ let currentRange = "week";
         });
       }
 
-    } else if (step === 13) {
+    } else if (step === 14) {
       content.innerHTML = `
         <div class="onboarding-container" style="padding-top:4rem;">
           <div style="font-size:var(--text-2xl);font-weight:600;color:var(--text-primary);line-height:1.1;margin-bottom:1rem;">Your first 7 days are free.</div>
@@ -9178,14 +9266,17 @@ let currentRange = "week";
     onboardingDraft = null;
     document.getElementById("onboardingView").classList.remove("visible");
     document.body.classList.remove("onboarding-active");
+    if (window.logAnalyticsEvent) window.logAnalyticsEvent("onboarding_completed");
     renderAll();
     switchView("planner");
-    // First point a brand-new desktop user could reasonably be asked for
-    // notification permission — not on first page load, before they've
-    // even seen the app. Still called from this same click's call stack
-    // (the "Start my free trial" tap), so the permission prompt keeps the
-    // user-gesture context browsers expect it to fire from.
-    scheduleDesktopNotificationsSync();
+    // Notification permission is now asked explicitly, earlier, at step
+    // 11 — with real "enable" / "maybe later" framing instead of a bare
+    // browser prompt sprung on whoever happens to reach this point. A
+    // scheduleDesktopNotificationsSync() call used to live here as the
+    // first reasonable moment to ask; keeping it would re-trigger the
+    // browser's native permission prompt on anyone who picked "Maybe
+    // later" moments ago, which is exactly the immediate re-prompt that
+    // step's own success criteria rule out.
   }
 
   // --- Firestore sync (signed-in users only) ---
@@ -9259,7 +9350,7 @@ let currentRange = "week";
     if (onboardingAccountNeedsEmailVerification()) {
       document.body.classList.add("onboarding-active");
       document.getElementById("onboardingView").classList.add("visible");
-      currentOnboardingStep = 12;
+      currentOnboardingStep = 13;
       renderOnboardingStep();
       return;
     }
@@ -9415,7 +9506,7 @@ let currentRange = "week";
     if (onboardingAccountNeedsEmailVerification()) {
       document.body.classList.add("onboarding-active");
       document.getElementById("onboardingView").classList.add("visible");
-      currentOnboardingStep = 12;
+      currentOnboardingStep = 13;
       renderOnboardingStep();
       revealApp();
       return;

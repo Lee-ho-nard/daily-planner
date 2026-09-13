@@ -10,7 +10,7 @@
 // respondWith()), so Firestore's own persistentLocalCache offline
 // persistence (see firebase-init.js) keeps working exactly as it did before
 // this file existed. The two caching layers never see each other.
-const CACHE_VERSION = "flit-shell-v4";
+const CACHE_VERSION = "flit-shell-v5";
 
 const SHELL_ASSETS = [
   "/",
@@ -41,7 +41,8 @@ const SHELL_ASSETS = [
   "/vendor/sortable.min.js",
   "/vendor/firebase/firebase-app.js",
   "/vendor/firebase/firebase-auth.js",
-  "/vendor/firebase/firebase-firestore.js"
+  "/vendor/firebase/firebase-firestore.js",
+  "/vendor/firebase/firebase-analytics.js"
 ];
 
 self.addEventListener("install", (event) => {

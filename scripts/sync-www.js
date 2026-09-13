@@ -27,7 +27,8 @@ const WEB_FILES = [
   "vendor/sortable.min.js",
   "vendor/firebase/firebase-app.js",
   "vendor/firebase/firebase-auth.js",
-  "vendor/firebase/firebase-firestore.js"
+  "vendor/firebase/firebase-firestore.js",
+  "vendor/firebase/firebase-analytics.js"
 ];
 
 fs.rmSync(wwwDir, { recursive: true, force: true });
