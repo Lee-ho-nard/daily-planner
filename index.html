@@ -72,6 +72,13 @@
   </div>
 
   <div id="plannerView">
+    <div id="trialReminderBanner" style="display:none;background:var(--accent-bg);color:var(--text-primary);padding:0.6rem 0.7rem;border-radius:8px;font-size:var(--text-sm);margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;">
+      <i data-lucide="clock" class="icon icon-accent"></i>
+      <span id="trialReminderText" style="flex:1;"></span>
+      <button id="trialReminderSeePlans" type="button" style="background:none;border:none;padding:0;font-family:inherit;font-size:var(--text-sm);font-weight:600;color:var(--accent-link);text-decoration:underline;cursor:pointer;white-space:nowrap;">See plans</button>
+      <button id="trialReminderDismiss" type="button" aria-label="Dismiss" style="background:none;border:none;padding:0.2rem;cursor:pointer;color:var(--text-muted);display:flex;"><i data-lucide="x" class="icon"></i></button>
+    </div>
+
     <div class="mini-toggle" id="plannerRangeToggle">
       <button class="mini-toggle-btn active" data-planner-range="day" type="button">Day</button>
       <button class="mini-toggle-btn" data-planner-range="week" type="button">Week</button>
@@ -137,7 +144,7 @@
         <svg id="ringChart" viewBox="0 0 200 200" width="180" height="180"></svg>
         <div class="ring-legend" id="ringLegend"></div>
       </div>
-      <div id="analysisLockedCard" class="deep-work-stats-teaser" style="display:none;">Unlock deeper insights with Premium</div>
+      <div id="analysisLockedCard" class="deep-work-stats-teaser" style="display:none;cursor:pointer;">Unlock deeper insights with Premium</div>
       <div id="weeklyRecapCard" class="weekly-recap-card" style="display:none;"></div>
       <div id="insightsCard" style="background:var(--bg-card);border-radius:var(--radius-md);padding:1.1rem 1.3rem;margin-bottom:1.25rem;box-shadow:var(--shadow-card);"></div>
 
@@ -778,10 +785,26 @@
 </div>
 
 <div class="modal-overlay" id="plansInfoModalOverlay">
-  <div class="modal">
-    <h3>What's included</h3>
-    <p style="font-size:var(--text-base);color:var(--text-secondary);line-height:1.5;margin-top:0.25rem;">Every plan gets the same four things — there's no feature tier to pick between, just whether your trial is active.</p>
-    <div style="display:flex;flex-direction:column;gap:0.85rem;margin-top:1.25rem;">
+  <div class="modal paywall-modal">
+    <h3>Choose your plan</h3>
+    <p style="font-size:var(--text-base);color:var(--text-secondary);line-height:1.5;margin-top:0.25rem;">Both plans include the same four things below — pick whichever billing period works for you.</p>
+
+    <div class="pricing-cards">
+      <button type="button" class="pricing-card pricing-card-annual selected" id="pricingCardAnnual" data-plan="annual">
+        <div class="pricing-card-badge" id="pricingAnnualBadge">Best value</div>
+        <div class="pricing-card-title">Annual</div>
+        <div class="pricing-card-price" id="pricingAnnualPrice"></div>
+        <div class="pricing-card-daily" id="pricingAnnualDaily"></div>
+      </button>
+      <button type="button" class="pricing-card pricing-card-monthly" id="pricingCardMonthly" data-plan="monthly">
+        <div class="pricing-card-title">Monthly</div>
+        <div class="pricing-card-price" id="pricingMonthlyPrice"></div>
+      </button>
+    </div>
+
+    <p style="font-size:var(--text-sm);color:var(--text-secondary);line-height:1.5;margin-top:1rem;">Free for your first 7 days, either way. <span id="paywallTrialDaysNote"></span></p>
+
+    <div style="display:flex;flex-direction:column;gap:0.85rem;margin-top:1rem;">
       <div style="background:var(--bg-page-alt);padding:1rem;border-radius:var(--radius-sm);">
         <div style="font-size:var(--text-base);font-weight:500;color:var(--text-primary);">Charts</div>
         <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:0.25rem;">See how your time and effort break down by category, filterable by day, week, or month.</div>
@@ -799,9 +822,12 @@
         <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:0.25rem;">An automatic summary of your week, delivered every week.</div>
       </div>
     </div>
-    <p style="font-size:var(--text-sm);color:var(--text-secondary);line-height:1.5;margin-top:1.25rem;">Pricing isn't finalized yet. For now, everything above is included free for your first 7 days.</p>
+
+    <p style="font-size:var(--text-xs);color:var(--text-muted);line-height:1.5;margin-top:1rem;">Billing isn't live yet — you're just previewing plans here. Nothing will be charged, and this won't change your trial.</p>
+
     <div class="modal-actions">
       <button class="btn-cancel" id="plansInfoCloseBtn">Close</button>
+      <button class="btn-save" id="paywallContinueBtn">Continue</button>
     </div>
   </div>
 </div>

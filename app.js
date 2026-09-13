@@ -2176,6 +2176,71 @@
   enableModalDragDismiss(plansInfoOverlay);
   document.getElementById("plansInfoCloseBtn").addEventListener("click", () => closeModal(plansInfoOverlay));
 
+  // --- Paywall pricing (illustrative — no Stripe/billing infrastructure
+  // exists yet, see this modal's own "Billing isn't live yet" copy). These
+  // two numbers are the only place actual prices live; everything else on
+  // the screen (the daily-cost breakdown, the "Best value" badge) is
+  // computed from them so it can never drift out of sync or round in the
+  // app's favor. Update these once real pricing is set.
+  const PRICING = { annual: 29.99, monthly: 3.99 };
+  let selectedPlan = "annual";
+
+  function renderPaywallScreen() {
+    const annualDaily = PRICING.annual / 365;
+    const monthlyDaily = (PRICING.monthly * 12) / 365;
+    document.getElementById("pricingAnnualPrice").innerHTML = `$${PRICING.annual.toFixed(2)}<span>/year</span>`;
+    document.getElementById("pricingMonthlyPrice").innerHTML = `$${PRICING.monthly.toFixed(2)}<span>/month</span>`;
+    // Rounded only for display, never for the comparison below — "no
+    // rounding tricks" means the cents shown must be the real division,
+    // and whether annual actually is the better per-day deal must be
+    // decided from the exact numbers, not the rounded display value.
+    const annualDailyCents = Math.round(annualDaily * 100);
+    document.getElementById("pricingAnnualDaily").textContent = `that's ${annualDailyCents}¢ a day`;
+    // Only claims "Best value" if annual's real per-day cost is actually
+    // lower than monthly's annualized per-day cost — stays honest even if
+    // the two constants above are ever changed to numbers where that
+    // stops being true.
+    document.getElementById("pricingAnnualBadge").style.display = annualDaily < monthlyDaily ? "" : "none";
+
+    const days = trialDaysRemaining();
+    document.getElementById("paywallTrialDaysNote").textContent =
+      days > 0 ? `${days} day${days === 1 ? "" : "s"} left on yours.` : "";
+
+    setSelectedPlan("annual");
+  }
+
+  function setSelectedPlan(plan) {
+    selectedPlan = plan;
+    document.getElementById("pricingCardAnnual").classList.toggle("selected", plan === "annual");
+    document.getElementById("pricingCardMonthly").classList.toggle("selected", plan === "monthly");
+  }
+  document.getElementById("pricingCardAnnual").addEventListener("click", () => setSelectedPlan("annual"));
+  document.getElementById("pricingCardMonthly").addEventListener("click", () => setSelectedPlan("monthly"));
+
+  function openPaywallModal() {
+    renderPaywallScreen();
+    openModal(plansInfoOverlay);
+  }
+
+  // No payment processing exists yet (see the modal's own disclosure copy)
+  // — this is deliberately NOT a fake "you're subscribed!" success state,
+  // just an honest acknowledgment of what actually happened (nothing) so
+  // the screen never claims something it can't back up.
+  document.getElementById("paywallContinueBtn").addEventListener("click", () => {
+    closeModal(plansInfoOverlay);
+    showToast("Billing isn't set up yet — you're still on your free trial.", "info");
+  });
+
+  // Makes the existing "Upgrade to Premium" teasers (previously inert
+  // text) actually open the paywall — attached once here rather than
+  // inside their own render functions, since those rebuild this element's
+  // innerHTML/className on every call and would otherwise need the
+  // listener re-attached each time too.
+  document.getElementById("weeklyRecapCard").addEventListener("click", () => {
+    if (!isPremiumUser()) openPaywallModal();
+  });
+  document.getElementById("analysisLockedCard").addEventListener("click", () => openPaywallModal());
+
   function openStreakModal() {
     populateNotificationSettingsUI();
 
@@ -3285,6 +3350,7 @@
   function renderAll() {
     syncAllStreakFreezes();
     renderStreakFlameBadge();
+    updateTrialReminderBanner();
 
     // Day-view chrome (date-nav, progress, category tabs, the task list
     // itself) only applies to Day mode — Week/Month replace all of it with
@@ -5413,6 +5479,7 @@ let currentRange = "week";
       // copy since it's a distinct feature — no computeWeeklyRecap() call
       // here, so no real recap data ever reaches a free user.
       card.className = "deep-work-stats-teaser";
+      card.style.cursor = "pointer";
       card.innerHTML = `
         <div style="font-weight:600;color:var(--text-primary);margin-bottom:0.35rem;"><i data-lucide="lock" class="icon"></i> Weekly Recap</div>
         <div>See your completed tasks, Deep Work time, reflections, and streak every week. Upgrade to Premium.</div>
@@ -5420,6 +5487,7 @@ let currentRange = "week";
       lucide.createIcons();
       return;
     }
+    card.style.cursor = "";
     card.className = "weekly-recap-card";
     const recap = computeWeeklyRecap();
     const heading = `<div style="font-size:var(--text-xs);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:0.55rem;">This week</div>`;
@@ -6303,6 +6371,44 @@ let currentRange = "week";
     const reallyPremium = localStorage.getItem("isPremium") === "true";
     return reallyPremium || isTrialActive();
   }
+
+  // --- Trial-ending reminder banner ---
+  // The actual mechanic behind onboarding's "We'll remind you before your
+  // trial ends" promise. An in-app banner rather than a scheduled push
+  // notification: this app has no server-side send capability (see
+  // registerPushToken()'s own comment), so a "notification" promise can't
+  // actually be kept reliably if the app isn't open at the right moment —
+  // a banner checked on every render, which is what this actually is, can
+  // be kept honestly. Re-evaluated on every renderAll(), so it's correct
+  // the moment the trial crosses into its final days, not just at login.
+  const TRIAL_REMINDER_WINDOW_DAYS = 2;
+  const TRIAL_REMINDER_DISMISSED_KEY = "trialReminderDismissedDate";
+
+  function updateTrialReminderBanner() {
+    const banner = document.getElementById("trialReminderBanner");
+    if (!banner) return;
+    const realPremium = localStorage.getItem("isPremium") === "true";
+    const days = trialDaysRemaining();
+    const inWindow = !realPremium && isTrialActive() && days <= TRIAL_REMINDER_WINDOW_DAYS;
+    // Dismissible per day, not permanently — the promise is a reminder
+    // that keeps showing up until the trial actually ends or the user
+    // decides, not a one-time toast that's easy to miss and forget.
+    const dismissedToday = localStorage.getItem(TRIAL_REMINDER_DISMISSED_KEY) === toDateStr(new Date());
+    if (!inWindow || dismissedToday) {
+      banner.style.display = "none";
+      return;
+    }
+    document.getElementById("trialReminderText").textContent =
+      days <= 1 ? "Your trial ends today." : `Your trial ends in ${days} days.`;
+    banner.style.display = "flex";
+    lucide.createIcons();
+  }
+
+  document.getElementById("trialReminderSeePlans").addEventListener("click", () => openPaywallModal());
+  document.getElementById("trialReminderDismiss").addEventListener("click", () => {
+    localStorage.setItem(TRIAL_REMINDER_DISMISSED_KEY, toDateStr(new Date()));
+    document.getElementById("trialReminderBanner").style.display = "none";
+  });
 
   // No cached variable existed for this before — every read/write hit
   // localStorage directly (5 separate literal reads). Signed-in users read
@@ -7190,7 +7296,8 @@ let currentRange = "week";
       // left visible-but-inert, so there's nothing to type into that goes
       // nowhere.
       input.style.display = "none";
-      results.innerHTML = `<div class="deep-work-stats-teaser">Search your past reflections. Upgrade to Premium.</div>`;
+      results.innerHTML = `<div class="deep-work-stats-teaser" id="reflectionSearchUpgradeTeaser" style="cursor:pointer;">Search your past reflections. Upgrade to Premium.</div>`;
+      document.getElementById("reflectionSearchUpgradeTeaser").addEventListener("click", () => openPaywallModal());
       openModal(reflectionSearchOverlay);
       return;
     }
@@ -8912,7 +9019,8 @@ let currentRange = "week";
               <div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:0.25rem;">A summary of your week, every week.</div>
             </div>
           </div>
-          <div style="font-size:var(--text-base);font-weight:500;color:var(--text-secondary);margin-bottom:3rem;">Try everything. Then decide if it's worth keeping.</div>
+          <div style="font-size:var(--text-base);font-weight:500;color:var(--text-secondary);margin-bottom:0.5rem;">Try everything. Then decide if it's worth keeping.</div>
+          <div style="font-size:var(--text-sm);color:var(--text-muted);margin-bottom:2.5rem;">We'll remind you before your trial ends — no surprise charges.</div>
           <button id="obContinue" class="start-focus-btn" style="margin-bottom:0.75rem;">Start my free trial</button>
           <button id="obLearnMorePlans" type="button" style="width:100%;padding:0.9rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:none;color:var(--accent);font-size:var(--text-md);font-weight:600;cursor:pointer;font-family:inherit;">Learn more about plans</button>
         </div>
@@ -8933,7 +9041,7 @@ let currentRange = "week";
       // this modal's own copy), so this is purely an expanded-detail view,
       // not a plan picker.
       document.getElementById("obLearnMorePlans").addEventListener("click", () => {
-        openModal(document.getElementById("plansInfoModalOverlay"));
+        openPaywallModal();
       });
       // Secondary button: plans-comparison page/modal is explicitly scoped
       // separately (per spec) — intentionally has no handler yet.
