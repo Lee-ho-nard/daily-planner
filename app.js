@@ -3,6 +3,38 @@
   categories = categories.filter(c => c && typeof c === "object" && c.name && c.color);
   localStorage.setItem("categories", JSON.stringify(categories));
 
+  // Category pill order must be stable and independent of whatever
+  // incidental order the `categories` array happens to be in — which,
+  // for signed-in users, is NOT guaranteed to survive a sync: every
+  // save() (even one that only touches tasks, e.g. drag-reordering a
+  // task list) also calls syncCategories(), which deletes and recreates
+  // every category doc with a brand-new random Firestore id every single
+  // time (see that function's own comment). A bare collection() query
+  // with no orderBy doesn't promise its returned order matches insertion
+  // order, so the *array* position categories come back in can shuffle
+  // on any save, even though each category's own data (including this
+  // `order` field) survives the round-trip intact. Backfills missing
+  // order values from current array position (the best available
+  // approximation the first time this runs) and sorts in place so every
+  // consumer of `categories` — filter row, Add Task's dropdown, etc. —
+  // just sees it in the right order without having to sort separately.
+  // Returns true if it changed anything, so the caller knows to persist.
+  function ensureCategoryOrder() {
+    let changed = false;
+    categories.forEach((cat, i) => {
+      if (typeof cat.order !== "number") { cat.order = i; changed = true; }
+    });
+    categories.sort((a, b) => a.order - b.order);
+    return changed;
+  }
+  // Inline localStorage write rather than save() — this runs before the
+  // rest of the module's setup, and save() (defined further down) also
+  // touches notification scheduling that isn't ready to run yet this
+  // early. Only relevant for the signed-out/local-only path; a signed-in
+  // user's categories get re-backfilled (and properly saved, via the
+  // real save()) once hydrateFromFirestore() replaces this with real data.
+  if (ensureCategoryOrder()) localStorage.setItem("categories", JSON.stringify(categories));
+
   let currentDate = new Date();
   let activeCategory = "All";
   let editingTaskId = null;
@@ -1651,6 +1683,15 @@
     // everything else keyed off data-theme.
     function setDeepWorkMode(active) {
       document.body.classList.toggle("deep-work-mode", active);
+      // #focusView is a fixed, full-viewport overlay with its own
+      // overflow-y: auto scroll — but html's own permanent scrollbar
+      // (overflow-y: scroll, for the gutter-stabilized layout elsewhere)
+      // doesn't turn off just because something covers it, so a tall
+      // Deep Work session showed two scrollbars stacked at the right
+      // edge: the real one (#focusView's) and html's own underneath.
+      // Locking html's scroll while Deep Work is active leaves exactly
+      // one, #focusView's, which is where the real content lives anyway.
+      document.documentElement.classList.toggle("deep-work-scroll-lock", active);
     }
     if (!enteringFocus) {
       setDeepWorkMode(view === "focus");
@@ -4741,7 +4782,10 @@
   document.getElementById("catSave").addEventListener("click", () => {
     const name = document.getElementById("catName").value.trim();
     if (!name || categories.some(c => c.name === name)) { closeModal(catOverlay); return; }
-    categories.push({ name, color: selectedColor });
+    // New category always goes to the end of the stable display order —
+    // see ensureCategoryOrder()'s own comment for why this field exists.
+    const maxOrder = categories.reduce((max, c) => Math.max(max, c.order ?? -1), -1);
+    categories.push({ name, color: selectedColor, order: maxOrder + 1 });
     save();
     closeModal(catOverlay);
     renderCategoryTabs();
@@ -9016,6 +9060,13 @@ let currentRange = "week";
     // localStorage-seeded initial value, or a previously-loaded value).
     if (window.firestoreBridge.hasCategoriesLoaded()) {
       categories = window.firestoreBridge.getCategories();
+      // Backfills a stable order field onto any category that arrived
+      // without one (e.g. an existing account's categories, created
+      // before this field existed) and re-sorts to it — see
+      // ensureCategoryOrder()'s own comment. Only persists when it
+      // actually changed something, so this doesn't fire a sync on every
+      // ordinary hydration once every category already has one.
+      if (ensureCategoryOrder()) save();
     }
     reflections = window.firestoreBridge.getReflections();
     lockedDays = window.firestoreBridge.getLockedDays();

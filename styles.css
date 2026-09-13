@@ -2,6 +2,15 @@
     overflow-y: scroll;
     scrollbar-gutter: stable;
   }
+  /* Deep Work (#focusView) is a fixed full-viewport overlay with its own
+     independent scroll — html's own permanent scrollbar above doesn't
+     know anything is covering it, so a tall session showed two
+     scrollbars stacked at the right edge. Locked while Deep Work is
+     active (toggled alongside body.deep-work-mode — see setDeepWorkMode()
+     in app.js) so #focusView's own scrollbar is the only one. */
+  html.deep-work-scroll-lock {
+    overflow-y: hidden;
+  }
 
   :root {
     --bg-page: #FAFAF7;
@@ -873,6 +882,20 @@
     visibility: visible;
     transition: opacity 0.5s ease, visibility 0s linear 0s, background 0.5s ease, color 0.5s ease;
   }
+  /* #focusView is always dark-themed while visible (data-theme flips to
+     "dark" alongside body.deep-work-mode) — its scroll container needs
+     its own styling too, or it renders the OS/browser's default light
+     scrollbar against this dark background. --border/--text-muted here
+     already resolve to their dark-theme values, same as everywhere else
+     in this file, since [data-theme="dark"] is set on :root. */
+  #focusView {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  #focusView::-webkit-scrollbar { width: 10px; }
+  #focusView::-webkit-scrollbar-track { background: transparent; }
+  #focusView::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+  #focusView::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
   .focus-container{ max-width: var(--container-max-width); margin:0 auto; position: relative; z-index: 1; padding-top: 5.5rem; }
   .focus-title{ font-size:var(--text-2xl); font-weight:700; letter-spacing:-0.035em; margin-top:1.25rem; margin-bottom:0.5rem; }
   .focus-subtitle{ color: var(--text-secondary); line-height:1.6; margin-bottom:2rem; font-size: var(--text-md); }
